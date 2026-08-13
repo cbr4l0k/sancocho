@@ -9,12 +9,12 @@ import {
   requireOrganizationRole,
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import { validateEntityName } from '../lib/names';
 import { canAssignRole, isOwner, type Role } from '../lib/roles';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const minSlugLength = 3;
 const maxSlugLength = 63;
-const maxNameLength = 200;
 
 export function validateOrganizationSlug(slug: string): void {
   if (slug.length < minSlugLength || slug.length > maxSlugLength || !slugPattern.test(slug)) {
@@ -23,10 +23,7 @@ export function validateOrganizationSlug(slug: string): void {
 }
 
 export function validateOrganizationName(name: string): void {
-  const trimmed = name.trim();
-  if (trimmed.length === 0 || trimmed.length > maxNameLength) {
-    return invalidInput('Invalid organization name');
-  }
+  validateEntityName(name, 'organization');
 }
 
 export async function createOrganization(

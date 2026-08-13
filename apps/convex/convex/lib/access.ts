@@ -39,12 +39,21 @@ export type OrganizationMembershipAccess = AuthenticatedUser & {
   organization: Doc<'organizations'>;
 };
 
-/** Proves the complete identity → user → membership → organization access chain. */
+/**
+ * Proves the complete identity → user → membership → organization access chain.
+ *
+ * `preResolvedUser` lets a caller that already proved identity → app user in the
+ * same transaction (e.g. after an I9-ordered `ctx.db.get`) reuse that result
+ * instead of resolving the user twice. It can only be produced by
+ * `requireAuthenticatedUser`, so passing it skips no check; omitting it keeps
+ * the original two-argument behaviour.
+ */
 export async function requireOrganizationMembership(
   ctx: UserAccessContext,
   organizationId: Id<'organizations'>,
+  preResolvedUser?: AuthenticatedUser,
 ): Promise<OrganizationMembershipAccess> {
-  const authenticated = await requireAuthenticatedUser(ctx);
+  const authenticated = preResolvedUser ?? (await requireAuthenticatedUser(ctx));
   const membership = await ctx.db
     .query('organizationMemberships')
     .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', authenticated.user._id))
@@ -66,8 +75,9 @@ export async function requireOrganizationRole(
   ctx: UserAccessContext,
   organizationId: Id<'organizations'>,
   minimumRole: Role,
+  preResolvedUser?: AuthenticatedUser,
 ): Promise<OrganizationMembershipAccess> {
-  const access = await requireOrganizationMembership(ctx, organizationId);
+  const access = await requireOrganizationMembership(ctx, organizationId, preResolvedUser);
   if (!roleAtLeast(access.membership.role, minimumRole)) {
     return notFoundOrInaccessible();
   }

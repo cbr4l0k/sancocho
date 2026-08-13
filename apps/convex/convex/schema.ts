@@ -12,6 +12,7 @@ import {
   fieldScopeValidator,
   recipeStatusValidator,
   recipeVersionStatusValidator,
+  projectFields,
   relationshipTypeValidator,
   roleValidator,
   semanticTypeValidator,
@@ -48,12 +49,9 @@ export default defineSchema({
     .index('by_org_user', ['organizationId', 'userId'])
     .index('by_user', ['userId']),
 
-  projects: defineTable({
-    organizationId: v.id('organizations'),
-    name: v.string(),
-    description: v.optional(v.string()),
-    status: archivalStatusValidator,
-  }).index('by_org', ['organizationId']),
+  // Field shape lives in validators/ so the table and the public `returns`
+  // validator are built from the same definition.
+  projects: defineTable(projectFields).index('by_org', ['organizationId']),
 
   fieldDefinitions: defineTable({
     // scope must agree with organizationId presence: builtin ⇔ organizationId

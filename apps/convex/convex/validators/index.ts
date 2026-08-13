@@ -31,8 +31,33 @@ export const eventStatusValidator = v.union(
 
 /** Archival is preferred over destructive deletion for projects and fields. */
 export const archivalStatusValidator = v.union(v.literal('active'), v.literal('archived'));
-export const projectStatusValidator = archivalStatusValidator;
+export const projectStatusValidator = v.union(
+  v.literal('draft'),
+  v.literal('active'),
+  v.literal('completed'),
+  v.literal('archived'),
+);
 export const fieldDefinitionStatusValidator = archivalStatusValidator;
+
+/**
+ * Single definition of the projects table shape: `schema.ts` builds the table
+ * from it and the public queries build their `returns` validator from it, so
+ * the stored document and the documented API contract cannot drift.
+ */
+export const projectFields = {
+  organizationId: v.id('organizations'),
+  name: v.string(),
+  description: v.optional(v.string()),
+  status: projectStatusValidator,
+  startsAt: v.optional(v.number()),
+  endsAt: v.optional(v.number()),
+};
+
+export const projectDocValidator = v.object({
+  _id: v.id('projects'),
+  _creationTime: v.number(),
+  ...projectFields,
+});
 
 /** Built-in vs org-owned field definitions; must agree with organizationId presence. */
 export const fieldScopeValidator = v.union(v.literal('builtin'), v.literal('organization'));
