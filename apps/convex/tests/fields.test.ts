@@ -147,6 +147,19 @@ test('incoherent field configurations are refused before they can be snapshotted
   await expect(create('invertedLength', { kind: 'text', minLength: 10, maxLength: 5 })).rejects.toMatchObject({
     data: 'Field maximum length must not be less than its minimum length',
   });
+  // Length bounds get the same finiteness rule numeric bounds do, and it is the
+  // ONLY rule that catches them: NaN compares false against every other check,
+  // so an unorderable length would otherwise be frozen into a publish snapshot.
+  for (const config of [
+    { kind: 'text', minLength: Number.NaN } as const,
+    { kind: 'text', maxLength: Number.NaN } as const,
+    { kind: 'longText', minLength: Number.NEGATIVE_INFINITY } as const,
+    { kind: 'longText', maxLength: Number.POSITIVE_INFINITY } as const,
+  ]) {
+    await expect(create(`badLength${config.kind}${config.minLength === undefined ? 'Max' : 'Min'}`, config)).rejects.toMatchObject({
+      data: 'Field length bounds must be finite numbers',
+    });
+  }
   await expect(create('emptyOptions', { kind: 'select', options: [] })).rejects.toMatchObject({
     data: 'Select fields must define at least one option',
   });
@@ -168,6 +181,15 @@ test('incoherent field configurations are refused before they can be snapshotted
   await expect(
     create('tooManySelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], maxSelections: 2 }),
   ).rejects.toMatchObject({ data: 'Maximum selections must not exceed the number of options' });
+  // Selection bounds get their own finiteness rule, and NaN is the case only that
+  // rule catches: it is neither less than the minimum nor greater than the
+  // option count, so every other selection check passes it through.
+  await expect(
+    create('nanMinSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], minSelections: Number.NaN }),
+  ).rejects.toMatchObject({ data: 'Selection bounds must be finite numbers' });
+  await expect(
+    create('nanMaxSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], maxSelections: Number.NaN }),
+  ).rejects.toMatchObject({ data: 'Selection bounds must be finite numbers' });
 
   // Coherent configurations, including equal bounds, are stored.
   await expect(create('validRange', { kind: 'number', min: 5, max: 5, integer: true })).resolves.toBeDefined();
@@ -241,6 +263,16 @@ test('field operations are indistinguishable for unauthenticated probes (I9)', a
   }
   await expect(t.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
   await expect(t.query(listFieldDefinitions, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  const fakeOrganizationId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('organizations', { name: 'Temporary', slug: 'fields-probe-ghost' });
+    await ctx.db.delete(id);
+    return id;
+  });
+  for (const orgId of [organizationId, fakeOrganizationId]) {
+    await expect(t.mutation(createFieldDefinition, { organizationId: orgId, key: 'ghostField', label: 'Nope', config: textConfig })).rejects.toMatchObject({
+      data: UNAUTHENTICATED,
+    });
+  }
 });
 
 test('operators cannot author fields; planners and above can', async () => {
@@ -446,6 +478,29 @@ test('listBuiltinFieldDefinitions serves every authenticated user and only built
   const page = await outsider.client.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage });
   expect(page.page.map((field) => field._id)).toEqual([builtinId]);
   expect(page.page.every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
+});
+
+test('listBuiltinFieldDefinitions walks the catalogue by cursor without repeating or dropping a row', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-builtin-pages' });
+  const builtins = [
+    await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' }),
+    await t.mutation(createBuiltinFieldDefinition, { key: 'eventDescription', label: 'Event description', config: longTextConfig, semanticType: 'eventDescription' }),
+    await t.mutation(createBuiltinFieldDefinition, { key: 'eventDay', label: 'Event day', config: { kind: 'date' }, semanticType: 'eventDate' }),
+  ];
+  // A tenant field sits on the same table; the index prefix is what keeps it out.
+  await owner.client.mutation(createFieldDefinition, { organizationId, key: 'tenantField', label: 'Tenant', config: textConfig });
+
+  const first = await owner.client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 2, cursor: null } });
+  expect(first.page).toHaveLength(2);
+  expect(first.isDone).toBe(false);
+  const second = await owner.client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 2, cursor: first.continueCursor } });
+  expect(second.page).toHaveLength(1);
+  expect(second.isDone).toBe(true);
+  // Every built-in appears exactly once across the two pages, and nothing else does.
+  expect([...first.page, ...second.page].map((field) => field._id).sort()).toEqual([...builtins].sort());
+  expect([...first.page, ...second.page].every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
 });
 
 test('field lifecycle writes attributed audit rows naming what changed', async () => {

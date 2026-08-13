@@ -616,7 +616,7 @@ test('every event operation writes an attributed audit row naming what changed, 
 });
 
 test('event queries paginate by start time, stay tenant-scoped, and join live definition metadata', async () => {
-  const { t, owner, organizationId, projectId, versionId, definitions, requiredCode, createEvent } = await fixture();
+  const { t, owner, organizationId, projectId, definitions, requiredCode, createEvent } = await fixture();
   const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Other', slug: 'events-query-foreign' });
   const foreignProjectId = await owner.client.mutation(createProject, { organizationId: foreignOrganizationId, name: 'Theirs' });
   const member = await provision(t, 'events-query-member');
@@ -669,11 +669,10 @@ test('event queries paginate by start time, stay tenant-scoped, and join live de
     values: [],
   });
   await expect(member.client.query(getEvent, { eventId: foreignEventId })).rejects.toMatchObject({ data: inaccessible });
-  expect(versionId).toBeDefined();
 });
 
 test('F3 regression: configured defaults are materialized at creation, before the required-field check', async () => {
-  const { t, owner, organizationId, projectId, recipeId, locationId } = await fixture();
+  const { t, owner, organizationId, projectId, locationId } = await fixture();
   // A fresh recipe whose fields carry defaults, including a REQUIRED one: the
   // default is what makes omitting it legal.
   const label = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'shift', label: 'Shift', config: { kind: 'text', maxLength: 8 } });
@@ -716,7 +715,6 @@ test('F3 regression: configured defaults are materialized at creation, before th
   await owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: tier, value: null }] });
   const afterClear = await owner.client.query(getEvent, { eventId });
   expect(afterClear.values.some((value) => value.key === 'grade')).toBe(false);
-  expect(recipeId).toBeDefined();
 });
 
 test('F2 regression: an archived project freezes its events through every write door', async () => {

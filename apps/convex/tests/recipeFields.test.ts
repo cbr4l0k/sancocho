@@ -117,8 +117,10 @@ test('field composition rejects foreign/archived definitions and does not disclo
   await expect(owner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: foreignField, required: false, visible: true })).rejects.toMatchObject({ data: inaccessible });
   await expect(owner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: archivedField, required: false, visible: true })).rejects.toMatchObject({ data: inaccessible });
   const row = await owner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: ownField, required: false, visible: true });
+  // Provisioned deliberately: the outsider is a real app user with no membership
+  // here, so the opaque errors below are not merely "unknown identity".
   const outsider = t.withIdentity(identity('field-outsider'));
-  const outsiderUserId = await outsider.mutation(api.auth.mutations.ensureUser, {});
+  await outsider.mutation(api.auth.mutations.ensureUser, {});
   const operator = t.withIdentity(identity('field-operator'));
   const operatorUserId = await operator.mutation(api.auth.mutations.ensureUser, {});
   await owner.mutation(addMember, { organizationId, userId: operatorUserId, role: 'operator' });
@@ -134,9 +136,6 @@ test('field composition rejects foreign/archived definitions and does not disclo
   // outsider is refused the read.
   await expect(operator.query(list, { recipeVersionId: versionId })).resolves.toHaveLength(1);
   await expect(outsider.query(list, { recipeVersionId: versionId })).rejects.toMatchObject({ data: inaccessible });
-  // A real outsider user and an in-org operator get the same opaque error; the
-  // extra provisioned outsider id ensures this is not merely an unknown user.
-  expect(outsiderUserId).toBeDefined();
 });
 
 test('unauthenticated, fabricated, and cross-tenant ids are refused uniformly on every entry point', async () => {

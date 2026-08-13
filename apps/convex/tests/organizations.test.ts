@@ -75,18 +75,81 @@ test('cross-organization access and fabricated organization IDs return the same 
   }
 });
 
-test('viewer cannot update and planner cannot add members', async () => {
+test('organization administration is closed below admin, and an admin rename is stored and audited', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const viewer = await provision(t, 'viewer');
   const planner = await provision(t, 'planner');
+  const admin = await provision(t, 'admin');
   const target = await provision(t, 'target');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'roles-org' });
   await owner.client.mutation(addMember, { organizationId, userId: viewer.userId, role: 'viewer' });
   await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  await owner.client.mutation(addMember, { organizationId, userId: admin.userId, role: 'admin' });
 
-  await expect(viewer.client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(planner.client.mutation(addMember, { organizationId, userId: target.userId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  // The floor is admin, not planner: a planner composes work inside the tenant,
+  // it does not administer the tenant itself. Both ranks below admin are here so
+  // the floor cannot slip a rank unnoticed.
+  for (const { client } of [viewer, planner]) {
+    await expect(client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(client.mutation(addMember, { organizationId, userId: target.userId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  }
+
+  // The success path: the trimmed name is what is stored, and the rename leaves
+  // an attributed audit row naming the new name.
+  await expect(admin.client.mutation(updateOrganization, { organizationId, name: '  Acme Logistics  ' })).resolves.toBeNull();
+  // Slugs are deliberately immutable, and an omitted name is an accepted no-op.
+  await expect(admin.client.mutation(updateOrganization, { organizationId })).resolves.toBeNull();
+  await expect(admin.client.mutation(updateOrganization, { organizationId, name: '   ' })).rejects.toMatchObject({ data: 'Invalid organization name' });
+
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(organizationId)).toMatchObject({ name: 'Acme Logistics', slug: 'roles-org' });
+    const audits = await ctx.db
+      .query('auditEvents')
+      .withIndex('by_org_entity', (q) => q.eq('organizationId', organizationId).eq('entityType', 'organization').eq('entityId', organizationId))
+      .collect();
+    const updates = audits.filter((audit) => audit.action === 'organization.updated');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ actorUserId: admin.userId, organizationId, metadata: { name: 'Acme Logistics' } });
+  });
+});
+
+test('organization slugs must be 3–63 lowercase dash-separated segments', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+
+  for (const slug of ['ab', 'a'.repeat(64), 'Acme', 'has space', '-leading', 'trailing-', 'double--dash', 'under_score', 'acme!', '']) {
+    await expect(owner.client.mutation(createOrganization, { name: 'Rejected', slug })).rejects.toMatchObject({
+      data: 'Invalid organization slug',
+    });
+  }
+  // Both length bounds are inclusive, and digits are legal inside a segment.
+  await expect(owner.client.mutation(createOrganization, { name: 'Shortest', slug: 'abc' })).resolves.toBeDefined();
+  await expect(owner.client.mutation(createOrganization, { name: 'Longest', slug: 'a'.repeat(63) })).resolves.toBeDefined();
+  await expect(owner.client.mutation(createOrganization, { name: 'Segmented', slug: 'acme-2026-north' })).resolves.toBeDefined();
+});
+
+test('every public organization function is opaque to unauthenticated callers', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const member = await provision(t, 'member');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'org-unauth' });
+  const missingOrganizationId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('organizations', { name: 'Temporary', slug: 'org-unauth-ghost' });
+    await ctx.db.delete(id);
+    return id;
+  });
+
+  // Identical error for a real and a fabricated id on every entry point: without
+  // an identity nothing is reached, so nothing is disclosed.
+  for (const id of [organizationId, missingOrganizationId]) {
+    await expect(t.query(getOrganization, { organizationId: id })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.query(listMembers, { organizationId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.mutation(updateOrganization, { organizationId: id, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.mutation(addMember, { organizationId: id, userId: member.userId, role: 'viewer' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  }
+  await expect(t.query(api.organizations.queries.listMyOrganizations, {})).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  await expect(t.mutation(createOrganization, { name: 'Nope', slug: 'org-unauth-new' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
 });
 
 test('duplicate memberships are rejected without disclosing the existing membership', async () => {
@@ -120,6 +183,25 @@ test('the final owner cannot be demoted or removed, while a second owner can', a
   await firstOwner.client.mutation(changeMemberRole, { membershipId: secondMembershipId, role: 'admin' });
   await firstOwner.client.mutation(changeMemberRole, { membershipId: secondMembershipId, role: 'owner' });
   await firstOwner.client.mutation(removeMember, { membershipId: secondMembershipId });
+
+  await t.run(async (ctx) => {
+    // The membership row is gone, so the audit row is the only remaining record
+    // of who removed whom and what rank they held.
+    expect(await ctx.db.get(secondMembershipId)).toBeNull();
+    const audits = await ctx.db
+      .query('auditEvents')
+      .withIndex('by_org_entity', (q) => q.eq('organizationId', organizationId).eq('entityType', 'membership').eq('entityId', secondMembershipId))
+      .collect();
+    const removals = audits.filter((audit) => audit.action === 'membership.removed');
+    expect(removals).toHaveLength(1);
+    expect(removals[0]).toMatchObject({ actorUserId: firstOwner.userId, organizationId, metadata: { previousRole: 'owner' } });
+    // The refused demotion and removal of the final owner wrote nothing at all.
+    const firstOwnerAudits = await ctx.db
+      .query('auditEvents')
+      .withIndex('by_org_entity', (q) => q.eq('organizationId', organizationId).eq('entityType', 'membership').eq('entityId', firstMembershipId))
+      .collect();
+    expect(firstOwnerAudits.map((audit) => audit.action)).toEqual(['membership.created']);
+  });
 });
 
 test('membership mutations are indistinguishable for unauthenticated probes (I9)', async () => {

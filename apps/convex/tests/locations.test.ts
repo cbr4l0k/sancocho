@@ -107,13 +107,25 @@ function locationAudits(t: SchemaTest, organizationId: Id<'organizations'>, loca
 test('coordinates require a finite, bounded pair at creation and update', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);
-  for (const latitude of [-91, 91, Number.NaN, Number.POSITIVE_INFINITY]) {
-    await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bad', type: 'custom', latitude, longitude: 0 })).rejects.toBeDefined();
-    await expect(owner.client.mutation(updateLocation, { locationId, latitude, longitude: 0 })).rejects.toBeDefined();
-  }
-  for (const longitude of [-181, 181, Number.NaN, Number.NEGATIVE_INFINITY]) {
-    await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bad', type: 'custom', latitude: 0, longitude })).rejects.toBeDefined();
-    await expect(owner.client.mutation(updateLocation, { locationId, latitude: 0, longitude })).rejects.toBeDefined();
+  // Each case names the message it must produce: finiteness is checked before
+  // range (NaN silently passes every range comparison), and the two axes have
+  // separate rules, so a table of "some error happened" would let any of the
+  // four messages be deleted without a failure.
+  const rejections: [{ latitude: number; longitude: number }, string][] = [
+    [{ latitude: -91, longitude: 0 }, 'Latitude must be between -90 and 90'],
+    [{ latitude: 91, longitude: 0 }, 'Latitude must be between -90 and 90'],
+    [{ latitude: Number.NaN, longitude: 0 }, 'Latitude must be finite'],
+    [{ latitude: Number.POSITIVE_INFINITY, longitude: 0 }, 'Latitude must be finite'],
+    [{ latitude: Number.NEGATIVE_INFINITY, longitude: 0 }, 'Latitude must be finite'],
+    [{ latitude: 0, longitude: -181 }, 'Longitude must be between -180 and 180'],
+    [{ latitude: 0, longitude: 181 }, 'Longitude must be between -180 and 180'],
+    [{ latitude: 0, longitude: Number.NaN }, 'Longitude must be finite'],
+    [{ latitude: 0, longitude: Number.POSITIVE_INFINITY }, 'Longitude must be finite'],
+    [{ latitude: 0, longitude: Number.NEGATIVE_INFINITY }, 'Longitude must be finite'],
+  ];
+  for (const [coordinates, data] of rejections) {
+    await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bad', type: 'custom', ...coordinates })).rejects.toMatchObject({ data });
+    await expect(owner.client.mutation(updateLocation, { locationId, ...coordinates })).rejects.toMatchObject({ data });
   }
   await expect(owner.client.mutation(createLocation, { organizationId, name: 'Lone', type: 'custom', latitude: 1 })).rejects.toMatchObject({ data: 'Latitude and longitude must be provided together' });
   await expect(owner.client.mutation(updateLocation, { locationId, latitude: 1 })).rejects.toMatchObject({ data: 'Latitude and longitude must be provided together' });
@@ -313,10 +325,12 @@ test('a location a published version defaults to cannot be deleted, and clones c
   expect(await countDefaultReferences(t, locationId)).toBe(2);
   const clonedFields = await owner.client.query(listRecipeFields, { recipeVersionId: clonedVersionId });
   expect(clonedFields.map((field) => field.defaultLocationId)).toEqual([locationId]);
+  const clonedField = clonedFields[0];
+  if (clonedField === undefined) throw new Error('cloned recipe field missing');
 
   // Clearing the clone's default leaves the published version's reference, which
   // still holds the location.
-  await owner.client.mutation(updateRecipeField, { recipeFieldId: clonedFields[0]!._id, defaultValue: null });
+  await owner.client.mutation(updateRecipeField, { recipeFieldId: clonedField._id, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(1);
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: referenced });
 });

@@ -67,6 +67,19 @@ test('project operations are indistinguishable for unauthenticated probes (I9)',
     await expect(t.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
     await expect(t.mutation(archiveProject, { projectId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
   }
+
+  // The two organization-scoped entry points are closed to the same probe: a
+  // real organization id is worth no more than a fabricated one without an
+  // identity behind it.
+  const fakeOrganizationId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('organizations', { name: 'Temporary', slug: 'project-probe-ghost' });
+    await ctx.db.delete(id);
+    return id;
+  });
+  for (const orgId of [organizationId, fakeOrganizationId]) {
+    await expect(t.mutation(createProject, { organizationId: orgId, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.query(listProjects, { organizationId: orgId, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  }
 });
 
 test('a user with no memberships anywhere cannot read a project', async () => {
@@ -103,19 +116,36 @@ test('listProjects requires membership in the requested organization and never l
   expect(page.page.every((project) => project.organizationId === orgA)).toBe(true);
 });
 
-test('only planners and above can create or update projects', async () => {
+test('project authoring is closed to operators and viewers and open from planner up', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const viewer = await provision(t, 'viewer');
+  const operator = await provision(t, 'operator');
   const planner = await provision(t, 'planner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'project-roles' });
   await owner.client.mutation(addMember, { organizationId, userId: viewer.userId, role: 'viewer' });
+  await owner.client.mutation(addMember, { organizationId, userId: operator.userId, role: 'operator' });
   await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
-
-  await expect(viewer.client.mutation(createProject, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
   const projectId = await planner.client.mutation(createProject, { organizationId, name: 'Planned' });
-  await expect(viewer.client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  const archivable = await planner.client.mutation(createProject, { organizationId, name: 'Archivable' });
+
+  // The floor is planner, not operator: an operator runs events, it does not
+  // author the projects they live in. Testing only a viewer would leave the
+  // floor free to slip a rank, which is why both ranks below planner are here.
+  for (const { client } of [viewer, operator]) {
+    await expect(client.mutation(createProject, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    // Archival is its own operation with its own role check, so it gets its own case.
+    await expect(client.mutation(archiveProject, { projectId: archivable })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  }
+  // Reading stays open to any member, so the rejections above are a floor on
+  // authoring, not on visibility.
+  await expect(operator.client.query(getProject, { projectId })).resolves.toMatchObject({ _id: projectId });
   await expect(planner.client.mutation(updateProject, { projectId, name: 'Updated' })).resolves.toBeNull();
+  await expect(planner.client.mutation(archiveProject, { projectId: archivable })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(archivable)).toMatchObject({ status: 'archived' });
+  });
 });
 
 test('project dates must remain ordered at creation and update', async () => {

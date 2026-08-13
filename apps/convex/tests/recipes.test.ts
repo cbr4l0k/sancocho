@@ -86,9 +86,44 @@ test('versions are server-assigned, published versions retire, and sequence neve
   const recipe = await owner.client.query(getRecipe, { recipeId });
   expect(recipe.versions.map((version) => [version.versionNumber, version.status])).toEqual([[1, 'retired'], [2, 'published'], [3, 'draft']]);
   expect(v3).toBeDefined();
-  // The mutation args intentionally expose no versionNumber; Convex rejects extra fields at runtime too.
-  // @ts-expect-error versionNumber is deliberately not part of the public validator/API.
-  await expect(owner.client.mutation(createInitialDraftVersion, { recipeId, versionNumber: 99 })).rejects.toBeDefined();
+});
+
+test('I7: a client cannot choose a version number, and the rejection is argument validation', async () => {
+  const { owner, organizationId } = await recipeFixture();
+  // Probed against a recipe with NO open draft, deliberately: against a recipe
+  // that already has one, every call rejects with the one-draft Conflict whether
+  // or not `versionNumber` is accepted, and the test proves nothing. This is the
+  // only assertion that clients cannot choose version numbers.
+  const untouched = await owner.client.mutation(createRecipe, { organizationId, key: 'serverAssigned', name: 'Server assigned' });
+  const rejection: unknown = await owner.client
+    // @ts-expect-error versionNumber is deliberately not part of the public validator/API.
+    .mutation(createInitialDraftVersion, { recipeId: untouched, versionNumber: 99 })
+    .catch((error: unknown) => error);
+
+  // The args validator refuses the extra field before the handler runs, so this
+  // is not the application-level Conflict (which would carry `data`).
+  expect(rejection).toBeInstanceOf(Error);
+  expect(rejection).not.toHaveProperty('data');
+  expect((rejection as Error).message).toMatch(/Unexpected field `versionNumber`/);
+
+  // The same recipe accepts the well-formed call, which is what proves the
+  // rejection above was about the argument rather than about an existing draft.
+  const versionId = await owner.client.mutation(createInitialDraftVersion, { recipeId: untouched });
+  const created = await owner.client.query(getRecipe, { recipeId: untouched });
+  expect(created.versions.map((version) => [version._id, version.versionNumber])).toEqual([[versionId, 1]]);
+});
+
+test('recipe keys must be 2–64 lowerCamelCase characters', async () => {
+  const { owner, organizationId } = await recipeFixture();
+  for (const key of ['Bad_key', 'a', 'a'.repeat(65), '1leading', 'has space', 'kebab-case', '']) {
+    await expect(owner.client.mutation(createRecipe, { organizationId, key, name: 'Rejected' })).rejects.toMatchObject({
+      data: 'Recipe key must be 2–64 lowerCamelCase characters',
+    });
+  }
+  // Both length bounds are inclusive, and interior capitals and digits are legal.
+  await expect(owner.client.mutation(createRecipe, { organizationId, key: 'ab', name: 'Shortest' })).resolves.toBeDefined();
+  await expect(owner.client.mutation(createRecipe, { organizationId, key: 'a'.repeat(64), name: 'Longest' })).resolves.toBeDefined();
+  await expect(owner.client.mutation(createRecipe, { organizationId, key: 'transferPlan2', name: 'Mixed' })).resolves.toBeDefined();
 });
 
 test('one-draft conflict and archived/non-draft publish rules are enforced', async () => {
@@ -410,4 +445,18 @@ test('recipe and version probes are uniform for unauthenticated and outsider cal
   }
   await expect(t.query(getRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: unauthenticated });
   await expect(outsider.client.mutation(publishRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: inaccessible });
+
+  // Every authoring mutation is closed to an unauthenticated caller too, for a
+  // real id as for a fabricated one: none of them may reach a database read.
+  const missingVersion = await t.run(async (ctx) => { const id = await ctx.db.insert('recipeVersions', { organizationId, recipeId, versionNumber: 99, status: 'draft' }); await ctx.db.delete(id); return id; });
+  for (const id of [recipeId, missingRecipe]) {
+    await expect(t.mutation(updateRecipeMetadata, { recipeId: id, name: 'Nope' })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(archiveRecipe, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(createInitialDraftVersion, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(clonePublishedVersionToDraft, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
+  }
+  for (const id of [versionId, missingVersion]) {
+    await expect(t.mutation(publishRecipeVersion, { recipeVersionId: id })).rejects.toMatchObject({ data: unauthenticated });
+  }
+  await expect(t.mutation(createRecipe, { organizationId, key: 'unauthenticatedPlan', name: 'Nope' })).rejects.toMatchObject({ data: unauthenticated });
 });
