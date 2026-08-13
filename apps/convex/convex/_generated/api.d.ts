@@ -15,6 +15,7 @@ import type * as auth_queries from "../auth/queries.js";
 import type * as fields_model from "../fields/model.js";
 import type * as fields_mutations from "../fields/mutations.js";
 import type * as fields_queries from "../fields/queries.js";
+import type * as fields_values from "../fields/values.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_authAdapter from "../lib/authAdapter.js";
 import type * as lib_errors from "../lib/errors.js";
@@ -26,6 +27,9 @@ import type * as organizations_queries from "../organizations/queries.js";
 import type * as projects_model from "../projects/model.js";
 import type * as projects_mutations from "../projects/mutations.js";
 import type * as projects_queries from "../projects/queries.js";
+import type * as recipes_model from "../recipes/model.js";
+import type * as recipes_mutations from "../recipes/mutations.js";
+import type * as recipes_queries from "../recipes/queries.js";
 import type * as validators_index from "../validators/index.js";
 
 import type {
@@ -42,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   "fields/model": typeof fields_model;
   "fields/mutations": typeof fields_mutations;
   "fields/queries": typeof fields_queries;
+  "fields/values": typeof fields_values;
   "lib/access": typeof lib_access;
   "lib/authAdapter": typeof lib_authAdapter;
   "lib/errors": typeof lib_errors;
@@ -53,6 +58,9 @@ declare const fullApi: ApiFromModules<{
   "projects/model": typeof projects_model;
   "projects/mutations": typeof projects_mutations;
   "projects/queries": typeof projects_queries;
+  "recipes/model": typeof recipes_model;
+  "recipes/mutations": typeof recipes_mutations;
+  "recipes/queries": typeof recipes_queries;
   "validators/index": typeof validators_index;
 }>;
 

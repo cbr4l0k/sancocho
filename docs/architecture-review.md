@@ -162,11 +162,17 @@ decisions. Clerk organization/role claims, if present, are ignored.
   capability-relevant config checks (indexed, via `recipeFields.by_field` on the
   definition + version status) whether any published version references the field;
   if so, only `label`/`description` edits pass. Cheap check, no scan.
-- **Select options are snapshotted into the recipe field config at publish time**
-  (issue #7's option-semantics decision): the published `recipeFields` row carries
-  an immutable copy of allowed options, so later edits to the field definition's
-  options can never change what a historical event validates against (I3). The
-  field definition's own option list is only the source for *future* drafts.
+- **Select options are snapshotted into the recipe field config when the row is
+  composed into a draft version, and the snapshot is coherence-validated at
+  publish** (issue #7's option-semantics decision, refined by #8): composing a
+  draft copies the definition's config, and a recipe may narrow it (tighter
+  bounds, a subset of options) for its own use (#9). Publishing then verifies the
+  snapshot still agrees with the definition — same config kind, and snapshot
+  option ids still a subset of the definition's — so a stale snapshot fails
+  publishing instead of shipping dead options. From publish onward the row is
+  immutable, so later edits to the field definition's options can never change
+  what a historical event validates against (I3). The field definition's own
+  option list is only the source for *future* drafts.
 
 ## 8. Recipe & version lifecycle
 
