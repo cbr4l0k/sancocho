@@ -19,6 +19,15 @@ const recipeKeyPattern = /^[a-z][a-zA-Z0-9]*$/;
 const maxRecipeDescriptionLength = 2000;
 
 /**
+ * The composition ceiling for one version. A version's `recipeFields` are read
+ * as a whole child set (publish validation, reordering, cloning, listing), and
+ * I6 permits that only because the set is bounded — so the bound is enforced
+ * rather than assumed. 200 is an order of magnitude beyond any realistic
+ * operational form while keeping every such read one small transaction.
+ */
+export const maxFieldsPerVersion = 200;
+
+/**
  * The one-draft probe and highest-version probe are indexed reads in the same
  * mutation as their insert. Under Convex serializable OCC, concurrent writers
  * that observe the same index range conflict and retry; the retry sees the
@@ -78,6 +87,12 @@ export async function clonePublishedVersionToDraft(ctx: MutationCtx, recipeId: I
   if (published === null) return invalidInput('A published recipe version is required to clone');
   const versionId = await createDraftVersion(ctx, recipe, access, published.versionNumber);
   const sourceFields = await getVersionFields(ctx, published._id);
+  // Rows are copied verbatim from a version that already passed
+  // `validateDraftFields`, so each one is coherent with its definition by
+  // construction — cloning re-derives nothing and needs no re-check. Should a
+  // definition narrow after the clone, publishing the new draft runs the same
+  // `assertSnapshotCoherentWithDefinition` again against the definitions as
+  // they stand then, which is the moment that actually matters (I2/I3).
   for (const source of sourceFields) {
     await ctx.db.insert('recipeFields', {
       organizationId: recipe.organizationId, recipeVersionId: versionId, fieldDefinitionId: source.fieldDefinitionId,
@@ -167,9 +182,82 @@ async function requireVersionAccess(ctx: MutationCtx, recipeVersionId: Id<'recip
   return { version, recipe, access };
 }
 
-async function getVersionFields(ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>, recipeVersionId: Id<'recipeVersions'>): Promise<Doc<'recipeFields'>[]> {
+/**
+ * A version's recipe fields in presentation order. The index does not order by
+ * position, so the sort is what makes the order meaningful. Collecting this
+ * child set is permitted because it is bounded by `maxFieldsPerVersion` (I6).
+ */
+export async function getVersionFields(ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>, recipeVersionId: Id<'recipeVersions'>): Promise<Doc<'recipeFields'>[]> {
   const fields = await ctx.db.query('recipeFields').withIndex('by_version', (q) => q.eq('recipeVersionId', recipeVersionId)).collect();
   return fields.sort((left, right) => left.position - right.position);
+}
+
+/**
+ * The single statement of "may this definition back a recipe field for this
+ * organization?": it must still be active, and either built-in or owned by the
+ * organization composing it. Only the predicate is shared — the caller picks
+ * the error, because the two callers answer different questions. Composition
+ * mutations take a caller-supplied id and must report the generic not-found so
+ * a probe learns nothing about another tenant (I1/I9); publishing inspects rows
+ * the organization already stored, so it reports specific invalid input.
+ */
+export function isUsableDefinition(definition: Doc<'fieldDefinitions'> | null, organizationId: Id<'organizations'>): definition is Doc<'fieldDefinitions'> {
+  return definition !== null && definition.status !== 'archived' && (definition.scope !== 'organization' || definition.organizationId === organizationId);
+}
+
+/**
+ * A required field nobody can see is unfillable, so the rule is stated once for
+ * the two moments it can be violated: composing a draft row, and freezing the
+ * whole set at publish.
+ */
+export function assertRequiredImpliesVisible(required: boolean, visible: boolean): void {
+  if (required && !visible) return invalidInput('Required recipe fields must be visible');
+}
+
+/**
+ * The one statement of "may this snapshot stand for this definition?", used by
+ * every write that produces or freezes a snapshot: add, update, and publish.
+ *
+ * It was previously stated twice, and the two copies had already drifted —
+ * composition enforced narrowing-only bounds while publishing did not, so a
+ * snapshot widened by a later definition edit could still be made immutable.
+ * With one rule the guarantee is identical wherever a snapshot is written.
+ *
+ * A snapshot may narrow its definition (tighter bounds, integer-only, a subset
+ * of options) because that is the whole point of a per-recipe snapshot. It may
+ * never widen it, and never carry options the definition no longer offers: a
+ * stale snapshot fails honestly instead of shipping rules its definition
+ * disowns, or dead options no operator can act on.
+ */
+export function assertSnapshotCoherentWithDefinition(snapshot: FieldConfig, definition: FieldConfig): void {
+  if (snapshot.kind !== definition.kind) return invalidInput('Recipe field config kind must match the current field definition');
+  // The same contents rules the definition itself had to satisfy, re-checked on
+  // the narrowed snapshot: an incoherent copy would become permanent at publish.
+  assertValidFieldConfig(snapshot);
+  switch (snapshot.kind) {
+    case 'text': case 'longText':
+      if (definition.kind !== snapshot.kind || (definition.minLength !== undefined && (snapshot.minLength === undefined || snapshot.minLength < definition.minLength)) || (definition.maxLength !== undefined && (snapshot.maxLength === undefined || snapshot.maxLength > definition.maxLength))) return narrowingOnly();
+      return;
+    case 'number':
+      if (definition.kind !== 'number' || (definition.min !== undefined && (snapshot.min === undefined || snapshot.min < definition.min)) || (definition.max !== undefined && (snapshot.max === undefined || snapshot.max > definition.max)) || (definition.integer === true && snapshot.integer !== true)) return narrowingOnly();
+      return;
+    case 'datetime': case 'date': case 'time':
+      if (definition.kind !== snapshot.kind || (definition.min !== undefined && (snapshot.min === undefined || snapshot.min < definition.min)) || (definition.max !== undefined && (snapshot.max === undefined || snapshot.max > definition.max))) return narrowingOnly();
+      return;
+    case 'select': case 'multiSelect': {
+      // Kinds were already proven equal above; this narrows for the compiler.
+      if (definition.kind !== 'select' && definition.kind !== 'multiSelect') return invalidInput('Recipe field config kind must match the current field definition');
+      const available = new Set(definition.options.map((option) => option.id));
+      if (snapshot.options.some((option) => !available.has(option.id))) return invalidInput('Recipe field snapshot options must still exist in the current field definition');
+      if (snapshot.kind === 'multiSelect' && definition.kind === 'multiSelect' && ((definition.minSelections !== undefined && (snapshot.minSelections === undefined || snapshot.minSelections < definition.minSelections)) || (definition.maxSelections !== undefined && (snapshot.maxSelections === undefined || snapshot.maxSelections > definition.maxSelections)))) return narrowingOnly();
+      return;
+    }
+    case 'boolean': case 'location': return;
+  }
+}
+
+function narrowingOnly(): never {
+  return invalidInput('Recipe field config may only narrow definition bounds');
 }
 
 /**
@@ -196,28 +284,14 @@ async function validateDraftFields(ctx: MutationCtx, version: Doc<'recipeVersion
     if (definitions.has(recipeField.fieldDefinitionId)) return invalidInput('Recipe version cannot contain duplicate field definitions');
     definitions.add(recipeField.fieldDefinitionId);
     const definition = await ctx.db.get(recipeField.fieldDefinitionId);
-    if (definition === null || definition.status === 'archived' || (definition.scope === 'organization' && definition.organizationId !== version.organizationId)) return invalidInput('Recipe fields must reference active fields in the same organization or built-ins');
-    if (definition.config.kind !== recipeField.config.kind) return invalidInput('Recipe field config kind must match the current field definition');
-    // The snapshot may narrow the definition (tighter bounds, an option subset),
-    // but it may never invent options the definition no longer offers: a stale
-    // snapshot fails publishing honestly instead of shipping dead options.
-    assertSnapshotOptionsSubset(recipeField.config, definition.config);
-    // The same contents rules the definition itself had to satisfy, re-checked on
-    // the narrowed snapshot: an incoherent copy would become permanent here.
-    assertValidFieldConfig(recipeField.config);
-    if (recipeField.required && !recipeField.visible) return invalidInput('Required recipe fields must be visible');
-    if (recipeField.defaultValue !== undefined) await validateDefaultValue(ctx, recipeField.defaultValue, recipeField.config, version.organizationId);
-  }
-}
-
-/** Snapshot options must be a subset of the definition's current option ids; other kinds carry no options. */
-function assertSnapshotOptionsSubset(snapshot: FieldConfig, definition: FieldConfig): void {
-  if (snapshot.kind !== 'select' && snapshot.kind !== 'multiSelect') return;
-  // Kinds were already proven equal by the caller; this narrows for the compiler.
-  if (definition.kind !== 'select' && definition.kind !== 'multiSelect') return;
-  const available = new Set(definition.options.map((option) => option.id));
-  if (snapshot.options.some((option) => !available.has(option.id))) {
-    return invalidInput('Recipe field snapshot options must still exist in the current field definition');
+    if (!isUsableDefinition(definition, version.organizationId)) return invalidInput('Recipe fields must reference active fields in the same organization or built-ins');
+    // The same coherence rule composition applied when the row was written, run
+    // again against the definition as it stands now: a definition edited since
+    // then can leave a stored snapshot stale, and this is the last moment it can
+    // be refused.
+    assertSnapshotCoherentWithDefinition(recipeField.config, definition.config);
+    assertRequiredImpliesVisible(recipeField.required, recipeField.visible);
+    if (recipeField.defaultValue !== undefined) await validateRecipeFieldDefaultValue(ctx, recipeField.defaultValue, recipeField.config, version.organizationId);
   }
 }
 
@@ -229,7 +303,7 @@ function assertSnapshotOptionsSubset(snapshot: FieldConfig, definition: FieldCon
  * active. A foreign location fails with the generic error, so a caller cannot
  * use publishing to probe another tenant's ids (I1/I9).
  */
-async function validateDefaultValue(ctx: MutationCtx, value: EventFieldValue, config: FieldConfig, organizationId: Id<'organizations'>): Promise<void> {
+export async function validateRecipeFieldDefaultValue(ctx: MutationCtx, value: EventFieldValue, config: FieldConfig, organizationId: Id<'organizations'>): Promise<void> {
   validateFieldValueAgainstConfig(config, value);
   if (value.kind !== 'location') return;
   const location = await ctx.db.get(value.locationId);

@@ -88,8 +88,8 @@ export default defineSchema({
     // Snapshot of the field's config (data type, rules, options), taken when the
     // row is composed into a DRAFT version — so a draft may narrow the definition
     // (tighter bounds, a subset of options) for this recipe. Publishing validates
-    // the snapshot's coherence instead of overwriting it: same config kind as the
-    // definition, and select options still a subset of the definition's. From
+    // the snapshot's coherence instead of overwriting it: same config kind, narrowing-
+    // only bounds, and select options still a subset of the definition's. From
     // publish onward the snapshot is immutable, and historical event validation
     // reads ONLY it, never the live fieldDefinition (I3).
     config: fieldConfigValidator,

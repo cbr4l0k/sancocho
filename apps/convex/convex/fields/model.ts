@@ -136,7 +136,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
     update.semanticType = patch.semanticType;
     changedFields.push('semanticType');
   }
-  if (patch.config !== undefined && !sameConfig(patch.config, field.config)) {
+  if (patch.config !== undefined && !sameFieldConfig(patch.config, field.config)) {
     update.config = patch.config;
     changedFields.push('config');
   }
@@ -382,12 +382,13 @@ function assertUsableOptions(options: readonly SelectOption[]): void {
 }
 
 /**
- * Structural comparison over the config union. `JSON.stringify` was key-order
- * sensitive, so an identical config whose properties happened to arrive in a
- * different order read as a change — a spurious audit row, and (once
- * referenced) a spurious immutability rejection.
+ * Structural equality over the config union, shared with recipe composition's
+ * no-op detection. `JSON.stringify` was key-order sensitive, so an identical
+ * config whose properties happened to arrive in a different order read as a
+ * change — a spurious audit row, and (once referenced) a spurious immutability
+ * rejection.
  */
-function sameConfig(left: FieldConfig, right: FieldConfig): boolean {
+export function sameFieldConfig(left: FieldConfig, right: FieldConfig): boolean {
   switch (left.kind) {
     case 'boolean':
       return right.kind === 'boolean';
