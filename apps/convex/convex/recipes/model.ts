@@ -4,7 +4,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { recordAuditEvent } from '../audit/model';
 import { assertValidFieldConfig } from '../fields/model';
-import { validateFieldValueAgainstConfig } from '../fields/values';
+import { locationIdFromValue, validateFieldValueAgainstConfig } from '../fields/values';
 import { requireAuthenticatedUser, requireOrganizationMembership, requireOrganizationRole, type OrganizationMembershipAccess } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
@@ -37,12 +37,13 @@ export const maxFieldsPerVersion = 200;
 export async function createRecipe(ctx: MutationCtx, args: { organizationId: Id<'organizations'>; key: string; name: string; description?: string }): Promise<Id<'eventRecipes'>> {
   const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
   validateRecipeKey(args.key);
-  validateEntityName(args.name, 'recipe');
+  // The validator returns the trimmed name, and the trimmed name is what is stored.
+  const name = validateEntityName(args.name, 'recipe');
   validateDescription(args.description);
   const existing = await ctx.db.query('eventRecipes').withIndex('by_org_key', (q) => q.eq('organizationId', args.organizationId).eq('key', args.key)).unique();
   if (existing !== null) return conflict();
   const recipeId = await ctx.db.insert('eventRecipes', {
-    organizationId: args.organizationId, key: args.key, name: args.name,
+    organizationId: args.organizationId, key: args.key, name,
     ...(args.description === undefined ? {} : { description: args.description }), status: 'draft',
   });
   await recordAuditEvent(ctx, { organizationId: args.organizationId, actorUserId: access.user._id, action: 'recipe.created', entityType: 'eventRecipe', entityId: recipeId, metadata: { key: args.key } });
@@ -55,7 +56,10 @@ export async function updateRecipeMetadata(ctx: MutationCtx, recipeId: Id<'event
   if (recipe.status === 'archived') return invalidInput('Archived recipes cannot be updated');
   const update: RecipePatch = {};
   const changedFields: string[] = [];
-  if (patch.name !== undefined && patch.name !== recipe.name) { validateEntityName(patch.name, 'recipe'); update.name = patch.name; changedFields.push('name'); }
+  // Validated (and therefore trimmed) before the diff, so an echoed name that
+  // differs only in surrounding whitespace is correctly read as no change.
+  const name = patch.name === undefined ? undefined : validateEntityName(patch.name, 'recipe');
+  if (name !== undefined && name !== recipe.name) { update.name = name; changedFields.push('name'); }
   if (patch.description !== undefined && patch.description !== recipe.description) { validateDescription(patch.description); update.description = patch.description; changedFields.push('description'); }
   if (changedFields.length === 0) return;
   await ctx.db.patch(recipeId, update);
@@ -94,10 +98,14 @@ export async function clonePublishedVersionToDraft(ctx: MutationCtx, recipeId: I
   // `assertSnapshotCoherentWithDefinition` again against the definitions as
   // they stand then, which is the moment that actually matters (I2/I3).
   for (const source of sourceFields) {
+    // The location mirror is re-derived from the copied default rather than
+    // copied from the source row, so the clone cannot inherit a stale mirror.
+    const defaultLocationId = locationIdFromValue(source.defaultValue);
     await ctx.db.insert('recipeFields', {
       organizationId: recipe.organizationId, recipeVersionId: versionId, fieldDefinitionId: source.fieldDefinitionId,
       position: source.position, required: source.required, visible: source.visible,
-      ...(source.defaultValue === undefined ? {} : { defaultValue: source.defaultValue }), config: source.config,
+      ...(source.defaultValue === undefined ? {} : { defaultValue: source.defaultValue }),
+      ...(defaultLocationId === undefined ? {} : { defaultLocationId }), config: source.config,
     });
   }
   return versionId;

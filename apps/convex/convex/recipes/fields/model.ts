@@ -2,6 +2,7 @@ import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import type { Doc, Id } from '../../_generated/dataModel';
 import { recordAuditEvent } from '../../audit/model';
 import { sameFieldConfig } from '../../fields/model';
+import { locationIdFromValue } from '../../fields/values';
 import { requireAuthenticatedUser, requireOrganizationMembership, requireOrganizationRole, type AuthenticatedUser, type OrganizationMembershipAccess } from '../../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../../lib/errors';
 import type { Role } from '../../lib/roles';
@@ -87,6 +88,8 @@ export async function addRecipeField(ctx: MutationCtx, args: AddRecipeFieldArgs)
   const siblings = await getVersionFields(ctx, version._id);
   if (siblings.length >= maxFieldsPerVersion) return invalidInput(`A recipe version cannot hold more than ${maxFieldsPerVersion} fields`);
   const position = args.position === undefined ? nextPosition(siblings) : availablePosition(siblings, args.position);
+  // The location mirror is derived from the default, never taken from args (I4).
+  const defaultLocationId = locationIdFromValue(args.defaultValue);
   const recipeFieldId = await ctx.db.insert('recipeFields', {
     organizationId: version.organizationId,
     recipeVersionId: version._id,
@@ -95,6 +98,7 @@ export async function addRecipeField(ctx: MutationCtx, args: AddRecipeFieldArgs)
     required: args.required,
     visible: args.visible,
     ...(args.defaultValue === undefined ? {} : { defaultValue: args.defaultValue }),
+    ...(defaultLocationId === undefined ? {} : { defaultLocationId }),
     config,
   });
   await recordAuditEvent(ctx, { organizationId: version.organizationId, actorUserId: access.user._id, action: 'recipeField.added', entityType: 'recipeField', entityId: recipeFieldId, metadata: { fieldDefinitionId: definition._id, position } });
@@ -121,11 +125,18 @@ export async function updateRecipeField(ctx: MutationCtx, args: UpdateRecipeFiel
   const defaultValue = args.defaultValue === undefined ? recipeField.defaultValue : args.defaultValue;
   if (defaultValue !== undefined && defaultValue !== null) await validateRecipeFieldDefaultValue(ctx, defaultValue, config, version.organizationId);
   const changedFields: string[] = [];
-  const patch: { required?: boolean; visible?: boolean; config?: FieldConfig; defaultValue?: EventFieldValue | undefined } = {};
+  const patch: { required?: boolean; visible?: boolean; config?: FieldConfig; defaultValue?: EventFieldValue | undefined; defaultLocationId?: Id<'locations'> | undefined } = {};
   if (required !== recipeField.required) { patch.required = required; changedFields.push('required'); }
   if (visible !== recipeField.visible) { patch.visible = visible; changedFields.push('visible'); }
   if (!sameFieldConfig(config, recipeField.config)) { patch.config = config; changedFields.push('config'); }
-  if (!sameFieldValue(defaultValue, recipeField.defaultValue)) { patch.defaultValue = defaultValue ?? undefined; changedFields.push('defaultValue'); }
+  // The mirror moves with the default in the same patch, including when the
+  // default is cleared or changed to a non-location value: `undefined` removes
+  // the column, so a stale mirror can never outlive the value it mirrors.
+  if (!sameFieldValue(defaultValue, recipeField.defaultValue)) {
+    patch.defaultValue = defaultValue ?? undefined;
+    patch.defaultLocationId = locationIdFromValue(defaultValue);
+    changedFields.push('defaultValue');
+  }
   if (changedFields.length === 0) return;
   await ctx.db.patch(recipeField._id, patch);
   await recordAuditEvent(ctx, { organizationId: version.organizationId, actorUserId: access.user._id, action: 'recipeField.updated', entityType: 'recipeField', entityId: recipeField._id, metadata: { changedFields: changedFields.join(',') } });

@@ -290,12 +290,12 @@ test('default values are held to the snapshot rules, including primitives and lo
   const locationField = await owner.mutation(createField, { organizationId, key: 'depot', label: 'Depot', config: { kind: 'location' } });
   const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Other', slug: 'recipe-fields-locations' });
   const locations = await t.run(async (ctx) => {
-    const missing = await ctx.db.insert('locations', { organizationId, name: 'Removed depot', status: 'active' as const });
+    const missing = await ctx.db.insert('locations', { organizationId, name: 'Removed depot', type: 'venue', status: 'active' as const });
     await ctx.db.delete(missing);
     return {
-      own: await ctx.db.insert('locations', { organizationId, name: 'Own depot', status: 'active' as const }),
-      archived: await ctx.db.insert('locations', { organizationId, name: 'Closed depot', status: 'archived' as const }),
-      foreign: await ctx.db.insert('locations', { organizationId: foreignOrganizationId, name: 'Their depot', status: 'active' as const }),
+      own: await ctx.db.insert('locations', { organizationId, name: 'Own depot', type: 'venue', status: 'active' as const }),
+      archived: await ctx.db.insert('locations', { organizationId, name: 'Closed depot', type: 'venue', status: 'archived' as const }),
+      foreign: await ctx.db.insert('locations', { organizationId: foreignOrganizationId, name: 'Their depot', type: 'venue', status: 'active' as const }),
       missing,
     };
   });

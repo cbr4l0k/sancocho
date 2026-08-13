@@ -33,11 +33,12 @@ export async function createProject(
   args: { organizationId: Id<'organizations'>; name: string; description?: string } & ProjectDates,
 ): Promise<Id<'projects'>> {
   const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
-  validateEntityName(args.name, 'project');
+  // The validator returns the trimmed name, and the trimmed name is what is stored.
+  const name = validateEntityName(args.name, 'project');
   validateProjectDates(args);
   const projectId = await ctx.db.insert('projects', {
     organizationId: args.organizationId,
-    name: args.name,
+    name,
     ...(args.description === undefined ? {} : { description: args.description }),
     ...(args.startsAt === undefined ? {} : { startsAt: args.startsAt }),
     ...(args.endsAt === undefined ? {} : { endsAt: args.endsAt }),
@@ -49,7 +50,7 @@ export async function createProject(
     action: 'project.created',
     entityType: 'project',
     entityId: projectId,
-    metadata: { name: args.name },
+    metadata: { name },
   });
   return projectId;
 }
@@ -82,9 +83,9 @@ export async function updateProject(
   if (project.status === 'archived') {
     return invalidInput('Archived projects cannot be updated');
   }
-  if (patch.name !== undefined) {
-    validateEntityName(patch.name, 'project');
-  }
+  // Validated (and therefore trimmed) before the diff, so what is compared
+  // against the stored name is exactly what would be stored.
+  const name = patch.name === undefined ? undefined : validateEntityName(patch.name, 'project');
   if (patch.status !== undefined) {
     assertProjectStatusTransition(project.status, patch.status);
   }
@@ -99,8 +100,8 @@ export async function updateProject(
   // columns are written and the audit row names what actually changed.
   const update: ProjectPatch = {};
   const changedFields: string[] = [];
-  if (patch.name !== undefined && patch.name !== project.name) {
-    update.name = patch.name;
+  if (name !== undefined && name !== project.name) {
+    update.name = name;
     changedFields.push('name');
   }
   if (patch.description !== undefined && patch.description !== project.description) {

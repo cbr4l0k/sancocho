@@ -2,7 +2,7 @@ import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 
 import { query } from '../_generated/server';
-import { roleValidator } from '../validators';
+import { paginatedResult, roleValidator } from '../validators';
 import {
   getOrganization as getOrganizationModel,
   listMembers as listMembersModel,
@@ -44,14 +44,6 @@ export const listMyOrganizations = query({
 
 export const listMembers = query({
   args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator },
-  returns: v.object({
-    page: v.array(v.object({ membership: membershipValidator, user: displayUserValidator })),
-    isDone: v.boolean(),
-    continueCursor: v.string(),
-    splitCursor: v.optional(v.union(v.string(), v.null())),
-    pageStatus: v.optional(
-      v.union(v.literal('SplitRecommended'), v.literal('SplitRequired'), v.null()),
-    ),
-  }),
+  returns: paginatedResult(v.object({ membership: membershipValidator, user: displayUserValidator })),
   handler: (ctx, args) => listMembersModel(ctx, args.organizationId, args.paginationOpts),
 });

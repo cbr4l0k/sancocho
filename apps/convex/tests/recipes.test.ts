@@ -144,9 +144,9 @@ test('every publish-time snapshot rule rejects before a version becomes immutabl
   const dateField = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'pickupDay', label: 'Pickup day', config: { kind: 'date' } });
   const locationField = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'depot', label: 'Depot', config: { kind: 'location' } });
   const locations = await t.run(async (ctx) => ({
-    own: await ctx.db.insert('locations', { organizationId, name: 'Own depot', status: 'active' }),
-    archived: await ctx.db.insert('locations', { organizationId, name: 'Closed depot', status: 'archived' }),
-    foreign: await ctx.db.insert('locations', { organizationId: foreignOrganizationId, name: 'Their depot', status: 'active' }),
+    own: await ctx.db.insert('locations', { organizationId, name: 'Own depot', type: 'venue', status: 'active' }),
+    archived: await ctx.db.insert('locations', { organizationId, name: 'Closed depot', type: 'venue', status: 'archived' }),
+    foreign: await ctx.db.insert('locations', { organizationId: foreignOrganizationId, name: 'Their depot', type: 'venue', status: 'active' }),
   }));
 
   const draft = await owner.client.mutation(createInitialDraftVersion, { recipeId });

@@ -1,3 +1,4 @@
+import type { Id } from '../_generated/dataModel';
 import { invalidInput } from '../lib/errors';
 import {
   isFiniteNumber,
@@ -9,6 +10,26 @@ import {
 
 type FieldConfig = typeof fieldConfigValidator.type;
 type FieldValue = typeof eventFieldValueValidator.type;
+
+/**
+ * The single derivation of a stored location-mirror column from a typed value.
+ *
+ * Two tables denormalize the location a value points at so that locations can
+ * be checked for references through an index instead of a table scan:
+ * `recipeFields.defaultLocationId` (configuration defaults) and
+ * `eventFieldValues.locationId` (operational data). Both are server-derived
+ * from the value beside them and are never client-supplied (I4).
+ *
+ * EVERY write path that stores or clears one of those value columns must set
+ * the mirror from this helper in the same patch — including clears, where it
+ * returns `undefined` and the mirror must be removed. A path that forgets it
+ * leaves a location deletable while a row still references it, which for an
+ * immutable published version means a permanently unusable version (I2/I3).
+ * Issue #10's event-value writes consume this helper for the second mirror.
+ */
+export function locationIdFromValue(value: FieldValue | null | undefined): Id<'locations'> | undefined {
+  return value?.kind === 'location' ? value.locationId : undefined;
+}
 
 /**
  * The single statement of "does this typed value satisfy this field config?".

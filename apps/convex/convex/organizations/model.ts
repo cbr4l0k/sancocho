@@ -22,8 +22,9 @@ export function validateOrganizationSlug(slug: string): void {
   }
 }
 
-export function validateOrganizationName(name: string): void {
-  validateEntityName(name, 'organization');
+/** Returns the trimmed name; callers store what they get back, never the raw argument. */
+export function validateOrganizationName(name: string): string {
+  return validateEntityName(name, 'organization');
 }
 
 export async function createOrganization(
@@ -32,7 +33,7 @@ export async function createOrganization(
 ): Promise<Id<'organizations'>> {
   const { user } = await requireAuthenticatedUser(ctx);
   validateOrganizationSlug(args.slug);
-  validateOrganizationName(args.name);
+  const name = validateOrganizationName(args.name);
 
   // Indexed read-before-write is race-safe under Convex serializable OCC (§10).
   // Note: slugs are a deployment-wide namespace, so a conflict necessarily
@@ -46,7 +47,7 @@ export async function createOrganization(
   }
 
   const organizationId = await ctx.db.insert('organizations', {
-    name: args.name,
+    name,
     slug: args.slug,
   });
   const membershipId = await ctx.db.insert('organizationMemberships', {
@@ -87,15 +88,15 @@ export async function updateOrganization(
   if (args.name === undefined) {
     return;
   }
-  validateOrganizationName(args.name);
-  await ctx.db.patch(args.organizationId, { name: args.name });
+  const name = validateOrganizationName(args.name);
+  await ctx.db.patch(args.organizationId, { name });
   await recordAuditEvent(ctx, {
     organizationId: args.organizationId,
     actorUserId: user._id,
     action: 'organization.updated',
     entityType: 'organization',
     entityId: args.organizationId,
-    metadata: { name: args.name },
+    metadata: { name },
   });
 }
 

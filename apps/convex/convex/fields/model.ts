@@ -68,11 +68,11 @@ export async function createBuiltinFieldDefinition(
   ctx: MutationCtx,
   args: { key: string; label: string; description?: string; semanticType?: SemanticType; config: FieldConfig },
 ): Promise<Id<'fieldDefinitions'>> {
-  await assertValidNewField(ctx, undefined, args);
+  const label = await assertValidNewField(ctx, undefined, args);
   return ctx.db.insert('fieldDefinitions', {
     scope: 'builtin',
     key: args.key,
-    label: args.label,
+    label,
     ...(args.description === undefined ? {} : { description: args.description }),
     ...(args.semanticType === undefined ? {} : { semanticType: args.semanticType }),
     config: args.config,
@@ -85,12 +85,12 @@ export async function createFieldDefinition(
   args: { organizationId: Id<'organizations'>; key: string; label: string; description?: string; semanticType?: SemanticType; config: FieldConfig },
 ): Promise<Id<'fieldDefinitions'>> {
   const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
-  await assertValidNewField(ctx, args.organizationId, args);
+  const label = await assertValidNewField(ctx, args.organizationId, args);
   const fieldDefinitionId = await ctx.db.insert('fieldDefinitions', {
     scope: 'organization',
     organizationId: args.organizationId,
     key: args.key,
-    label: args.label,
+    label,
     ...(args.description === undefined ? {} : { description: args.description }),
     ...(args.semanticType === undefined ? {} : { semanticType: args.semanticType }),
     config: args.config,
@@ -150,7 +150,8 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
     return invalidInput('Fields referenced by published or retired recipe versions may only update label or description');
   }
   if (update.label !== undefined) {
-    validateEntityName(update.label, 'field');
+    // Store the trimmed label the validator returns, never the raw argument.
+    update.label = validateEntityName(update.label, 'field');
   }
   if (update.description !== undefined) {
     assertValidDescription(update.description);
@@ -251,16 +252,18 @@ async function requireOrganizationFieldAccess(
   return { field: { ...field, scope: 'organization', organizationId: field.organizationId }, access };
 }
 
+/** Returns the trimmed label, which is what the caller must store. */
 async function assertValidNewField(
   ctx: MutationCtx,
   organizationId: Id<'organizations'> | undefined,
   args: { key: string; label: string; description?: string; semanticType?: SemanticType; config: FieldConfig },
-): Promise<void> {
-  validateEntityName(args.label, 'field');
+): Promise<string> {
+  const label = validateEntityName(args.label, 'field');
   assertValidDescription(args.description);
   await assertKeyAvailable(ctx, organizationId, args.key);
   assertValidFieldConfig(args.config);
   assertSemanticCompatibility(args.semanticType, args.config);
+  return label;
 }
 
 /**

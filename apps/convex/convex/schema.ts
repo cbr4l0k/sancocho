@@ -10,6 +10,7 @@ import {
   eventStatusValidator,
   fieldConfigValidator,
   fieldDefinitionFields,
+  locationFields,
   recipeStatusValidator,
   recipeVersionStatusValidator,
   projectFields,
@@ -85,6 +86,13 @@ export default defineSchema({
     required: v.boolean(),
     visible: v.boolean(),
     defaultValue: v.optional(eventFieldValueValidator),
+    // Mirror of defaultValue.locationId when kind === 'location', derived
+    // server-side from the value beside it and never client-supplied (I4).
+    // Gives locations an indexed reference check over configuration defaults,
+    // so a location a published (immutable) version defaults to can never be
+    // deleted out from under it. Every write path to `defaultValue` MUST set
+    // this column through `locationIdFromValue` in fields/values.ts.
+    defaultLocationId: v.optional(v.id('locations')),
     // Snapshot of the field's config (data type, rules, options), taken when the
     // row is composed into a DRAFT version — so a draft may narrow the definition
     // (tighter bounds, a subset of options) for this recipe. Publishing validates
@@ -98,7 +106,10 @@ export default defineSchema({
     .index('by_version', ['recipeVersionId'])
     // Supports "is this field definition referenced by any (published)
     // version?" for the immutability trigger and protected deletes.
-    .index('by_field', ['fieldDefinitionId']),
+    .index('by_field', ['fieldDefinitionId'])
+    // Supports the first-hit "is this location referenced by any recipe field
+    // default?" guard in locations/model.ts deleteLocation.
+    .index('by_defaultLocation', ['defaultLocationId']),
 
   events: defineTable({
     organizationId: v.id('organizations'),
@@ -125,20 +136,16 @@ export default defineSchema({
     value: eventFieldValueValidator,
     // Mirror of value.locationId when kind === 'location' (server-derived);
     // gives locations an indexed reference check before archival/deletion.
+    // Every write path to `value` MUST set this column through
+    // `locationIdFromValue` in fields/values.ts — see its doc comment. Issue
+    // #10 owns the first (and so far only) writer of this table.
     locationId: v.optional(v.id('locations')),
   })
     .index('by_event_field', ['eventId', 'fieldDefinitionId'])
     .index('by_field', ['fieldDefinitionId'])
     .index('by_location', ['locationId']),
 
-  locations: defineTable({
-    organizationId: v.id('organizations'),
-    name: v.string(),
-    address: v.optional(v.string()),
-    latitude: v.optional(v.number()),
-    longitude: v.optional(v.number()),
-    status: archivalStatusValidator,
-  }).index('by_org', ['organizationId']),
+  locations: defineTable(locationFields).index('by_org', ['organizationId']),
 
   eventRelationships: defineTable({
     organizationId: v.id('organizations'),

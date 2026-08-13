@@ -2,7 +2,7 @@ import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 
 import { query } from '../_generated/server';
-import { fieldDefinitionFields } from '../validators';
+import { fieldDefinitionFields, paginatedResult } from '../validators';
 import { listBuiltinFieldDefinitions as listBuiltinFieldDefinitionsModel, listFieldDefinitions as listFieldDefinitionsModel } from './model';
 
 // Built from the same field definition the table is built from, so the
@@ -13,13 +13,7 @@ const fieldDefinitionDocValidator = v.object({
   ...fieldDefinitionFields,
 });
 
-const paginatedFieldsValidator = v.object({
-  page: v.array(fieldDefinitionDocValidator),
-  isDone: v.boolean(),
-  continueCursor: v.string(),
-  splitCursor: v.optional(v.union(v.string(), v.null())),
-  pageStatus: v.optional(v.union(v.literal('SplitRecommended'), v.literal('SplitRequired'), v.null())),
-});
+const paginatedFieldsValidator = paginatedResult(fieldDefinitionDocValidator);
 
 export const listFieldDefinitions = query({
   args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator },

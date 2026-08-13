@@ -1,4 +1,22 @@
-import { v } from 'convex/values';
+import { v, type Validator } from 'convex/values';
+
+/**
+ * The Convex pagination envelope, stated once for every paginated public query.
+ *
+ * The shape must match `PaginationResult` exactly — a `returns` validator that
+ * omits `splitCursor`/`pageStatus` rejects legitimate pages at runtime. It was
+ * previously copied into five query modules, so a fix to one could silently
+ * leave the other four wrong; this is the single definition they all build on.
+ */
+export function paginatedResult<DocValidator extends Validator<unknown, 'required', string>>(docValidator: DocValidator) {
+  return v.object({
+    page: v.array(docValidator),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+    splitCursor: v.optional(v.union(v.string(), v.null())),
+    pageStatus: v.optional(v.union(v.literal('SplitRecommended'), v.literal('SplitRequired'), v.null())),
+  });
+}
 
 export const roleValidator = v.union(
   v.literal('owner'),
@@ -39,6 +57,17 @@ export const projectStatusValidator = v.union(
 );
 export const fieldDefinitionStatusValidator = archivalStatusValidator;
 
+/** Code-owned location taxonomy; locations are reference data, never free-form types. */
+export const locationTypeValidator = v.union(
+  v.literal('airport'),
+  v.literal('hotel'),
+  v.literal('venue'),
+  v.literal('office'),
+  v.literal('station'),
+  v.literal('depot'),
+  v.literal('custom'),
+);
+
 /**
  * Single definition of the projects table shape: `schema.ts` builds the table
  * from it and the public queries build their `returns` validator from it, so
@@ -57,6 +86,23 @@ export const projectDocValidator = v.object({
   _id: v.id('projects'),
   _creationTime: v.number(),
   ...projectFields,
+});
+
+/** Shared persisted and returned shape for organization-owned locations. */
+export const locationFields = {
+  organizationId: v.id('organizations'),
+  name: v.string(),
+  type: locationTypeValidator,
+  address: v.optional(v.string()),
+  latitude: v.optional(v.number()),
+  longitude: v.optional(v.number()),
+  status: archivalStatusValidator,
+};
+
+export const locationDocValidator = v.object({
+  _id: v.id('locations'),
+  _creationTime: v.number(),
+  ...locationFields,
 });
 
 /** Built-in vs org-owned field definitions; must agree with organizationId presence. */
@@ -201,6 +247,7 @@ export const auditActionValidator = v.union(
   v.literal('location.created'),
   v.literal('location.updated'),
   v.literal('location.archived'),
+  v.literal('location.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
 );
