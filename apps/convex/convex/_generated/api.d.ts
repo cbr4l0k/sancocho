@@ -8,13 +8,17 @@
  * @module
  */
 
+import type * as validators_index from "../validators/index.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  "validators/index": typeof validators_index;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
