@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+coverage/
+*.tsbuildinfo
+
+# Convex generated API and data-model types are committed so source imports work
+# immediately after checkout. Local deployment metadata and environment files are not.
+apps/convex/.env.local
+apps/convex/convex/.env.local
+apps/convex/convex/_generated/.cache/

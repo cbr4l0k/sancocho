@@ -1,0 +1,13 @@
+{
+  "name": "sancocho",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "codegen": "bun run --cwd apps/convex codegen",
+    "typecheck": "bun run --cwd apps/convex typecheck && bun run --cwd packages/shared typecheck",
+    "test": "bun run --cwd apps/convex test"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@sancocho/convex",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "codegen": "convex codegen",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "convex": "^1.42.3"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "convex-test": "^0.0.54",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}
