@@ -183,6 +183,38 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
   await ctx.db.delete(locationId);
 }
 
+/**
+ * The single statement of "may this organization store a reference to this
+ * location?": it must exist, belong to that organization, and still be active.
+ *
+ * Both writers of a location reference use it — `recipeFields.defaultValue`
+ * (configuration defaults, at publish and composition) and
+ * `eventFieldValues.value` (operational data, through the event validation
+ * gate) — so a default and a stored value can never be held to different
+ * reference rules. The pure `validateFieldValueAgainstConfig` deliberately
+ * stops at the discriminator; this is the half that needs a database read.
+ *
+ * Failure is always the generic error, never a specific one: the location id
+ * arrives from the caller, so a foreign, archived, or fabricated id must be
+ * indistinguishable or publishing and event creation become tenant probes
+ * (I1/I9).
+ *
+ * It lives here rather than beside the pure value helpers because it is a
+ * statement about the location lifecycle, and because the import direction only
+ * works this way: `recipes/` and `events/` already depend on `locations/`, and
+ * nothing under `locations/` depends on either.
+ */
+export async function assertUsableLocation(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  locationId: Id<'locations'>,
+  organizationId: Id<'organizations'>,
+): Promise<void> {
+  const location = await ctx.db.get(locationId);
+  if (location === null || location.organizationId !== organizationId || location.status === 'archived') {
+    return notFoundOrInaccessible();
+  }
+}
+
 /** Authenticates before lookup so foreign and fabricated ids stay indistinguishable (I9). */
 export async function requireLocationAccess(
   ctx: QueryCtx | MutationCtx,

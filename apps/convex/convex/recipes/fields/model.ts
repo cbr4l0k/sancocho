@@ -2,7 +2,7 @@ import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import type { Doc, Id } from '../../_generated/dataModel';
 import { recordAuditEvent } from '../../audit/model';
 import { sameFieldConfig } from '../../fields/model';
-import { locationIdFromValue } from '../../fields/values';
+import { locationIdFromValue, sameFieldValue } from '../../fields/values';
 import { requireAuthenticatedUser, requireOrganizationMembership, requireOrganizationRole, type AuthenticatedUser, type OrganizationMembershipAccess } from '../../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../../lib/errors';
 import type { Role } from '../../lib/roles';
@@ -210,40 +210,3 @@ function availablePosition(siblings: Doc<'recipeFields'>[], position: number): n
   return position;
 }
 
-/**
- * Structural equality over the value union, mirroring `sameFieldConfig`.
- * `JSON.stringify` was key-order sensitive, so an identical default whose
- * properties happened to arrive in a different order read as a change — a
- * spurious patch and audit row on what is really a no-op update.
- *
- * `null` and `undefined` both mean "no default": clearing an absent default is
- * a no-op, matching the mutation's documented `defaultValue: null` semantics.
- */
-function sameFieldValue(left: EventFieldValue | undefined | null, right: EventFieldValue | undefined): boolean {
-  if (left === null || left === undefined) return right === undefined;
-  if (right === undefined) return false;
-  switch (left.kind) {
-    case 'text':
-      return right.kind === 'text' && left.value === right.value;
-    case 'longText':
-      return right.kind === 'longText' && left.value === right.value;
-    case 'number':
-      return right.kind === 'number' && left.value === right.value;
-    case 'boolean':
-      return right.kind === 'boolean' && left.value === right.value;
-    case 'date':
-      return right.kind === 'date' && left.value === right.value;
-    case 'datetime':
-      return right.kind === 'datetime' && left.value === right.value;
-    case 'time':
-      return right.kind === 'time' && left.value === right.value;
-    case 'select':
-      return right.kind === 'select' && left.optionId === right.optionId;
-    case 'multiSelect':
-      // Compared positionally: the stored array is written back verbatim, so a
-      // reordered selection is a real change to the stored default.
-      return right.kind === 'multiSelect' && left.optionIds.length === right.optionIds.length && left.optionIds.every((optionId, index) => optionId === right.optionIds[index]);
-    case 'location':
-      return right.kind === 'location' && left.locationId === right.locationId;
-  }
-}

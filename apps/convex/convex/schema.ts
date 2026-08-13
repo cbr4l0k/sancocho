@@ -7,7 +7,7 @@ import {
   auditEntityTypeValidator,
   auditMetadataValidator,
   eventFieldValueValidator,
-  eventStatusValidator,
+  eventFields,
   fieldConfigValidator,
   fieldDefinitionFields,
   locationFields,
@@ -111,17 +111,10 @@ export default defineSchema({
     // default?" guard in locations/model.ts deleteLocation.
     .index('by_defaultLocation', ['defaultLocationId']),
 
-  events: defineTable({
-    organizationId: v.id('organizations'),
-    projectId: v.id('projects'),
-    // Derived from recipeVersionId server-side (I4); never client-supplied.
-    recipeId: v.id('eventRecipes'),
-    recipeVersionId: v.id('recipeVersions'),
-    name: v.string(),
-    status: eventStatusValidator,
-    startsAt: v.number(),
-    endsAt: v.optional(v.number()),
-  })
+  // Field shape lives in validators/ so the table and the public `returns`
+  // validator are built from the same definition. `recipeId` is derived from
+  // `recipeVersionId` server-side (I4); never client-supplied.
+  events: defineTable(eventFields)
     .index('by_project', ['projectId'])
     .index('by_project_startsAt', ['projectId', 'startsAt'])
     .index('by_org_startsAt', ['organizationId', 'startsAt'])

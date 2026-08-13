@@ -9,6 +9,7 @@ import { requireAuthenticatedUser, requireOrganizationMembership, requireOrganiz
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
+import { assertUsableLocation } from '../locations/model';
 import type { fieldConfigValidator, eventFieldValueValidator } from '../validators';
 
 type FieldConfig = typeof fieldConfigValidator.type;
@@ -314,8 +315,8 @@ async function validateDraftFields(ctx: MutationCtx, version: Doc<'recipeVersion
 export async function validateRecipeFieldDefaultValue(ctx: MutationCtx, value: EventFieldValue, config: FieldConfig, organizationId: Id<'organizations'>): Promise<void> {
   validateFieldValueAgainstConfig(config, value);
   if (value.kind !== 'location') return;
-  const location = await ctx.db.get(value.locationId);
-  if (location === null || location.organizationId !== organizationId || location.status === 'archived') return notFoundOrInaccessible();
+  // Same reference rule the event value gate applies, stated once in locations/model.ts.
+  await assertUsableLocation(ctx, value.locationId, organizationId);
 }
 
 function validateRecipeKey(key: string): void {

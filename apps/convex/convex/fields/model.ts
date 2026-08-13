@@ -231,6 +231,17 @@ export async function listBuiltinFieldDefinitions(ctx: QueryCtx, paginationOpts:
  * than by the field's total recipe usage — which grows by one row per published
  * version and is never pruned (I6 in spirit: no unbounded materialization).
  * Retired versions count because they remain historically interpretable (I3).
+ *
+ * CROSS-MODULE COUPLING — read with `getEvent` in events/model.ts. That query
+ * joins `key` and `label` from the LIVE definition onto an event's stored
+ * values. Including retired versions here is precisely what makes the `key` half
+ * of that join safe: an event can only reference a published or retired version,
+ * so counting both freezes the key of every definition any event could reference,
+ * for that event's whole lifetime. Narrowing this to published-only would let a
+ * retired version's definition be re-keyed, and every historical event would
+ * silently start reporting a different key for the same stored value — I3 broken
+ * with nothing failing here. `label` is deliberately left mutable: it is a
+ * display string with no identity meaning.
  */
 export async function isReferencedByPublishedVersion(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>): Promise<boolean> {
   for await (const reference of ctx.db.query('recipeFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId))) {

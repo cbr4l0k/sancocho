@@ -105,6 +105,34 @@ export const locationDocValidator = v.object({
   ...locationFields,
 });
 
+/**
+ * Single definition of the events table shape: `schema.ts` builds the table from
+ * it and the public queries build their `returns` validator from it, so the
+ * stored document and the documented API contract cannot drift. It was declared
+ * twice — once per side — and a column added to one would have silently been
+ * rejected by the other at runtime.
+ *
+ * `recipeId` is derived from `recipeVersionId` server-side and `organizationId`
+ * from the stored entity graph (I4); neither is ever accepted from client args,
+ * which is why no public mutation validator repeats them.
+ */
+export const eventFields = {
+  organizationId: v.id('organizations'),
+  projectId: v.id('projects'),
+  recipeId: v.id('eventRecipes'),
+  recipeVersionId: v.id('recipeVersions'),
+  name: v.string(),
+  status: eventStatusValidator,
+  startsAt: v.number(),
+  endsAt: v.optional(v.number()),
+};
+
+export const eventDocValidator = v.object({
+  _id: v.id('events'),
+  _creationTime: v.number(),
+  ...eventFields,
+});
+
 /** Built-in vs org-owned field definitions; must agree with organizationId presence. */
 export const fieldScopeValidator = v.union(v.literal('builtin'), v.literal('organization'));
 

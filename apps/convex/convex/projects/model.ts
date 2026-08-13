@@ -139,13 +139,29 @@ export async function updateProject(
   });
 }
 
+/**
+ * Archiving is deliberately allowed no matter how many Events the project holds,
+ * and it is what makes those Events read-only.
+ *
+ * The alternative — refusing to archive a project that has events — was
+ * rejected: a project with events is exactly the project worth archiving, and a
+ * reference guard would make the most-used projects the only unarchivable ones.
+ * Events are never hard-deleted and there is no cascade, so archival freezes
+ * rather than destroys: the events stay readable, listable, and interpretable
+ * under their own recipe versions forever.
+ *
+ * The enforcing half of this policy lives in events/model.ts
+ * (`assertProjectAcceptsEventWrites`), which refuses every event write — field
+ * edits, core-field edits, and status transitions including cancellation — for an
+ * archived project. The two doors must agree: relaxing one without the other
+ * either leaves archived projects quietly mutable or makes them un-archivable.
+ */
 export async function archiveProject(ctx: MutationCtx, projectId: Id<'projects'>): Promise<void> {
   const { project, access } = await requireProjectAccess(ctx, projectId, 'planner');
   // Idempotent: re-archiving neither re-patches nor writes a second audit row.
   if (project.status === 'archived') {
     return;
   }
-  // Future work (#10): check events through events.by_project before lifecycle expansion.
   await ctx.db.patch(projectId, { status: 'archived' });
   await recordAuditEvent(ctx, {
     organizationId: project.organizationId,
@@ -185,9 +201,12 @@ export async function requireProjectAccess(
 /**
  * The only status policy statement for projects. draft | active | completed may
  * move between each other freely for now — no forward-only lifecycle is
- * specified yet. Archiving is deliberately not reachable here: it is its own
- * operation so it keeps its own audit action and its future
- * events-reference guard. Archived is terminal; unarchiving is unsupported.
+ * specified yet — though `completed` does stop the project from receiving NEW
+ * events (see `assertProjectAcceptsNewEvents` in events/model.ts), while leaving
+ * the events it already has editable. Archiving is deliberately not reachable
+ * here: it is its own operation so it keeps its own audit action and its
+ * documented read-only-events policy. Archived is terminal; unarchiving is
+ * unsupported.
  */
 function assertProjectStatusTransition(current: ProjectStatus, next: ProjectStatus): void {
   if (current === 'archived') {

@@ -32,6 +32,47 @@ export function locationIdFromValue(value: FieldValue | null | undefined): Id<'l
 }
 
 /**
+ * Structural equality over the value union, mirroring `sameFieldConfig`.
+ * `JSON.stringify` was key-order sensitive, so an identical value whose
+ * properties happened to arrive in a different order read as a change — a
+ * spurious patch and audit row on what is really a no-op write.
+ *
+ * `null` and `undefined` both mean "no value", so clearing an absent one is a
+ * no-op. Two callers share it, and they must agree: `recipeFields.defaultValue`
+ * (is this default actually different?) and `eventFieldValues.value` (is this
+ * submitted value actually a change worth auditing?). A looser comparison in
+ * either place produces audit rows describing edits that never happened.
+ */
+export function sameFieldValue(left: FieldValue | undefined | null, right: FieldValue | undefined | null): boolean {
+  if (left === null || left === undefined) return right === null || right === undefined;
+  if (right === null || right === undefined) return false;
+  switch (left.kind) {
+    case 'text':
+      return right.kind === 'text' && left.value === right.value;
+    case 'longText':
+      return right.kind === 'longText' && left.value === right.value;
+    case 'number':
+      return right.kind === 'number' && left.value === right.value;
+    case 'boolean':
+      return right.kind === 'boolean' && left.value === right.value;
+    case 'date':
+      return right.kind === 'date' && left.value === right.value;
+    case 'datetime':
+      return right.kind === 'datetime' && left.value === right.value;
+    case 'time':
+      return right.kind === 'time' && left.value === right.value;
+    case 'select':
+      return right.kind === 'select' && left.optionId === right.optionId;
+    case 'multiSelect':
+      // Compared positionally: the stored array is written back verbatim, so a
+      // reordered selection is a real change to the stored value.
+      return right.kind === 'multiSelect' && left.optionIds.length === right.optionIds.length && left.optionIds.every((optionId, index) => optionId === right.optionIds[index]);
+    case 'location':
+      return right.kind === 'location' && left.locationId === right.locationId;
+  }
+}
+
+/**
  * The single statement of "does this typed value satisfy this field config?".
  *
  * The config passed in is always the rule set that owns the value: the
