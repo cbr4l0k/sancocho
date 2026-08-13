@@ -183,6 +183,7 @@ export const auditActionValidator = v.union(
   v.literal('fieldDefinition.created'),
   v.literal('fieldDefinition.updated'),
   v.literal('fieldDefinition.archived'),
+  v.literal('fieldDefinition.deleted'),
   v.literal('recipe.created'),
   v.literal('recipe.updated'),
   v.literal('recipe.archived'),
@@ -225,7 +226,11 @@ export const auditMetadataValidator = v.record(
 
 export type FieldDataType = typeof fieldDataTypeValidator.type;
 
-type SemanticCapability =
+/**
+ * Code-owned capability vocabulary. Exported so callers receive a narrow union
+ * instead of `string` and can never match capabilities by free-form comparison (I8).
+ */
+export type SemanticCapability =
   | 'eventName'
   | 'eventDescription'
   | 'eventDate'
@@ -264,3 +269,25 @@ type AssertSameKeys = typeof semanticTypeValidator.type extends SemanticType
   : never;
 const _semanticKeysInSync: AssertSameKeys = true;
 void _semanticKeysInSync;
+
+/**
+ * Single definition of the fieldDefinitions table shape: `schema.ts` builds the
+ * table from it and the public queries build their `returns` validator from it,
+ * so the stored document and the documented API contract cannot drift.
+ *
+ * Declared here (after `semanticTypeValidator`) rather than beside
+ * `projectFields` only because it references validators defined further down.
+ */
+export const fieldDefinitionFields = {
+  // scope must agree with organizationId presence: builtin ⇔ organizationId
+  // absent. Enforced by the field-creation helpers in fields/model.ts.
+  scope: fieldScopeValidator,
+  organizationId: v.optional(v.id('organizations')),
+  key: v.string(),
+  label: v.string(),
+  description: v.optional(v.string()),
+  status: fieldDefinitionStatusValidator,
+  semanticType: v.optional(semanticTypeValidator),
+  // Data type + rules + options bound in one discriminated union.
+  config: fieldConfigValidator,
+};

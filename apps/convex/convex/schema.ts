@@ -9,13 +9,12 @@ import {
   eventFieldValueValidator,
   eventStatusValidator,
   fieldConfigValidator,
-  fieldScopeValidator,
+  fieldDefinitionFields,
   recipeStatusValidator,
   recipeVersionStatusValidator,
   projectFields,
   relationshipTypeValidator,
   roleValidator,
-  semanticTypeValidator,
 } from './validators';
 
 /**
@@ -53,19 +52,9 @@ export default defineSchema({
   // validator are built from the same definition.
   projects: defineTable(projectFields).index('by_org', ['organizationId']),
 
-  fieldDefinitions: defineTable({
-    // scope must agree with organizationId presence: builtin ⇔ organizationId
-    // absent. Enforced by the field-creation helper (issue #7).
-    scope: fieldScopeValidator,
-    organizationId: v.optional(v.id('organizations')),
-    key: v.string(),
-    label: v.string(),
-    description: v.optional(v.string()),
-    status: archivalStatusValidator,
-    semanticType: v.optional(semanticTypeValidator),
-    // Data type + rules + options bound in one discriminated union.
-    config: fieldConfigValidator,
-  })
+  // Field shape lives in validators/ so the table and the public `returns`
+  // validator are built from the same definition.
+  fieldDefinitions: defineTable(fieldDefinitionFields)
     .index('by_org_key', ['organizationId', 'key'])
     .index('by_org', ['organizationId']),
 
