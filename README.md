@@ -130,7 +130,7 @@ local path is untested for `--prod`-style workflows here.
 | Variable | Lives in | Required for | Notes |
 | --- | --- | --- | --- |
 | `CLERK_JWT_ISSUER_DOMAIN` | Convex deployment env (`convex env set`) | Every push, `codegen`, and all auth | Read by `convex/auth.config.ts`, which throws when it is unset or empty |
-| `SANCOCHO_ENABLE_SEED` | Convex deployment env | The three seed mutations | Must be exactly the string `true`; see [Seeding](#seeding) |
+| `SANCOCHO_ENABLE_SEED` | Convex deployment env | The three seed mutations and `fields.createBuiltinFieldDefinition` | Must be exactly the string `true`; see [Seeding](#seeding) |
 | `CONVEX_DEPLOYMENT`, `CONVEX_URL`, `CONVEX_SITE_URL` | `apps/convex/.env.local` | CLI deployment targeting | Written by the CLI; gitignored; never edited by hand |
 | `CONVEX_AGENT_MODE=anonymous` | Shell, for `convex dev` only | The local no-account deployment | Beta |
 

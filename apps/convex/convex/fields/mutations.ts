@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 
 import { internalMutation, mutation } from '../_generated/server';
+import { assertSeedingEnabled } from '../lib/seedGuard';
 import { fieldConfigValidator, semanticTypeValidator } from '../validators';
 import {
   archiveFieldDefinition as archiveFieldDefinitionModel,
@@ -18,10 +19,20 @@ const fieldInputArgs = {
   config: fieldConfigValidator,
 };
 
+/**
+ * Guarded by the same deployment opt-in as the seed mutations, and for the same
+ * reason: creating a built-in permanently squats its key in EVERY tenant's
+ * namespace (see the shadow probe in `fields/model.ts:assertKeyAvailable`) and
+ * there is no way to unsquat it. Being `internalMutation` is not the guard —
+ * anyone who can run `convex run --prod` reaches an internal function.
+ */
 export const createBuiltinFieldDefinition = internalMutation({
   args: fieldInputArgs,
   returns: v.id('fieldDefinitions'),
-  handler: (ctx, args) => createBuiltinFieldDefinitionModel(ctx, args),
+  handler: (ctx, args) => {
+    assertSeedingEnabled();
+    return createBuiltinFieldDefinitionModel(ctx, args);
+  },
 });
 
 export const createFieldDefinition = mutation({

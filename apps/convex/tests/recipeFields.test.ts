@@ -5,7 +5,10 @@ import { api, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
 import type { fieldConfigValidator } from '../convex/validators';
-import { modules } from './helpers';
+import { enableSeedMutations, modules } from './helpers';
+
+// One test composes a BUILT-IN definition, which shares the seed opt-in.
+enableSeedMutations();
 
 const issuer = 'https://example.clerk.accounts.dev';
 const identity = (subject: string) => ({ issuer, subject, name: subject, email: `${subject}@example.com`, emailVerified: true });
@@ -55,7 +58,7 @@ function storedRows(t: SchemaTest, recipeVersionId: Id<'recipeVersions'>): Promi
 }
 
 test('draft composition validates configs/defaults, ordering, and writes transactional audit rows', async () => {
-  const { t, owner, organizationId, versionId } = await fixture();
+  const { t, owner, ownerUserId, organizationId, versionId } = await fixture();
   const select = await owner.mutation(createField, { organizationId, key: 'guestType', label: 'Guest type', config: { kind: 'select', options: [{ id: 'vip', label: 'VIP' }, { id: 'standard', label: 'Standard' }] } });
   const text = await owner.mutation(createField, { organizationId, key: 'eventCode', label: 'Code', config: textConfig });
   await expect(owner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: select, required: false, visible: true, config: { kind: 'number' } })).rejects.toMatchObject({ data: 'Recipe field config kind must match the current field definition' });
@@ -76,8 +79,39 @@ test('draft composition validates configs/defaults, ordering, and writes transac
   await owner.mutation(remove, { recipeFieldId: textRow });
   await t.run(async (ctx) => {
     const audits = await ctx.db.query('auditEvents').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
-    expect(audits.filter((audit) => ['recipeField.added', 'recipeField.updated', 'recipeField.removed', 'recipeVersion.fieldsReordered'].includes(audit.action)).map((audit) => [audit.action, audit.organizationId, audit.actorUserId])).toHaveLength(5);
+    // The composition trail in order, each row attributed to this tenant and this
+    // actor: two adds, the reorder, the default cleared, the removal.
+    expect(
+      audits
+        .filter((audit) => ['recipeField.added', 'recipeField.updated', 'recipeField.removed', 'recipeVersion.fieldsReordered'].includes(audit.action))
+        .map((audit) => [audit.action, audit.organizationId, audit.actorUserId]),
+    ).toEqual([
+      ['recipeField.added', organizationId, ownerUserId],
+      ['recipeField.added', organizationId, ownerUserId],
+      ['recipeVersion.fieldsReordered', organizationId, ownerUserId],
+      ['recipeField.updated', organizationId, ownerUserId],
+      ['recipeField.removed', organizationId, ownerUserId],
+    ]);
   });
+});
+
+test('a planner — the role floor itself — can add, update, reorder and remove recipe fields', async () => {
+  const { t, owner, organizationId, versionId } = await fixture();
+  const planner = t.withIdentity(identity('field-planner'));
+  const plannerUserId = await planner.mutation(api.auth.mutations.ensureUser, {});
+  await owner.mutation(addMember, { organizationId, userId: plannerUserId, role: 'planner' });
+  const first = await owner.mutation(createField, { organizationId, key: 'eventCode', label: 'Code', config: textConfig });
+  const second = await owner.mutation(createField, { organizationId, key: 'guestType', label: 'Guest type', config: textConfig });
+
+  // Composition is planner+, not admin+: assembling a draft is authoring work.
+  // Asserted from the floor rank itself, so raising the floor to admin fails here
+  // instead of passing on the owner's back.
+  const firstRow = await planner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: first, required: false, visible: true });
+  const secondRow = await planner.mutation(add, { recipeVersionId: versionId, fieldDefinitionId: second, required: false, visible: true });
+  await expect(planner.mutation(update, { recipeFieldId: firstRow, required: true, visible: true })).resolves.toBeNull();
+  await expect(planner.mutation(reorder, { recipeVersionId: versionId, orderedRecipeFieldIds: [secondRow, firstRow] })).resolves.toBeNull();
+  await expect(planner.mutation(remove, { recipeFieldId: firstRow })).resolves.toBeNull();
+  expect((await planner.query(list, { recipeVersionId: versionId })).map((row) => [row._id, row.position])).toEqual([[secondRow, 0]]);
 });
 
 test('published and retired rows are immutable while a clone has independent draft rows', async () => {

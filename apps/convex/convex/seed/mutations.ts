@@ -7,17 +7,13 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { createEventFromRecipe } from '../events/model';
 import { createBuiltinFieldDefinition } from '../fields/model';
 import { conflict, invalidInput } from '../lib/errors';
+import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { addMember, createOrganization } from '../organizations/model';
 import { createProject } from '../projects/model';
 import { addRecipeField } from '../recipes/fields/model';
 import { createInitialDraftVersion, createRecipe, publishRecipeVersion } from '../recipes/model';
 import type { fieldConfigValidator, SemanticType } from '../validators';
-
-// The Convex runtime exposes deployment environment variables on `process.env`.
-// Declared locally because this package deliberately carries no Node type
-// dependency; only the one member the seed guard reads is described.
-declare const process: { env: Record<string, string | undefined> };
 
 type FieldConfig = typeof fieldConfigValidator.type;
 
@@ -115,26 +111,10 @@ const defaultSeedOwner: SeedOwner = {
 };
 
 /**
- * Deployment opt-in for every seed entry point.
- *
- * Seeding is irreversible in both directions that matter: it consumes the
- * deployment-wide-unique organization slug (no deleteOrganization exists) and
- * permanently squats built-in field keys for every tenant. A stray
- * `convex run --prod seed/mutations:seedDemonstrationData` must therefore be
- * refused rather than trusted, so the target deployment has to say yes first:
- *
- *   bunx convex env set SANCOCHO_ENABLE_SEED true      (see package.json `seed:enable`)
- *
- * Convex reads `process.env` from the DEPLOYMENT's environment variables, not
- * the developer's shell, which is what makes the opt-in per-deployment.
+ * The deployment opt-in every entry point below asserts lives in
+ * `lib/seedGuard.ts`, because `fields/mutations.ts:createBuiltinFieldDefinition`
+ * is a fourth door onto the same irreversible effect and asserts the same switch.
  */
-const seedOptInVariable = 'SANCOCHO_ENABLE_SEED';
-
-function assertSeedingEnabled(): void {
-  if (process.env[seedOptInVariable] !== 'true') {
-    return invalidInput(`Seeding is disabled on this deployment; set ${seedOptInVariable}=true to allow it`);
-  }
-}
 
 const demonstrationOrganization = { name: 'Sancocho Demonstration', slug: 'sancocho-demo' };
 const demonstrationRecipe = { key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer' };

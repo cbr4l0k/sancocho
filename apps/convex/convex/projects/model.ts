@@ -27,6 +27,23 @@ type ProjectPatch = ProjectDates & {
   status?: ProjectStatus;
 };
 
+/**
+ * Descriptions are free-form planning notes, bounded like every other free-text
+ * column in the codebase (field/recipe descriptions 2000, location addresses
+ * 500, entity names 200). Unbounded, they were the one place a tenant could
+ * store megabytes: `listProjects` pages whole documents, projects are never
+ * deleted, and enough oversized rows would push a page past Convex's
+ * transaction read limit — making a tenant's project list permanently
+ * unreadable with no repair path.
+ */
+const maxProjectDescriptionLength = 2000;
+
+function validateProjectDescription(description: string | undefined): void {
+  if (description !== undefined && description.length > maxProjectDescriptionLength) {
+    return invalidInput(`Project description must not exceed ${maxProjectDescriptionLength} characters`);
+  }
+}
+
 /** Projects are archival-only: there is intentionally no hard-delete operation. */
 export async function createProject(
   ctx: MutationCtx,
@@ -35,6 +52,7 @@ export async function createProject(
   const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
   // The validator returns the trimmed name, and the trimmed name is what is stored.
   const name = validateEntityName(args.name, 'project');
+  validateProjectDescription(args.description);
   validateProjectDates(args);
   const projectId = await ctx.db.insert('projects', {
     organizationId: args.organizationId,
@@ -86,6 +104,7 @@ export async function updateProject(
   // Validated (and therefore trimmed) before the diff, so what is compared
   // against the stored name is exactly what would be stored.
   const name = patch.name === undefined ? undefined : validateEntityName(patch.name, 'project');
+  validateProjectDescription(patch.description);
   if (patch.status !== undefined) {
     assertProjectStatusTransition(project.status, patch.status);
   }

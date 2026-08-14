@@ -64,6 +64,12 @@ What the gate enforces:
   against the config kind, then the kind-specific rules: finite numbers, integer-only,
   numeric bounds, string length bounds, calendar-valid dates, clock-valid times, lexicographic
   date/time bounds, known option ids, no repeated multi-select ids, selection-count bounds.
+- **Absolute string ceilings**, independent of the snapshot: `text` 2000 characters,
+  `longText` 10000. A snapshot's own `maxLength` is optional (the seeded `notes` built-in
+  omits one), and `getEvent` collects every value of an event at once — the bounded-child-set
+  argument for that collect bounds the row count, not the bytes. `assertValidFieldConfig`
+  refuses any config that would promise more, so a snapshot can never advertise a bound the
+  value gate would not honour.
 - Location values additionally resolve to a live, same-organization location
   (`assertUsableLocation`), with the generic error on any failure.
 - On creation only, every `required` field must end up with a value.
@@ -83,7 +89,18 @@ never sufficient validation for a mutation — every write path must go through 
 
 Both update paths diff against what is stored: echoing a value back writes neither a document
 patch nor an audit row. `updateEventFields` records the field definition ids that actually
-changed in `metadata.changedFields`.
+changed in `metadata.changedFields`, under its own audit action **`event.fieldsUpdated`** —
+`updateEventCoreFields` writes `event.updated` with column names under the same key, and a
+log consumer must not have to sniff the value to tell the two vocabularies apart.
+
+A submitted value **identical to the stored one is not re-validated**: the event's values are
+loaded before the gate runs, and an unchanged one skips the rule checks (bounds, option
+identity, and the referenced location's usability). It already passed this exact immutable
+snapshot when it was written, so re-judging it against the world as it is now would break the
+ordinary read-modify-write shape — load an event, edit one field, resubmit the whole form —
+the moment a location it references is archived. Structural checks (unknown field, repeated
+definition, clearing a required field) still run over the entire submission, and a value that
+actually changes is validated in full.
 
 On an update that replaces a location value with a different kind, the `locationId` mirror is
 written explicitly as `undefined` in the same patch — a stale mirror would keep a location
@@ -124,7 +141,10 @@ required field nobody can see is unfillable.
 
 ## Reading
 
-`getEvent` returns the event plus its values, each joined with `key` and `label` from the
+`getEvent` returns the event plus its values in `by_event_field` **index order — not
+`position` order**. Ordering is a presentation concern and lives on the recipe version, so a
+client rendering a form joins `recipes.fields.listRecipeFields(recipeVersionId)` (bounded, one
+read) and orders by its `position`. Each value is joined with `key` and `label` from the
 live field definition. The **semantics** come from the snapshot; only those two display
 strings are live. That join is safe for `key` only because the field-immutability trigger
 counts retired versions as well as published ones — see

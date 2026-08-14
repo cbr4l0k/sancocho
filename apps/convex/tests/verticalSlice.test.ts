@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 
 import { api, internal } from '../convex/_generated/api';
 import schema from '../convex/schema';
-import { modules } from './helpers';
+import { enableSeedMutations, modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
 const getCurrentUser = api.auth.queries.getCurrentUser;
@@ -19,6 +19,9 @@ const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
 const getRecipeVersion = api.recipes.queries.getRecipeVersion;
 const createEventFromRecipe = api.events.mutations.createEventFromRecipe;
 const getEvent = api.events.queries.getEvent;
+
+// The slice provisions a BUILT-IN definition, which shares the seed opt-in.
+enableSeedMutations();
 
 const issuer = 'https://example.clerk.accounts.dev';
 const textConfig = { kind: 'text' } as const;

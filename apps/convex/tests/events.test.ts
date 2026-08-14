@@ -249,8 +249,13 @@ test('event authoring is planner+, running an event is open to operators, and re
 
   // Reading stays open to any member, so the rejections above are a floor on
   // authoring, not on visibility.
-  await expect(viewer.client.query(getEvent, { eventId })).resolves.toMatchObject({ event: { _id: eventId } });
-  await expect(viewer.client.query(listProjectEvents, { projectId, paginationOpts: firstPage })).resolves.toBeDefined();
+  // Reading returns the event's CONTENT, not merely a resolved promise: a read
+  // path that handed viewers an empty page would otherwise look like access.
+  const viewerRead = await viewer.client.query(getEvent, { eventId });
+  expect(viewerRead.event._id).toBe(eventId);
+  expect(viewerRead.values.map((value) => [value.key, value.value])).toEqual([['code', { kind: 'text', value: 'AB' }]]);
+  const viewerPage = await viewer.client.query(listProjectEvents, { projectId, paginationOpts: firstPage });
+  expect(viewerPage.page.map((row) => row._id)).toEqual([eventId]);
 
   // Running an event is one rank lower on purpose: an operator advances status
   // without being able to change what the event says it is. A viewer still cannot.
@@ -533,6 +538,85 @@ test('field values upsert in place, clear, and re-set without ever duplicating a
   expect((await rowsFor(definitions.code))[0]?.value).toEqual({ kind: 'text', value: 'CC' });
 });
 
+test('S1 regression: resubmitting an unchanged value is not re-judged, even after its location is archived', async () => {
+  const { t, owner, organizationId, definitions, locationId, requiredCode, createEvent } = await fixture();
+  const venue: SubmittedValue = { fieldDefinitionId: definitions.venue, value: { kind: 'location', locationId } };
+  const eventId = await createEvent([requiredCode, venue]);
+
+  // The ordinary read-modify-write shape: load the event, change one field, send
+  // the whole form back. The untouched location value must not be re-validated
+  // against the world as it is now — it already passed this immutable snapshot
+  // when it was written, and there is no way to "fix" it (the location has no
+  // unarchive, and clearing the field is a different edit than the user made).
+  await owner.client.mutation(archiveLocation, { locationId });
+  await expect(
+    owner.client.mutation(updateEventFields, {
+      eventId,
+      values: [{ fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'changed' } }, venue],
+    }),
+  ).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    const rows = await ctx.db.query('eventFieldValues').withIndex('by_event_field', (q) => q.eq('eventId', eventId)).collect();
+    expect(rows.find((row) => row.fieldDefinitionId === definitions.venue)?.value).toEqual({ kind: 'location', locationId });
+    expect(rows.find((row) => row.fieldDefinitionId === definitions.notes)?.value).toEqual({ kind: 'longText', value: 'changed' });
+  });
+  // Only the field that moved is audited: the unchanged one is not an edit.
+  await t.run(async (ctx) => {
+    const audits = await ctx.db
+      .query('auditEvents')
+      .withIndex('by_org_entity', (q) => q.eq('organizationId', organizationId).eq('entityType', 'event').eq('entityId', eventId))
+      .collect();
+    expect(audits.filter((audit) => audit.action === 'event.fieldsUpdated').map((audit) => audit.metadata.changedFields)).toEqual([definitions.notes]);
+  });
+
+  // Skipping the re-check is scoped to values that did NOT change: pointing the
+  // field at the archived location as a real edit is still refused, and so is a
+  // fresh event created against it.
+  const otherLocationId = await owner.client.mutation(createLocation, { organizationId, name: 'Annex', type: 'venue' });
+  await owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: definitions.venue, value: { kind: 'location', locationId: otherLocationId } }] });
+  await expect(owner.client.mutation(updateEventFields, { eventId, values: [venue] })).rejects.toMatchObject({ data: inaccessible });
+  await expect(createEvent([requiredCode, venue])).rejects.toMatchObject({ data: inaccessible });
+});
+
+test('S3 regression: stored string values are capped absolutely, whatever the snapshot omits', async () => {
+  const { owner, organizationId, projectId, requiredCode, createEvent } = await fixture();
+  // A config with NO maxLength — the shape the seeded `notes` built-in ships —
+  // is exactly the case where only the absolute ceiling stands between a tenant
+  // and a multi-megabyte event that `getEvent` can never read back.
+  const unbounded = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'freeform', label: 'Freeform', config: { kind: 'longText' } });
+  const short = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'line', label: 'Line', config: { kind: 'text' } });
+  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key: 'capsPlan', name: 'Caps plan' });
+  const versionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await owner.client.mutation(addRecipeField, { recipeVersionId: versionId, fieldDefinitionId: unbounded, required: false, visible: true });
+  await owner.client.mutation(addRecipeField, { recipeVersionId: versionId, fieldDefinitionId: short, required: false, visible: true });
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: versionId });
+  const create = (values: SubmittedValue[]) =>
+    owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: versionId, name: 'Capped', startsAt: 1000, values });
+
+  await expect(create([{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_001) } }])).rejects.toMatchObject({
+    data: 'Field value must not exceed 10000 characters',
+  });
+  await expect(create([{ fieldDefinitionId: short, value: { kind: 'text', value: 'x'.repeat(2001) } }])).rejects.toMatchObject({
+    data: 'Field value must not exceed 2000 characters',
+  });
+  // The bound is inclusive, and it applies on the update door too.
+  const eventId = await create([{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_000) } }]);
+  await expect(
+    owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_001) } }] }),
+  ).rejects.toMatchObject({ data: 'Field value must not exceed 10000 characters' });
+
+  // The other half of the same rule: a config can promise less than the ceiling,
+  // never more, so no snapshot can advertise a bound the value gate would refuse.
+  await expect(
+    owner.client.mutation(createFieldDefinition, { organizationId, key: 'tooWide', label: 'Too wide', config: { kind: 'longText', maxLength: 10_001 } }),
+  ).rejects.toMatchObject({ data: 'Field length bounds must not exceed 10000 characters' });
+  await expect(
+    owner.client.mutation(createFieldDefinition, { organizationId, key: 'tooWideText', label: 'Too wide text', config: { kind: 'text', maxLength: 2001 } }),
+  ).rejects.toMatchObject({ data: 'Field length bounds must not exceed 2000 characters' });
+  // Untouched by the caps: the ordinary bounded fixture still accepts its values.
+  await expect(createEvent([requiredCode])).resolves.toBeDefined();
+});
+
 test('the status matrix advances one step at a time, cancels from anywhere, and is terminal at both ends', async () => {
   const { owner, definitions, requiredCode, createEvent } = await fixture();
   const notPermitted = 'Event status transition is not permitted';
@@ -599,7 +683,11 @@ test('every event operation writes an attributed audit row naming what changed, 
         .collect();
 
     const audits = await auditsFor(eventId);
-    expect(audits.map((audit) => audit.action)).toEqual(['event.created', 'event.updated', 'event.updated', 'event.statusChanged']);
+    // Core-column edits and typed-value edits are DIFFERENT actions on purpose:
+    // both write `metadata.changedFields`, but one holds column names and the
+    // other holds field-definition ids, and a log consumer must not have to sniff
+    // the value to tell which vocabulary it is reading.
+    expect(audits.map((audit) => audit.action)).toEqual(['event.created', 'event.updated', 'event.fieldsUpdated', 'event.statusChanged']);
     expect(audits.every((audit) => audit.organizationId === organizationId)).toBe(true);
     expect(audits[0]).toMatchObject({ actorUserId: owner.userId, metadata: { recipeVersionId: versionId } });
     expect(audits[1]).toMatchObject({ actorUserId: planner.userId, metadata: { changedFields: 'name,startsAt' } });

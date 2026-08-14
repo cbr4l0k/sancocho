@@ -12,6 +12,33 @@ type FieldConfig = typeof fieldConfigValidator.type;
 type FieldValue = typeof eventFieldValueValidator.type;
 
 /**
+ * Absolute ceilings on stored string values, independent of what any snapshot
+ * says.
+ *
+ * A snapshot's own `maxLength` is optional — the seeded `notes` built-in ships
+ * with none — so without these a single Event value could be megabytes. That
+ * matters because of an asymmetry: `updateEventFields` writes one row per field,
+ * so writes stay small, but `getEvent` `.collect()`s every value of an event at
+ * once. The I6 argument for that collect bounds the ROW COUNT
+ * (`maxFieldsPerVersion`), not the bytes — so a handful of huge values makes an
+ * Event permanently unreadable while still being writable, and Events are never
+ * deleted.
+ *
+ * They are enforced in two places on purpose:
+ * - `validateFieldValueAgainstConfig` applies them to every value, which is what
+ *   protects values written against snapshots (including already-published,
+ *   immutable ones) that declare no `maxLength` at all;
+ * - `assertValidFieldConfig` refuses a config that promises MORE than the cap,
+ *   so no snapshot can ever advertise a bound the value gate would not honour.
+ *
+ * Sizes: `text` is a single-line value (2000, matching the description caps);
+ * `longText` is a notes field (10000 ~ 10KB, so even a full 200-field event
+ * stays inside a single transaction's read budget).
+ */
+export const maxTextValueLength = 2000;
+export const maxLongTextValueLength = 10000;
+
+/**
  * The single derivation of a stored location-mirror column from a typed value.
  *
  * Two tables denormalize the location a value points at so that locations can
@@ -100,10 +127,10 @@ export function validateFieldValueAgainstConfig(config: FieldConfig, value: Fiel
       return;
     case 'text':
       if (config.kind !== 'text') return kindMismatch();
-      return assertLength(value.value, config.minLength, config.maxLength);
+      return assertLength(value.value, config.minLength, config.maxLength, maxTextValueLength);
     case 'longText':
       if (config.kind !== 'longText') return kindMismatch();
-      return assertLength(value.value, config.minLength, config.maxLength);
+      return assertLength(value.value, config.minLength, config.maxLength, maxLongTextValueLength);
     case 'number':
       if (config.kind !== 'number') return kindMismatch();
       // Convex accepts NaN/Infinity in v.number(); an unorderable value would
@@ -154,9 +181,11 @@ function unknownOption(): never {
   return invalidInput('Field value must reference an option defined by the field configuration');
 }
 
-function assertLength(value: string, minLength: number | undefined, maxLength: number | undefined): void {
+function assertLength(value: string, minLength: number | undefined, maxLength: number | undefined, absoluteMaximum: number): void {
   if (minLength !== undefined && value.length < minLength) return invalidInput('Field value is shorter than the configured minimum length');
   if (maxLength !== undefined && value.length > maxLength) return invalidInput('Field value is longer than the configured maximum length');
+  // The configured bound is optional; this one is not (see the caps above).
+  if (value.length > absoluteMaximum) return invalidInput(`Field value must not exceed ${absoluteMaximum} characters`);
 }
 
 function assertNumericBounds(value: number, min: number | undefined, max: number | undefined): void {

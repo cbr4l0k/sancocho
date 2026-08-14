@@ -198,7 +198,9 @@ test('a bulk field-value edit succeeds and audits, truncating its own summary in
   const history = await owner.client.query(listEntityAuditEvents, {
     organizationId, entityType: 'event', entityId: eventId, paginationOpts: { numItems: 10, cursor: null },
   });
-  const updated = history.page.find((entry) => entry.action === 'event.updated');
+  // Typed-value edits carry their own action, so this row cannot be confused
+  // with a core-column edit that names COLUMNS under the same metadata key.
+  const updated = history.page.find((entry) => entry.action === 'event.fieldsUpdated');
   expect(updated).toBeDefined();
   const changedFields = updated?.metadata.changedFields;
   expect(typeof changedFields).toBe('string');

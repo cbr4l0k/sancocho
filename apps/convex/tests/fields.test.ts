@@ -5,7 +5,7 @@ import { api, internal } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { capabilitiesForField } from '../convex/fields/model';
 import schema from '../convex/schema';
-import { modules } from './helpers';
+import { enableSeedMutations, modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
@@ -17,6 +17,17 @@ const deleteFieldDefinition = api.fields.mutations.deleteFieldDefinition;
 const listFieldDefinitions = api.fields.queries.listFieldDefinitions;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
+const createRecipe = api.recipes.mutations.createRecipe;
+const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
+const clonePublishedVersionToDraft = api.recipes.mutations.clonePublishedVersionToDraft;
+const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
+const addRecipeField = api.recipes.fields.mutations.addRecipeField;
+const removeRecipeField = api.recipes.fields.mutations.removeRecipeField;
+const listRecipeFields = api.recipes.fields.queries.listRecipeFields;
+
+// Built-in creation shares the seed deployment opt-in (it squats a key in every
+// tenant's namespace permanently); several tests below drive it.
+enableSeedMutations();
 
 const NOT_FOUND_OR_INACCESSIBLE = 'Not found or inaccessible';
 const UNAUTHENTICATED = 'Unauthenticated';
@@ -331,8 +342,9 @@ test('published and retired references preserve field meaning while allowing pre
 
   for (const status of ['published', 'retired'] as const) {
     const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: `${status}Title`, label: 'Event title', semanticType: 'eventName', config: textConfig });
-    // Recipes are introduced in #8. Direct fixtures model the reference here.
-    await insertRecipeFieldReference(t, organizationId, fieldDefinitionId, status);
+    // Both references are built through the real composition/publish path, so
+    // the rule is proven against states the API can actually reach.
+    await referenceFieldFromRecipeVersion(owner, organizationId, fieldDefinitionId, status);
 
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, key: 'changedTitle' })).rejects.toMatchObject({ data: IMMUTABLE_MEANING });
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({ data: IMMUTABLE_MEANING });
@@ -352,7 +364,7 @@ test('a read-modify-write client may resubmit an unchanged referenced field', as
     semanticType: 'eventName',
     config: { kind: 'text', minLength: 1, maxLength: 80 },
   });
-  await insertRecipeFieldReference(t, organizationId, fieldDefinitionId, 'published');
+  await referenceFieldFromRecipeVersion(owner, organizationId, fieldDefinitionId, 'published');
 
   // Immutability is gated on what actually changes, not on which arguments the
   // client happened to send back — including a config whose keys arrive in a
@@ -382,7 +394,7 @@ test('draft-only references allow config edits; references block deletion but no
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-references' });
   const referenced = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'draftField', label: 'Draft', config: textConfig });
-  await insertRecipeFieldReference(t, organizationId, referenced, 'draft');
+  await referenceFieldFromRecipeVersion(owner, organizationId, referenced, 'draft');
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: referenced, config: longTextConfig })).resolves.toBeNull();
   await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId: referenced })).rejects.toMatchObject({ data: 'Referenced field definitions cannot be deleted; archive the field instead' });
   await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: referenced })).resolves.toBeNull();
@@ -549,17 +561,42 @@ test('field lifecycle writes attributed audit rows naming what changed', async (
   });
 });
 
-async function insertRecipeFieldReference(
-  t: ReturnType<typeof convexTest>,
+/**
+ * Composes `fieldDefinitionId` into a recipe version and drives that version to
+ * `status` through the ordinary public API — compose, publish, and (for
+ * `retired`) publish a successor.
+ *
+ * It used to be a direct `ctx.db` insert, which fabricated a state the API
+ * cannot produce (a published version hanging under a still-draft recipe) and
+ * therefore proved the immutability rules only against an impossible shape.
+ *
+ * The `retired` case needs the successor to compose a DECOY field rather than
+ * this one: if v2 kept the field, the definition would still be referenced by a
+ * PUBLISHED version and the retired half of the rule would never be exercised.
+ */
+async function referenceFieldFromRecipeVersion(
+  owner: Awaited<ReturnType<typeof provision>>,
   organizationId: Id<'organizations'>,
   fieldDefinitionId: Id<'fieldDefinitions'>,
   status: 'draft' | 'published' | 'retired',
 ) {
-  await t.run(async (ctx) => {
-    const recipeId = await ctx.db.insert('eventRecipes', { organizationId, key: `recipe${status}`, name: 'Fixture recipe', status: 'draft' });
-    const versionId = await ctx.db.insert('recipeVersions', { organizationId, recipeId, versionNumber: 1, status });
-    await ctx.db.insert('recipeFields', { organizationId, recipeVersionId: versionId, fieldDefinitionId, position: 1, required: false, visible: true, config: textConfig });
-  });
+  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key: `recipeFor${status}`, name: 'Fixture recipe' });
+  const versionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await owner.client.mutation(addRecipeField, { recipeVersionId: versionId, fieldDefinitionId, required: false, visible: true });
+  if (status === 'draft') return versionId;
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: versionId });
+  if (status === 'published') return versionId;
+
+  const decoy = await owner.client.mutation(createFieldDefinition, { organizationId, key: `decoyFor${status}`, label: 'Decoy', config: textConfig });
+  const successorId = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
+  for (const row of await owner.client.query(listRecipeFields, { recipeVersionId: successorId })) {
+    await owner.client.mutation(removeRecipeField, { recipeFieldId: row._id });
+  }
+  await owner.client.mutation(addRecipeField, { recipeVersionId: successorId, fieldDefinitionId: decoy, required: false, visible: true });
+  // Publishing the successor retires v1 in the same transaction, so the field
+  // under test is now referenced by a retired version and by nothing else.
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: successorId });
+  return versionId;
 }
 
 /**

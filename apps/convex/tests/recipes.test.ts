@@ -45,9 +45,21 @@ async function recipeFixture() {
 }
 
 /**
- * Composing a draft's `recipeFields` rows is issue #9's mutation, so drafts are
- * populated directly here — the same fixture approach `fields.test.ts` uses for
- * recipe references.
+ * Writes a draft's `recipeFields` rows directly, bypassing the public composer.
+ *
+ * That bypass is the point, not a shortcut: these tests are about the PUBLISH
+ * gate, and most of the rows below (duplicate definitions, colliding or
+ * fractional positions, archived and cross-tenant definitions, kind-mismatched
+ * or empty-option snapshots) are exactly the rows `addRecipeField` refuses to
+ * create. They can still reach a draft — a row written before its definition
+ * changed, or any future write path — and publishing is the last gate before
+ * they become immutable, so it has to enforce the rules itself rather than trust
+ * that composition already did. Reaching them through the public composer is
+ * impossible by construction; the coherent rows that DO publish here are drawn
+ * the same way so the fixture is one mechanism rather than two.
+ *
+ * Composition through the public API is covered end to end in
+ * `recipeFields.test.ts`.
  */
 type DraftFieldRow = { fieldDefinitionId: Id<'fieldDefinitions'> } & Partial<
   Omit<Doc<'recipeFields'>, '_id' | '_creationTime' | 'organizationId' | 'recipeVersionId' | 'fieldDefinitionId'>

@@ -29,6 +29,26 @@ async function provision(t: ReturnType<typeof convexTest>, subject: string) {
   return { client, userId };
 }
 
+test('project descriptions are bounded like every other free-text column', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'projects-description' });
+  const tooLong = 'x'.repeat(2001);
+  const bound = 'Project description must not exceed 2000 characters';
+
+  // Unbounded, this was the one column a tenant could fill with megabytes:
+  // `listProjects` pages whole documents and projects are never deleted, so
+  // enough oversized rows make a tenant's project list permanently unreadable.
+  await expect(owner.client.mutation(createProject, { organizationId, name: 'Verbose', description: tooLong })).rejects.toMatchObject({ data: bound });
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Bounded', description: 'x'.repeat(2000) });
+  await expect(owner.client.mutation(updateProject, { projectId, description: tooLong })).rejects.toMatchObject({ data: bound });
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(projectId))?.description).toBe('x'.repeat(2000));
+  });
+  // The refusal is the length, not the presence of a description.
+  await expect(owner.client.mutation(updateProject, { projectId, description: 'Short enough' })).resolves.toBeNull();
+});
+
 test('cross-organization and fabricated project ids return the generic error', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');

@@ -1,11 +1,11 @@
 import { convexTest, type TestConvex } from 'convex-test';
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { api, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
 import { capabilitiesForField } from '../convex/fields/model';
-import { modules } from './helpers';
+import { enableSeedMutations, modules, seedOptInVariable } from './helpers';
 
 // Deployment environment variables reach Convex functions through `process.env`;
 // declared locally because this package carries no Node type dependency.
@@ -14,6 +14,7 @@ declare const process: { env: Record<string, string | undefined> };
 const seedBuiltinFieldDefinitions = internal.seed.mutations.seedBuiltinFieldDefinitions;
 const seedDemonstrationData = internal.seed.mutations.seedDemonstrationData;
 const grantDemoMembership = internal.seed.mutations.grantDemoMembership;
+const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
 const getEvent = api.events.queries.getEvent;
@@ -22,7 +23,6 @@ const listProjectEvents = api.events.queries.listProjectEvents;
 const listRecipes = api.recipes.queries.listRecipes;
 const addRecipeField = api.recipes.fields.mutations.addRecipeField;
 
-const seedOptInVariable = 'SANCOCHO_ENABLE_SEED';
 const issuer = 'https://seed.sancocho.internal';
 const subject = 'demonstration-owner';
 const ownerIdentity = { issuer, subject, name: 'Demonstration Owner', email: 'demo-owner@sancocho.invalid', emailVerified: true };
@@ -71,13 +71,7 @@ const expectedComposition = [
   { position: 8, key: 'notes', required: false },
 ];
 
-beforeEach(() => {
-  process.env[seedOptInVariable] = 'true';
-});
-
-afterEach(() => {
-  delete process.env[seedOptInVariable];
-});
+enableSeedMutations();
 
 type SeedTest = TestConvex<typeof schema>;
 
@@ -147,13 +141,24 @@ test('built-in seed creates the issue catalogue exactly once, with the capabilit
   expect(fields.every((field) => field.scope === 'builtin' && field.organizationId === undefined && field.status === 'active')).toBe(true);
 });
 
-test('seeding is refused unless the deployment opted in', async () => {
+test('seeding is refused unless the deployment opted in, on all four irreversible doors', async () => {
   delete process.env[seedOptInVariable];
   const t = convexTest(schema, modules);
+  const builtinField = { key: 'squatted', label: 'Squatted', config: { kind: 'text' } as const };
   await expect(t.mutation(seedDemonstrationData, {})).rejects.toThrow('Seeding is disabled');
   await expect(t.mutation(seedBuiltinFieldDefinitions, {})).rejects.toThrow('Seeding is disabled');
+  await expect(t.mutation(grantDemoMembership, { owner: { issuer, subject } })).rejects.toThrow('Seeding is disabled');
+  // The fourth door: creating ONE built-in has the same irreversible effect as
+  // seeding the catalogue — the key is squatted in every tenant's namespace and
+  // cannot be released — so being an internal function is not the guard.
+  await expect(t.mutation(createBuiltinFieldDefinition, builtinField)).rejects.toThrow('Seeding is disabled');
   // The refusal is total: not one built-in key is squatted on the deployment.
   expect(await readBuiltins(t)).toHaveLength(0);
+
+  // The same call succeeds once the deployment says yes, so the rejections above
+  // are the opt-in and not a broken argument.
+  process.env[seedOptInVariable] = 'true';
+  await expect(t.mutation(createBuiltinFieldDefinition, builtinField)).resolves.toBeDefined();
 });
 
 test('demonstration seed makes one published, immutable airport-transfer vertical slice', async () => {

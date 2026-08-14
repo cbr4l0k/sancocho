@@ -13,7 +13,7 @@ without the op, no op without the audit. A test asserts the rollback direction.
 | --- | --- |
 | `organizationId` | Non-optional. Every audit row belongs to a tenant |
 | `actorUserId` | Non-optional `Id<'users'>` |
-| `action` | Closed literal union, 32 members (`organization.created` … `relationship.removed`) |
+| `action` | Closed literal union, 33 members (`organization.created` … `relationship.removed`) |
 | `entityType` | Closed literal union, 10 members |
 | `entityId` | The document id as a string |
 | `metadata` | Flat scalar record, restricted to a code-owned key set |

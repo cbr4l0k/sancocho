@@ -12,6 +12,7 @@ import {
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
+import { maxLongTextValueLength, maxTextValueLength } from './values';
 import {
   fieldConfigValidator,
   isFiniteNumber,
@@ -322,12 +323,21 @@ export function assertValidFieldConfig(config: FieldConfig): void {
     case 'location':
       return;
     case 'text':
-    case 'longText':
+    case 'longText': {
       assertFiniteBounds(config.minLength, config.maxLength, 'Field length bounds must be finite numbers');
       if (config.minLength !== undefined && config.maxLength !== undefined && config.maxLength < config.minLength) {
         return invalidInput('Field maximum length must not be less than its minimum length');
       }
+      // The absolute ceiling is frozen into every snapshot taken from this
+      // config: a config may promise less than the value gate allows, never
+      // more (see `fields/values.ts`). `minLength` is bounded with it, since a
+      // minimum above the ceiling would be unsatisfiable.
+      const absoluteMaximum = config.kind === 'text' ? maxTextValueLength : maxLongTextValueLength;
+      if ((config.maxLength ?? 0) > absoluteMaximum || (config.minLength ?? 0) > absoluteMaximum) {
+        return invalidInput(`Field length bounds must not exceed ${absoluteMaximum} characters`);
+      }
       return;
+    }
     case 'number':
     case 'datetime':
       assertFiniteBounds(config.min, config.max, 'Field numeric bounds must be finite numbers');

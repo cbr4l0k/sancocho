@@ -25,6 +25,7 @@ import type * as lib_authAdapter from "../lib/authAdapter.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_names from "../lib/names.js";
 import type * as lib_roles from "../lib/roles.js";
+import type * as lib_seedGuard from "../lib/seedGuard.js";
 import type * as locations_model from "../locations/model.js";
 import type * as locations_mutations from "../locations/mutations.js";
 import type * as locations_queries from "../locations/queries.js";
@@ -70,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   "lib/errors": typeof lib_errors;
   "lib/names": typeof lib_names;
   "lib/roles": typeof lib_roles;
+  "lib/seedGuard": typeof lib_seedGuard;
   "locations/model": typeof locations_model;
   "locations/mutations": typeof locations_mutations;
   "locations/queries": typeof locations_queries;

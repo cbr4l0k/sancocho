@@ -114,6 +114,56 @@ test('organization administration is closed below admin, and an admin rename is 
   });
 });
 
+test('membership administration is closed below admin, and an admin administers every non-owner rank', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const viewer = await provision(t, 'viewer');
+  const planner = await provision(t, 'planner');
+  const admin = await provision(t, 'admin');
+  const target = await provision(t, 'target');
+  const newcomer = await provision(t, 'newcomer');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'membership-floor' });
+  const viewerMembershipId = await owner.client.mutation(addMember, { organizationId, userId: viewer.userId, role: 'viewer' });
+  const plannerMembershipId = await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  const adminMembershipId = await owner.client.mutation(addMember, { organizationId, userId: admin.userId, role: 'admin' });
+  const targetMembershipId = await owner.client.mutation(addMember, { organizationId, userId: target.userId, role: 'operator' });
+
+  // THE privilege-escalation guard. `canAssignRole` only polices changes that
+  // touch an OWNER, so the admin floor on these two mutations is the only thing
+  // standing between a sub-admin member and the whole roster: without it a viewer
+  // could promote ITSELF to admin (the `ownMembershipId` case) and demote or
+  // remove any admin/planner/operator. Both ranks below admin are exercised so
+  // the floor cannot slip a rank unnoticed.
+  for (const { client, ownMembershipId } of [
+    { client: viewer.client, ownMembershipId: viewerMembershipId },
+    { client: planner.client, ownMembershipId: plannerMembershipId },
+  ]) {
+    for (const membershipId of [ownMembershipId, targetMembershipId, adminMembershipId]) {
+      await expect(client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+      await expect(client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    }
+  }
+  // Every refusal was total: no rank moved and no membership disappeared.
+  await t.run(async (ctx) => {
+    const memberships = await ctx.db
+      .query('organizationMemberships')
+      .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId))
+      .collect();
+    expect(memberships.map((membership) => membership.role).sort()).toEqual(['admin', 'operator', 'owner', 'planner', 'viewer']);
+  });
+
+  // Admin is a floor, not a ceiling-less whitelist: an admin adds a NON-owner
+  // member (the owner policy that refuses `role: 'owner'` is a separate gate),
+  // changes a non-owner rank, and removes a non-owner membership.
+  const newcomerMembershipId = await admin.client.mutation(addMember, { organizationId, userId: newcomer.userId, role: 'planner' });
+  await expect(admin.client.mutation(changeMemberRole, { membershipId: targetMembershipId, role: 'planner' })).resolves.toBeNull();
+  await expect(admin.client.mutation(removeMember, { membershipId: newcomerMembershipId })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(targetMembershipId))?.role).toBe('planner');
+    expect(await ctx.db.get(newcomerMembershipId)).toBeNull();
+  });
+});
+
 test('organization slugs must be 3–63 lowercase dash-separated segments', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
@@ -228,6 +278,20 @@ test('membership mutations are indistinguishable for unauthenticated probes (I9)
     await expect(outsider.client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
     await expect(outsider.client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
   }
+
+  // A target user id that no longer resolves is refused with the same generic
+  // error — and the refusal is load-bearing, not cosmetic: writing the membership
+  // anyway would leave a row pointing at no user, and `listMembers` fails the
+  // WHOLE roster the moment its join meets one. The read below is what proves the
+  // roster survived the attempt.
+  const fakeUserId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('users', { authProvider: issuer, authSubject: 'ghost-user' });
+    await ctx.db.delete(id);
+    return id;
+  });
+  await expect(owner.client.mutation(addMember, { organizationId, userId: fakeUserId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  const roster = await owner.client.query(listMembers, { organizationId, paginationOpts: firstPage });
+  expect(roster.page.map((entry) => entry.membership.role).sort()).toEqual(['owner', 'viewer']);
 });
 
 test('listMyOrganizations only returns the caller memberships', async () => {

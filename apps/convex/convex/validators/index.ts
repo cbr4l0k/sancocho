@@ -269,7 +269,12 @@ export const auditActionValidator = v.union(
   v.literal('recipeField.removed'),
   v.literal('recipeVersion.fieldsReordered'),
   v.literal('event.created'),
+  // Two distinct update vocabularies, so two distinct actions: `event.updated`
+  // records COLUMN NAMES in `metadata.changedFields` (updateEventCoreFields),
+  // `event.fieldsUpdated` records FIELD DEFINITION IDS (updateEventFields).
+  // One action for both forced every log consumer to sniff the value.
   v.literal('event.updated'),
+  v.literal('event.fieldsUpdated'),
   v.literal('event.statusChanged'),
   v.literal('event.cancelled'),
   v.literal('location.created'),

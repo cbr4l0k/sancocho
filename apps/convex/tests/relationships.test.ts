@@ -171,8 +171,13 @@ test('all public functions authenticate first and enforce planner authoring whil
   const planner = await provision(t, 'relationships-planner');
   const admin = await provision(t, 'relationships-admin');
   for (const member of [viewer, operator, planner, admin]) await owner.client.mutation(addMember, { organizationId, userId: member.userId, role: member === planner ? 'planner' : member === admin ? 'admin' : member === viewer ? 'viewer' : 'operator' });
-  await expect(viewer.client.query(listOutgoingRelationships, { eventId: source, paginationOpts: firstPage })).resolves.toBeDefined();
-  await expect(viewer.client.query(listIncomingRelationships, { eventId: target, paginationOpts: firstPage })).resolves.toBeDefined();
+  // The viewer gets the CONTENT of both directions, not merely a resolved
+  // promise: a read path that handed viewers an empty page would otherwise be
+  // indistinguishable from one that granted them access.
+  const viewerOutgoing = await viewer.client.query(listOutgoingRelationships, { eventId: source, paginationOpts: firstPage });
+  expect(viewerOutgoing.page.map((row) => [row._id, row.type, row.counterpartEvent._id])).toEqual([[relationshipId, 'relatedTo', target]]);
+  const viewerIncoming = await viewer.client.query(listIncomingRelationships, { eventId: target, paginationOpts: firstPage });
+  expect(viewerIncoming.page.map((row) => [row._id, row.type, row.counterpartEvent._id])).toEqual([[relationshipId, 'relatedTo', source]]);
   // A member with the read floor still cannot name an Event that does not exist:
   // fabricated and foreign stay indistinguishable on the read path (I9).
   await expect(viewer.client.query(listOutgoingRelationships, { eventId: missingEvent, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });

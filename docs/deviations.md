@@ -67,6 +67,10 @@ issue tracker is not a durable substitute.
 | Archiving a project is allowed regardless of how many events it holds | A project with events is exactly the project worth archiving; a reference guard would make the most-used projects unarchivable. Archival freezes, it does not cascade | `projects/model.ts:archiveProject` |
 | A `completed` project accepts no new events but its existing ones stay editable | A finished piece of work should be correctable without being reopened | `events/model.ts:assertProjectAcceptsNewEvents` |
 | **Events are never hard-deleted**; cancellation is the terminal path | They are operational records | `events/model.ts`, [`deletion-and-archival.md`](deletion-and-archival.md) |
+| `updateEventFields` does not re-validate a submitted value **identical to the stored one** | The gate ran on every submitted value while the diff happened afterwards, so a read-modify-write client (load event, edit one field, resubmit the form) failed on an untouched location value once that location was archived — with a bare "not found" on an event in its own org and no repair path. Structural checks (unknown field, duplicate definition, clearing a required field) still run over the whole submission. Same "gate on change, not on argument presence" rule the fields domain states | `events/model.ts:validateEventAgainstRecipe`, [`events.md`](events.md#updating) |
+| Typed-value edits audit as **`event.fieldsUpdated`**, core-column edits as `event.updated` | Both write `metadata.changedFields`, but one holds field-definition ids and the other column names; one action for both left log consumers sniffing the value to tell which vocabulary they were reading | `validators/index.ts`, `events/model.ts` |
+| **Absolute caps on stored string values** (`text` 2000, `longText` 10000), enforced on the value AND on any config that would promise more | A snapshot's `maxLength` is optional (the seeded `notes` built-in omits it), so values were unbounded. Writes stay small — one row per field — but `getEvent` collects them all, and the I6 argument for that collect bounds the row COUNT, not the bytes: a few huge values make an Event permanently unreadable while still writable, and Events are never deleted | `fields/values.ts`, `fields/model.ts:assertValidFieldConfig` |
+| `projects.description` is bounded at **2000** characters | It was the only unbounded free-text column left (siblings: field/recipe descriptions 2000, addresses 500, names 200). `listProjects` pages whole documents and projects are never deleted, so enough oversized rows would make a tenant's project list permanently unreadable | `projects/model.ts` |
 | `updateProject` cannot set `status: 'archived'` | It would bypass `archiveProject`'s own audit action and its documented policy; the transition helper routes it | `projects/model.ts` |
 | **Two directional relationship queries** rather than one merged list | No index spans both source and target; merging would require an unbounded read before pagination (I6) | `relationships/model.ts` |
 | An anomalous row is skipped inside a relationship page, not thrown on | One inconsistent row would otherwise make an entire directional list permanently unreadable. A short page is legal in Convex pagination | `relationships/model.ts:joinCounterparts` |
@@ -100,7 +104,7 @@ issue tracker is not a durable substitute.
 | Decision | Why | Where |
 | --- | --- | --- |
 | Every seed write goes through the **ordinary domain functions**; zero direct `ctx.db` writes | The demo proves the invariants (publish validation, server-assigned version numbers, the typed-value gate, mirror derivation) instead of sidestepping them | `seed/mutations.ts` |
-| `SANCOCHO_ENABLE_SEED` deployment opt-in guards all three seed mutations | Seeding is irreversible: it consumes the deployment-wide-unique demo slug (no `deleteOrganization` exists) and permanently squats built-in field keys for every tenant | `seed/mutations.ts:assertSeedingEnabled` |
+| `SANCOCHO_ENABLE_SEED` deployment opt-in guards all three seed mutations **and `createBuiltinFieldDefinition`** | Seeding is irreversible: it consumes the deployment-wide-unique demo slug (no `deleteOrganization` exists) and permanently squats built-in field keys for every tenant. Creating a single built-in is the same irreversible effect through a fourth door, so it asserts the same switch; being an `internalMutation` is not a guard against whoever can run `convex run --prod`. The guard therefore lives outside `seed/` | `lib/seedGuard.ts`, `fields/mutations.ts` |
 | The seed accepts an optional **real owner identity**, and `grantDemoMembership` repairs an already-seeded deployment | The original fabricated issuer matched no possible token, leaving the demo organization unadministrable *and* unremovable | `seed/mutations.ts` |
 | Built-in keys, recipe field order and per-field `required` flags are declared explicitly, never derived from array position | All three freeze at publish (I2) and a built-in key is permanent deployment-wide. Deriving `required` from an index once coupled it to catalogue order | `seed/mutations.ts` |
 | The demo event's `startsAt` is a literal absolute timestamp for an 18:40 local arrival | Demonstrates the temporal rule that `startsAt` is an instant, and keeps every seeded deployment and test run identical | `seed/mutations.ts` |
@@ -114,19 +118,25 @@ a decision to stop rather than guess.
    who learns any user's Convex id can add them, and the added user immediately gains read
    access to the member roster (names and emails). A verified-email invite flow should replace
    it as the user-facing path. `organizations/model.ts` carries the note.
-2. **Archiving a location degrades already-published versions.** A published, immutable
+2. **Field archival is irreversible, and asymmetric with the location case.** There is no
+   unarchive for a field definition, and an archived field cannot be composed into a draft —
+   so a clone-then-publish of a version that uses it fails until the field is removed from
+   the draft (recoverable, unlike the location case below, which degrades an already-published
+   immutable version with no repair at all). Both are the same underlying choice: archival is
+   a one-way lifecycle, and the reference guards protect history rather than restoring it.
+3. **Archiving a location degrades already-published versions.** A published, immutable
    version whose field carries a location default stops being usable for new events once that
    location is archived, and there is no unarchive. Deliberate and asserted by
    `events.test.ts`. The alternative — tolerating pre-existing published defaults while
    refusing new selections — is a revision-system question worth deciding before this reaches
    real tenants. See [`locations.md`](locations.md#known-consequence-archival-degrades-published-versions).
-3. **`organizations` diverges from the audit convention.** Every other domain diffs before
+4. **`organizations` diverges from the audit convention.** Every other domain diffs before
    writing: no-op updates write no audit row and `metadata.changedFields` names what changed.
    `updateOrganization` writes `metadata: { name }` with no diffing, so re-sending the stored
    name writes a second audit row. Either bring it in line or document why organizations
    differ; `organizations.test.ts` currently asserts the actual behaviour, so changing it means
    changing the tests too.
-4. **Mirror-column backfill.** `recipeFields.defaultLocationId` was added mid-Stage-B with no
+5. **Mirror-column backfill.** `recipeFields.defaultLocationId` was added mid-Stage-B with no
    backfill — correct at the time, since no real data existed. Any deployment carrying
    recipe-field location defaults written before that commit needs a one-off backfill, or
    `deleteLocation`'s guard will miss them.

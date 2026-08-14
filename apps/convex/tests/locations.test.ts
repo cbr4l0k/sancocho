@@ -182,8 +182,40 @@ test('location types outside the code-owned taxonomy are rejected by the validat
   // The argument validator, not TypeScript, is what a real client faces; the
   // cast is the only way to send a type outside the closed union (I8).
   const unknownType = 'spaceport' as unknown as LocationType;
-  await expect(owner.client.mutation(createLocation, { organizationId, name: 'Unknown', type: unknownType })).rejects.toBeDefined();
-  await expect(owner.client.mutation(updateLocation, { locationId, type: unknownType })).rejects.toBeDefined();
+  for (const call of [
+    () => owner.client.mutation(createLocation, { organizationId, name: 'Unknown', type: unknownType }),
+    () => owner.client.mutation(updateLocation, { locationId, type: unknownType }),
+  ]) {
+    const rejection: unknown = await call().catch((error: unknown) => error);
+    // The args validator refuses it before the handler runs, so this is argument
+    // validation (no `data`), not an application-level error that happens to
+    // reject — the distinction a bare `rejects.toBeDefined()` could not see.
+    expect(rejection).toBeInstanceOf(Error);
+    expect(rejection).not.toHaveProperty('data');
+    expect((rejection as Error).message).toMatch(/Validator error.*got `"spaceport"`/);
+  }
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(locationId))?.type).toBe('depot');
+  });
+});
+
+test('a planner — the role floor itself — can create, update, archive and delete a location', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId } = await makeLocation(t);
+  const planner = await provision(t, 'planner');
+  await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+
+  // Every location mutation is planner+, not admin+: composing the tenant's
+  // planning catalogue is exactly a planner's job. Asserted from the floor rank
+  // itself, so raising the floor to admin fails here rather than passing on the
+  // owner's back.
+  const locationId = await planner.client.mutation(createLocation, { organizationId, name: 'Planner depot', type: 'depot' });
+  await expect(planner.client.mutation(updateLocation, { locationId, name: 'Planner depot renamed' })).resolves.toBeNull();
+  await expect(planner.client.mutation(archiveLocation, { locationId })).resolves.toBeNull();
+  await expect(planner.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(locationId)).toBeNull();
+  });
 });
 
 test('access probes are generic, operators cannot manage, and viewers can read', async () => {

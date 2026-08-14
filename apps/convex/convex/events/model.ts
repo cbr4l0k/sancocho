@@ -155,6 +155,19 @@ export async function createEventFromRecipe(
  * type through: the creation path submits non-null values only, and gets back a
  * map the compiler knows contains none.
  *
+ * `storedValues` — supplied by the update path only — is what the event already
+ * holds, keyed by field definition. A submitted value identical to the stored one
+ * skips the RULE checks below (bounds, option identity, and the location's
+ * usability): it already passed this exact immutable snapshot when it was
+ * written, so re-checking it re-litigates history against the world as it is now.
+ * That is what made a read-modify-write client — load the event, edit one field,
+ * resubmit the whole form — fail on an untouched location value once that
+ * location was archived. Structural checks (unknown field, repeated definition,
+ * clearing a required field) still run over the FULL submission, so nothing
+ * hides behind an unchanged neighbour, and the write loop diffs again anyway.
+ * This is the same "gate on change, not on argument presence" rule
+ * `updateFieldDefinition` states for I2/I3.
+ *
  * Snapshot `visible: false` is deliberately NOT enforced here or on read.
  * Visibility is presentation metadata — "do not put this on the operator's
  * form" — not an authorization or integrity rule. A hidden field may legitimately
@@ -171,6 +184,7 @@ export async function validateEventAgainstRecipe<Value extends EventFieldValue |
   recipeFieldRows: Doc<'recipeFields'>[],
   values: { fieldDefinitionId: Id<'fieldDefinitions'>; value: Value }[],
   requireAll: boolean,
+  storedValues?: ReadonlyMap<Id<'fieldDefinitions'>, EventFieldValue>,
 ): Promise<ResolvedValues<Value>> {
   const byDefinition = new Map(recipeFieldRows.map((field) => [field.fieldDefinitionId, field]));
   const resolved: ResolvedValues<Value> = new Map();
@@ -188,6 +202,8 @@ export async function validateEventAgainstRecipe<Value extends EventFieldValue |
       if (recipeField.required) return invalidInput('Required event fields cannot be cleared');
       continue;
     }
+    // An unchanged value is not a write, so it is not re-judged (see above).
+    if (sameFieldValue(value, storedValues?.get(item.fieldDefinitionId))) continue;
     validateFieldValueAgainstConfig(recipeField.config, value);
     // The half the pure helper cannot do: the reference must resolve inside this
     // tenant and still be usable, and must fail generically (I1/I9).
@@ -274,18 +290,36 @@ export async function updateEventFields(
     return notFoundOrInaccessible();
   }
   const fields = await getVersionFields(ctx, version._id);
-  const resolved = await validateEventAgainstRecipe(ctx, version, fields, args.values, false);
+  // The event's stored values are read BEFORE the gate, not per field after it,
+  // so the gate can tell a real edit from a resubmitted one and skip re-judging
+  // the latter (see `validateEventAgainstRecipe`). One read of a bounded child
+  // set — at most `maxFieldsPerVersion` rows, exactly like `getEvent` (I6) —
+  // replaces one indexed read per submitted field.
+  const storedRows = await ctx.db
+    .query('eventFieldValues')
+    .withIndex('by_event_field', (q) => q.eq('eventId', event._id))
+    .collect();
+  const stored = new Map(storedRows.map((row) => [row.fieldDefinitionId, row]));
+  const resolved = await validateEventAgainstRecipe(
+    ctx,
+    version,
+    fields,
+    args.values,
+    false,
+    new Map(storedRows.map((row) => [row.fieldDefinitionId, row.value])),
+  );
 
   // The audit row names the field definitions that actually changed, matching the
   // `changedFields` convention used by projects, recipes, and locations — a bare
   // count said an edit happened without saying to what, and a resubmitted value
-  // recorded an edit that never happened at all.
+  // recorded an edit that never happened at all. The ACTION is its own literal
+  // (`event.fieldsUpdated`), not `event.updated`: those ids are a different
+  // vocabulary from the column names `updateEventCoreFields` writes under the
+  // same metadata key, and one action for both left a log consumer sniffing the
+  // value to tell which it was reading.
   const changedFields: Id<'fieldDefinitions'>[] = [];
   for (const [fieldDefinitionId, { recipeField, value }] of resolved) {
-    const existing = await ctx.db
-      .query('eventFieldValues')
-      .withIndex('by_event_field', (q) => q.eq('eventId', event._id).eq('fieldDefinitionId', fieldDefinitionId))
-      .unique();
+    const existing = stored.get(fieldDefinitionId) ?? null;
     // Diffed against what is stored, so echoing a value back (or clearing an
     // already-absent one) writes neither a row nor an audit entry.
     if (sameFieldValue(value, existing?.value)) continue;
@@ -328,7 +362,7 @@ export async function updateEventFields(
   await recordAuditEvent(ctx, {
     organizationId: event.organizationId,
     actorUserId: access.user._id,
-    action: 'event.updated',
+    action: 'event.fieldsUpdated',
     entityType: 'event',
     entityId: event._id,
     metadata: { changedFields: changedFields.join(',') },
