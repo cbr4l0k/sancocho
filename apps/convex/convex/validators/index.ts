@@ -401,7 +401,12 @@ export type SemanticCapability =
   | 'eventDescription'
   | 'eventDate'
   | 'eventTime'
-  | 'eventLocation';
+  | 'eventLocation'
+  | 'passengerTotals'
+  | 'occupancyMetrics'
+  | 'capacityValidation'
+  | 'flightTracking'
+  | 'accessibilityRequirements';
 type SemanticDefinition = Readonly<{
   expectedDataType: FieldDataType;
   capabilities: readonly SemanticCapability[];
@@ -414,6 +419,21 @@ export const semanticRegistry = Object.freeze({
   eventDate: { expectedDataType: 'date', capabilities: ['eventDate'] },
   eventTime: { expectedDataType: 'time', capabilities: ['eventTime'] },
   eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'] },
+  'passenger.count': {
+    expectedDataType: 'number',
+    capabilities: ['passengerTotals', 'occupancyMetrics', 'capacityValidation'],
+  },
+  'transport.origin': { expectedDataType: 'location', capabilities: [] },
+  'transport.destination': { expectedDataType: 'location', capabilities: [] },
+  'aviation.flightNumber': { expectedDataType: 'text', capabilities: ['flightTracking'] },
+  'luggage.count': { expectedDataType: 'number', capabilities: [] },
+  'accessibility.wheelchairCount': {
+    expectedDataType: 'number',
+    capabilities: ['accessibilityRequirements'],
+  },
+  'contact.primary': { expectedDataType: 'text', capabilities: [] },
+  'aviation.terminal': { expectedDataType: 'text', capabilities: [] },
+  'general.notes': { expectedDataType: 'longText', capabilities: [] },
 } satisfies Record<string, SemanticDefinition>);
 
 export type SemanticType = keyof typeof semanticRegistry;
@@ -425,6 +445,15 @@ export const semanticTypeValidator = v.union(
   v.literal('eventDate'),
   v.literal('eventTime'),
   v.literal('eventLocation'),
+  v.literal('passenger.count'),
+  v.literal('transport.origin'),
+  v.literal('transport.destination'),
+  v.literal('aviation.flightNumber'),
+  v.literal('luggage.count'),
+  v.literal('accessibility.wheelchairCount'),
+  v.literal('contact.primary'),
+  v.literal('aviation.terminal'),
+  v.literal('general.notes'),
 );
 
 // Compile-time guard: the validator's type must be exactly the registry's key set.

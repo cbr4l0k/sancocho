@@ -43,6 +43,7 @@ import type * as recipes_queries from "../recipes/queries.js";
 import type * as relationships_model from "../relationships/model.js";
 import type * as relationships_mutations from "../relationships/mutations.js";
 import type * as relationships_queries from "../relationships/queries.js";
+import type * as seed_mutations from "../seed/mutations.js";
 import type * as validators_index from "../validators/index.js";
 
 import type {
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "relationships/model": typeof relationships_model;
   "relationships/mutations": typeof relationships_mutations;
   "relationships/queries": typeof relationships_queries;
+  "seed/mutations": typeof seed_mutations;
   "validators/index": typeof validators_index;
 }>;
 
