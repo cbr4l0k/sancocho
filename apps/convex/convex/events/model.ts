@@ -8,6 +8,7 @@ import {
   requireAuthenticatedUser,
   requireOrganizationMembership,
   requireOrganizationRole,
+  type AuthenticatedUser,
   type OrganizationMembershipAccess,
 } from '../lib/access';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
@@ -430,12 +431,13 @@ export async function listProjectEvents(
  * the stored project→event ownership is cross-checked rather than assumed.
  * `minimumRole` omitted means any member (viewer and above).
  */
-async function requireEventAccess(
+export async function requireEventAccess(
   ctx: QueryCtx | MutationCtx,
   eventId: Id<'events'>,
   minimumRole?: Role,
+  preResolvedUser?: AuthenticatedUser,
 ): Promise<{ event: Doc<'events'>; project: Doc<'projects'>; access: OrganizationMembershipAccess }> {
-  const authenticated = await requireAuthenticatedUser(ctx);
+  const authenticated = preResolvedUser ?? (await requireAuthenticatedUser(ctx));
   const event = await ctx.db.get(eventId);
   if (event === null) return notFoundOrInaccessible();
   const project = await ctx.db.get(event.projectId);
@@ -496,8 +498,12 @@ function validateEventDates(startsAt: number, endsAt: number | undefined): void 
  * archived project is read-only for all of them. Events are never hard-deleted,
  * so archival is a freeze, not a cascade — the events stay readable, listable,
  * and interpretable under their own recipe versions forever.
+ *
+ * Exported because the freeze is a policy about the Event, not about this
+ * module: relationships/model.ts gates its link writes on the same two helpers
+ * so there is exactly one definition of "writable event" in the codebase.
  */
-function assertProjectAcceptsEventWrites(project: Doc<'projects'>): void {
+export function assertProjectAcceptsEventWrites(project: Doc<'projects'>): void {
   if (project.status === 'archived') return invalidInput('Archived projects are read-only for their events');
 }
 
@@ -515,7 +521,7 @@ function assertProjectAcceptsNewEvents(project: Doc<'projects'>): void {
 }
 
 /** The full write gate: the container's lifecycle first, then the event's own. */
-function assertEventWritable(event: Doc<'events'>, project: Doc<'projects'>): void {
+export function assertEventWritable(event: Doc<'events'>, project: Doc<'projects'>): void {
   assertProjectAcceptsEventWrites(project);
   if (event.status === 'completed' || event.status === 'cancelled') {
     return invalidInput('Completed and cancelled events are read-only');
