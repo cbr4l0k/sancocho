@@ -1,46 +1,31 @@
-# Convex backend
+# @sancocho/convex
 
-## Authentication providers
+The Convex backend: schema, domain modules, authorization, validation, audit log and seeds.
 
-Only `convex/auth.config.ts` and `convex/lib/authAdapter.ts` are Clerk-specific.
-To swap providers, configure Convex JWT verification in `auth.config.ts` and update
-the adapter to map `ctx.auth.getUserIdentity()` into `{ provider, subject,
-displayName?, email?, emailVerified? }`. The replacement must provide stable issuer
-and subject values, plus standard name/email claims when available. The users,
-access, and domain modules remain provider-neutral.
+```bash
+bun run typecheck   # tsc --noEmit
+bun run test        # vitest run (edge-runtime; NOT bun test)
+bun run codegen     # convex codegen — requires a configured deployment
+bun run seed:enable # convex env set SANCOCHO_ENABLE_SEED true
+bun run seed        # convex run seed/mutations:seedDemonstrationData
+```
 
-Identity notes:
+Setup, environment variables, deployment configuration and the seed workflow are in the
+[repository README](../../README.md). The design documentation lives in [`docs/`](../../docs):
 
-- `authProvider` stores the full normalized token issuer — subjects are only
-  unique within an issuer, so the issuer is the namespace. Changing an issuer
-  URL (e.g. moving Clerk to a custom domain) is an identity migration.
-- Email is persisted only when the provider reports it verified, and it is
-  never an identity key.
-- User provisioning (`ensureUser`) is deliberately outside the audit log: the
-  audit log is organization-scoped and a user does not belong to an org at
-  provisioning time.
+| Topic | Document |
+| --- | --- |
+| Domain model, layering, tables and indexes, uniqueness rationale | [`docs/architecture.md`](../../docs/architecture.md) |
+| Identity flow, the Clerk-specific files, replacing the provider | [`docs/auth.md`](../../docs/auth.md) |
+| Access chain, role policy per operation, tenant isolation, error discipline | [`docs/authorization.md`](../../docs/authorization.md) |
+| Field definitions, semantic registry, snapshots, version lifecycle | [`docs/recipes.md`](../../docs/recipes.md) |
+| Typed event values, creation flow, temporal semantics, relationships | [`docs/events.md`](../../docs/events.md) |
+| Location reference semantics | [`docs/locations.md`](../../docs/locations.md) |
+| Deletion and archival policy | [`docs/deletion-and-archival.md`](../../docs/deletion-and-archival.md) |
+| Audit log and metadata safety | [`docs/audit.md`](../../docs/audit.md) |
+| Deliberate deviations and known gaps | [`docs/deviations.md`](../../docs/deviations.md) |
 
-## Organization role policy
-
-Roles are ordered `owner > admin > planner > operator > viewer`. Every
-organization operation proves an app-user membership first; a missing
-membership, missing organization, or insufficient role returns the same
-generic not-found/inaccessible error.
-
-| Operation | Minimum role | Additional policy |
-| --- | --- | --- |
-| View organization and members | viewer | Membership required. |
-| Update organization name | admin | Organization slug is immutable for now. |
-| Add members | admin | Only owners may grant the owner role. |
-| Change member roles | admin | Only owners may grant or revoke owner. |
-| Remove members | admin | Removing an owner requires owner role. |
-| Demote or remove an owner | owner | The final owner can never be demoted or removed. |
-
-Known policy notes:
-
-- Organization slugs are a deployment-wide namespace, so a slug conflict at
-  creation necessarily reveals that *some* organization owns the slug (never
-  which one). This is the only intentional cross-tenant signal.
-- `addMember` currently attaches an existing user id directly, with no consent
-  step; a verified-email invite flow should replace it as the user-facing path
-  (tracked in issue #5's close comment).
+Module convention: `queries.ts` and `mutations.ts` hold thin registered Convex functions with
+`args` and `returns` validators; `model.ts` holds authorization and business logic as plain
+`ctx`-taking functions. Shared validators and the table shapes that both the schema and the
+public API build on live in `convex/validators/`.

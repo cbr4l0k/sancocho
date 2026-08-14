@@ -1,5 +1,12 @@
 # Architecture Review (Stage A)
 
+> **Status: Stage A design record.** This document states what was decided *before*
+> implementation. It is still accurate where implementation followed it, but it is not the
+> description of the shipped system — that is [`architecture.md`](architecture.md) and the
+> documents it links. Where implementation diverged or settled an ambiguity (most notably the
+> snapshot-timing contract in §7, updated in place), the reason is recorded in
+> [`deviations.md`](deviations.md).
+
 Implementation-affecting decisions for the sancocho backend foundation. Invariants
 I1–I9 and domain conventions live in `CLAUDE.md`; issue scopes live in GitHub issues
 #2–#16. This document settles *how* those are realized and records any adjustments
