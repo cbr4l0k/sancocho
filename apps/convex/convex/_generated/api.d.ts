@@ -9,6 +9,7 @@
  */
 
 import type * as audit_model from "../audit/model.js";
+import type * as audit_queries from "../audit/queries.js";
 import type * as auth_model from "../auth/model.js";
 import type * as auth_mutations from "../auth/mutations.js";
 import type * as auth_queries from "../auth/queries.js";
@@ -52,6 +53,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "audit/model": typeof audit_model;
+  "audit/queries": typeof audit_queries;
   "auth/model": typeof auth_model;
   "auth/mutations": typeof auth_mutations;
   "auth/queries": typeof auth_queries;

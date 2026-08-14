@@ -3,9 +3,7 @@ import { v } from 'convex/values';
 
 import {
   archivalStatusValidator,
-  auditActionValidator,
-  auditEntityTypeValidator,
-  auditMetadataValidator,
+  auditEventFields,
   eventFieldValueValidator,
   eventFields,
   fieldConfigValidator,
@@ -149,14 +147,9 @@ export default defineSchema({
     .index('by_source_target_type', ['sourceEventId', 'targetEventId', 'type'])
     .index('by_target', ['targetEventId']),
 
-  auditEvents: defineTable({
-    organizationId: v.id('organizations'),
-    actorUserId: v.id('users'),
-    action: auditActionValidator,
-    entityType: auditEntityTypeValidator,
-    entityId: v.string(),
-    metadata: auditMetadataValidator,
-  })
+  // Audit is append-only: domain mutations write rows transactionally through
+  // audit/model.ts; no public audit mutation can update or delete them.
+  auditEvents: defineTable(auditEventFields)
     .index('by_org', ['organizationId'])
     .index('by_org_entity', ['organizationId', 'entityType', 'entityId']),
 });

@@ -280,6 +280,18 @@ export const auditActionValidator = v.union(
   v.literal('relationship.removed'),
 );
 
+/**
+ * Every entity type here is org-owned, which is exactly what `auditEvents`
+ * requires: `organizationId` is non-optional, so an audit row can only exist for
+ * something a tenant owns. There is deliberately no `user` member — the two
+ * org-less operations in the codebase (`ensureUser`, which provisions the app
+ * user before any membership exists, and `createBuiltinFieldDefinition`, which
+ * seeds deployment-wide definitions) therefore write no audit row at all. That
+ * gap is accepted rather than papered over: a nullable `organizationId` would
+ * weaken the tenant-scoped index every audit read depends on (I1/I6), and both
+ * operations are idempotent provisioning, not tenant activity. Should they ever
+ * need auditing, it belongs in a separate deployment-scoped log, not here.
+ */
 export const auditEntityTypeValidator = v.union(
   v.literal('organization'),
   v.literal('membership'),
@@ -291,18 +303,92 @@ export const auditEntityTypeValidator = v.union(
   v.literal('event'),
   v.literal('location'),
   v.literal('eventRelationship'),
-  v.literal('user'),
 );
 
 /**
- * Flat scalar metadata only. Issue #13 must additionally enforce per-action
- * allowed keys at write time — this shape alone cannot prove the absence of
- * secrets/tokens/PII.
+ * Metadata remains schema-compatible as a flat scalar record, but writes are
+ * restricted to this code-owned key set in `recordAuditEvent`. That runtime
+ * gate is what makes the audit policy's ban on secrets, tokens, provider
+ * claims, and excessive PII enforceable rather than aspirational.
+ */
+export const auditMetadataKeys = [
+  'changedFields',
+  'clonedFromVersion',
+  'fieldCount',
+  'fieldDefinitionId',
+  'key',
+  'name',
+  'position',
+  'previousRole',
+  'previousStatus',
+  'recipeVersionId',
+  'role',
+  'slug',
+  'sourceEventId',
+  'status',
+  'targetEventId',
+  'type',
+  'versionNumber',
+] as const;
+
+export const auditMetadataKeySet: ReadonlySet<string> = new Set(auditMetadataKeys);
+export type AuditMetadataKey = (typeof auditMetadataKeys)[number];
+export const maxAuditMetadataStringLength = 512;
+
+/**
+ * Keys whose values are ASSEMBLED BY SERVER CODE (joined column names and
+ * document ids) rather than copied from caller input. They are the only keys
+ * allowed to exceed `maxAuditMetadataStringLength`, and they are truncated
+ * instead of rejected — see `recordAuditEvent`.
+ */
+export const auditMetadataSummaryKeys = ['changedFields'] as const satisfies readonly AuditMetadataKey[];
+export const auditMetadataSummaryKeySet: ReadonlySet<string> = new Set(auditMetadataSummaryKeys);
+
+/**
+ * Public audit reads accept a caller-supplied `entityId`; it is compared against
+ * stored document ids (~33 characters), so anything longer cannot match and is
+ * refused rather than turned into an index scan on unbounded input.
+ */
+export const maxAuditEntityIdLength = 128;
+
+/**
+ * Flat scalar metadata only. The key set above is GLOBAL and code-owned rather
+ * than per-action, and deliberately so: every `recordAuditEvent` call site lives
+ * in this repository's domain models (no caller ever names a metadata key), so a
+ * per-action key map would only duplicate what the call sites already state,
+ * while adding a second place to edit on every new action. The global set still
+ * delivers the property that matters — a key not on this list can never reach
+ * the database — and the compiler is the first gate: `recordAuditEvent`'s
+ * `metadata` parameter is typed to these keys, so a misspelled or newly invented
+ * key fails `typecheck`, with the runtime guard as defense in depth.
+ *
+ * This shape alone cannot prove the absence of secrets/tokens/PII; the key set
+ * plus the string bound is what makes that policy enforceable.
  */
 export const auditMetadataValidator = v.record(
   v.string(),
   v.union(v.string(), v.number(), v.boolean(), v.null()),
 );
+
+/**
+ * Persisted audit row shape, shared by schema.ts and the public audit query
+ * contract. `_creationTime` is the log time axis; Convex supplies it, so audit
+ * rows deliberately have no duplicate `createdAt` column.
+ */
+export const auditEventFields = {
+  organizationId: v.id('organizations'),
+  actorUserId: v.id('users'),
+  action: auditActionValidator,
+  entityType: auditEntityTypeValidator,
+  entityId: v.string(),
+  metadata: auditMetadataValidator,
+};
+
+export const auditEventDocValidator = v.object({
+  _id: v.id('auditEvents'),
+  _creationTime: v.number(),
+  ...auditEventFields,
+});
 
 export type FieldDataType = typeof fieldDataTypeValidator.type;
 
