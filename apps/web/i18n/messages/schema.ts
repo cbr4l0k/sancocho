@@ -223,6 +223,15 @@ export type MessageSchema = {
   services: {
     title: string;
     eyebrow: string;
+    listLead: string;
+    listTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    status: string;
+    statusFilter: string;
+    allStatuses: string;
+    loadedFilterNotice: string;
+    notSet: string;
     createTitle: string;
     createLead: string;
     create: string;
@@ -232,6 +241,20 @@ export type MessageSchema = {
     recipeUnavailable: string;
     permissionNotice: string;
     serviceDetails: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    valuesTitle: string;
+    recipeVersionTitle: string;
+    recipeVersionDescription: string;
+    recipeVersionNumber: string;
+    recipeVersionRetired: string;
+    statusActions: string;
+    advanceTo: string;
+    cancel: string;
+    terminalNotice: string;
+    projectFrozenNotice: string;
+    auditTitle: string;
     name: string;
     startsAt: string;
     endsAt: string;

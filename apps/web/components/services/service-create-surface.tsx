@@ -262,17 +262,18 @@ function ServiceForm({
               onChange={(event) => setName(event.target.value)}
             />
           </label>
-          <DateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
-          <DateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
+          <ServiceDateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
+          <ServiceDateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
           {loadedFields
             .filter((field) => field.visible)
             .map((field) => (
-              <DynamicField
+              <ServiceDynamicField
                 key={field._id}
                 field={field}
                 label={definitions.get(field.fieldDefinitionId)?.label ?? t('common.notAvailable')}
                 value={state(field)}
                 organizationId={organizationId}
+                hasDefault={field.defaultValue !== undefined}
                 onChange={(next) => setValues((old) => new Map(old).set(field.fieldDefinitionId, next))}
               />
             ))}
@@ -285,7 +286,7 @@ function ServiceForm({
   );
 }
 
-function DateTime({
+export function ServiceDateTime({
   label,
   value,
   onChange,
@@ -314,20 +315,22 @@ function DateTime({
     </label>
   );
 }
-function DynamicField({
+export function ServiceDynamicField({
   field,
   label,
   value,
   onChange,
   organizationId,
+  hasDefault = false,
 }: {
   field: RecipeField;
   label: string;
   value: FieldValueFormState;
   onChange: (value: FieldValueFormState) => void;
   organizationId: FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'] | undefined;
+  hasDefault?: boolean;
 }) {
-  const required = field.required && field.defaultValue === undefined;
+  const required = field.required && !hasDefault;
   if (field.config.kind === 'location' && value.kind === 'location' && organizationId !== undefined)
     return (
       <label>
@@ -393,7 +396,7 @@ function DynamicField({
     );
   if (field.config.kind === 'datetime' && value.kind === 'datetime')
     return (
-      <DateTime
+      <ServiceDateTime
         label={label}
         value={value}
         onChange={(next) => onChange({ kind: 'datetime', ...next })}

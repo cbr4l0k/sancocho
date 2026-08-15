@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -9,6 +8,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '@sancocho/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
+import { ProjectServicesPanel } from '@/components/services/service-list-surface';
 import { Button } from '@/components/ui/button';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
@@ -85,22 +85,7 @@ export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
       </header>
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
       <ProjectDetails project={project} />
-      <Panel>
-        <PanelHeader>
-          <div>
-            <PanelTitle>{t('projects.servicesTitle')}</PanelTitle>
-            <PanelDescription>{t('projects.servicesPlaceholder')}</PanelDescription>
-          </div>
-        </PanelHeader>
-        <PanelBody>
-          <Link
-            className="text-sm text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-            href={`/${locale}/services/new?projectId=${project._id}`}
-          >
-            {t('projects.servicesLink')}
-          </Link>
-        </PanelBody>
-      </Panel>
+      <ProjectServicesPanel locale={locale} project={project} />
       {project.status === 'archived' ? <Notice>{t('projects.archivedNotice')}</Notice> : null}
       {canManage && project.status !== 'archived' ? (
         <div className="flex flex-wrap gap-2">
