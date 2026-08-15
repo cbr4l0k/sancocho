@@ -11,6 +11,7 @@ import type {
   roleValidator,
   SemanticType,
 } from '@sancocho/convex/validators';
+import type { StatusShape, StatusTone } from '@/lib/status';
 
 export type TranslationShape<Value> = Value extends string
   ? string
@@ -45,8 +46,46 @@ export type MessageSchema = {
   relationships: { title: string; types: Record<RelationshipType, string> };
   stats: { itemsSelected: string; welcome: string };
   chat: { title: string };
-  common: { language: string; spanish: string; english: string; save: string; cancel: string };
+  common: { language: string; spanish: string; english: string; save: string; cancel: string; required: string; retry: string; clear: string };
   errors: { generic: string; notFound: string };
   nav: { home: string; projects: string; services: string; recipes: string; locations: string };
   vocab: { roles: Record<Role, string>; auditActions: Record<AuditAction, string> };
+  /** Cursor pagination chrome. There is no total, so no "page N of M" string exists. */
+  table: { loaded: string; loadMore: string; loadingMore: string; endOfList: string };
+  empty: { noRecords: string; noRecordsBody: string; noMatches: string; noMatchesBody: string; unavailable: string };
+  home: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    connection: {
+      eyebrow: string;
+      title: string;
+      stateLabel: string;
+      states: { connecting: string; signedOut: string; profilePending: string; connected: string };
+      frontendLabel: string;
+      frontendValue: string;
+      localeLabel: string;
+    };
+    preferences: { eyebrow: string; title: string; description: string };
+    reference: {
+      eyebrow: string;
+      title: string;
+      description: string;
+      filterLabel: string;
+      filterPlaceholder: string;
+      filterDescription: string;
+      columns: { key: string; label: string; phase: string; disposition: string };
+    };
+    vocabulary: {
+      eyebrow: string;
+      title: string;
+      description: string;
+      groups: { projects: string; recipes: string; recipeVersions: string; services: string; archival: string };
+    };
+    /** Lifecycle phase, one per marker shape. */
+    phases: Record<StatusShape, string>;
+    /** Disposition, one per status tone. */
+    dispositions: Record<StatusTone, string>;
+    patterns: { eyebrow: string; loading: string; empty: string; unavailable: string };
+  };
 };

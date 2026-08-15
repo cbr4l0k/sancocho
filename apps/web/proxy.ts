@@ -26,8 +26,11 @@ export function proxy(request: NextRequest) {
   }
 
   if (firstSegment !== undefined && isLocaleSegment(firstSegment)) {
-    const response = NextResponse.next();
-    response.cookies.set(localeCookieName, canonicalLocaleForSegment(firstSegment), {
+    const canonicalLocale = canonicalLocaleForSegment(firstSegment);
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-sancocho-locale', canonicalLocale);
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.cookies.set(localeCookieName, canonicalLocale, {
       path: '/',
       maxAge: 31_536_000,
       sameSite: 'lax',

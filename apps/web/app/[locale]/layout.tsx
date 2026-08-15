@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
+import { getMessages, setRequestLocale } from 'next-intl/server';
 import type { ReactNode } from 'react';
 
 import { canonicalLocaleForSegment, isLocaleSegment } from '@/i18n/locales';
@@ -19,6 +19,12 @@ export async function generateMetadata({ params }: LocaleLayoutProps): Promise<M
 export default async function LocaleLayout({ children, params }: LocaleLayoutProps) {
   const { locale: segment } = await params;
   const locale = isLocaleSegment(segment) ? canonicalLocaleForSegment(segment) : 'es-CO';
+  /*
+    This app routes locales with its own proxy rather than next-intl's
+    middleware, so nothing else tells the request config which segment was
+    matched and `getMessages()` would fall back to Spanish on `/en`.
+  */
+  setRequestLocale(locale);
   const messages = await getMessages();
 
   return (
