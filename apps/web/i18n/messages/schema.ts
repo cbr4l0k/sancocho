@@ -220,7 +220,25 @@ export type MessageSchema = {
     statuses: Record<RecipeStatus, string>;
     versionStatuses: Record<RecipeVersionStatus, string>;
   };
-  services: { title: string; statuses: Record<EventStatus, string> };
+  services: {
+    title: string;
+    eyebrow: string;
+    createTitle: string;
+    createLead: string;
+    create: string;
+    chooseProject: string;
+    chooseRecipe: string;
+    projectUnavailable: string;
+    recipeUnavailable: string;
+    permissionNotice: string;
+    serviceDetails: string;
+    name: string;
+    startsAt: string;
+    endsAt: string;
+    fieldInvalid: string;
+    loadMore: string;
+    statuses: Record<EventStatus, string>;
+  };
   locations: {
     title: string;
     eyebrow: string;

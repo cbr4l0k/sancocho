@@ -18,11 +18,11 @@ import { builtinFieldLabel } from '@/i18n/builtin-fields';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import {
-  defaultFormState,
+  emptyFieldValueFormState,
   fromEventFieldValue,
   toEventFieldValue,
-  type DefaultValueFormState,
-} from '@/lib/recipe-field-default';
+  type FieldValueFormState,
+} from '@/lib/field-value-form';
 import { checkRecipeDraft } from '@/lib/recipe-draft-checks';
 import { roleAtLeast } from '@/lib/roles';
 
@@ -200,7 +200,7 @@ function RecipeFieldRow({
   problems: readonly string[];
 }) {
   const t = useTranslations();
-  const [defaultState, setDefaultState] = useState<DefaultValueFormState | null>(
+  const [defaultState, setDefaultState] = useState<FieldValueFormState | null>(
     field.defaultValue === undefined ? null : fromEventFieldValue(field.defaultValue),
   );
   const [config, setConfig] = useState(field.config);
@@ -308,14 +308,14 @@ function DefaultEditor({
   onSave,
 }: {
   config: RecipeField['config'];
-  state: DefaultValueFormState | null;
-  setState: (state: DefaultValueFormState | null) => void;
+  state: FieldValueFormState | null;
+  setState: (state: FieldValueFormState | null) => void;
   canManage: boolean;
   onClear: () => void;
   onSave: () => void;
 }) {
   const t = useTranslations();
-  const current = state?.kind === config.kind ? state : defaultFormState(config.kind);
+  const current = state?.kind === config.kind ? state : emptyFieldValueFormState(config.kind);
   const { currentOrganization } = useCurrentOrganization();
   return (
     <div className="mt-4 rounded-input border border-line p-3">
@@ -350,8 +350,8 @@ function DefaultControl({
   organizationId,
 }: {
   config: RecipeField['config'];
-  state: DefaultValueFormState;
-  onChange: (state: DefaultValueFormState) => void;
+  state: FieldValueFormState;
+  onChange: (state: FieldValueFormState) => void;
   disabled: boolean;
   organizationId: FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'] | undefined;
 }) {

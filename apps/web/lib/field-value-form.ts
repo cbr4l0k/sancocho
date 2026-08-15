@@ -1,18 +1,24 @@
-import {
-  emptyFieldValueFormState,
-  fromEventFieldValue,
-  toEventFieldValue,
-  type EventFieldValue,
-  type FieldValueFormState,
-} from './field-value-form';
+import type { eventFieldValueValidator } from '@sancocho/convex/validators';
 
-/** @deprecated Use the neutral field-value-form module for all Event field forms. */
-export type DefaultValueFormState = FieldValueFormState;
-export { fromEventFieldValue, toEventFieldValue };
-export function defaultFormState(kind: EventFieldValue['kind']): DefaultValueFormState {
-  return emptyFieldValueFormState(kind);
-}
-/*
+import { parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';
+import { timestampFromParts, timestampToParts } from '@/lib/timestamps';
+
+export type EventFieldValue = typeof eventFieldValueValidator.type;
+
+/** Form state deliberately mirrors every persisted discriminator. */
+export type FieldValueFormState =
+  | { kind: 'text'; value: string }
+  | { kind: 'longText'; value: string }
+  | { kind: 'number'; value: string }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'date'; value: string }
+  | { kind: 'datetime'; date: string; time: string }
+  | { kind: 'time'; value: string }
+  | { kind: 'select'; optionId: string }
+  | { kind: 'multiSelect'; optionIds: string[] }
+  | { kind: 'location'; locationId?: Extract<EventFieldValue, { kind: 'location' }>['locationId'] };
+
+export function emptyFieldValueFormState(kind: EventFieldValue['kind']): FieldValueFormState {
   switch (kind) {
     case 'text':
       return { kind, value: '' };
@@ -37,10 +43,9 @@ export function defaultFormState(kind: EventFieldValue['kind']): DefaultValueFor
   }
 }
 
-export function toEventFieldValue(state: DefaultValueFormState): EventFieldValue | undefined {
+export function toEventFieldValue(state: FieldValueFormState): EventFieldValue | undefined {
   switch (state.kind) {
     case 'text':
-      return { kind: state.kind, value: state.value };
     case 'longText':
       return { kind: state.kind, value: state.value };
     case 'number': {
@@ -58,11 +63,8 @@ export function toEventFieldValue(state: DefaultValueFormState): EventFieldValue
       return value === undefined ? undefined : { kind: state.kind, value };
     }
     case 'datetime': {
-      const date = parseDateForStorage(state.date);
-      const time = parseTimeForStorage(state.time);
-      if (date === undefined || time === undefined) return undefined;
-      const value = new Date(`${date}T${time}`).getTime();
-      return Number.isFinite(value) ? { kind: state.kind, value } : undefined;
+      const value = timestampFromParts(state);
+      return value === undefined ? undefined : { kind: state.kind, value };
     }
     case 'select':
       return state.optionId === '' ? undefined : { kind: state.kind, optionId: state.optionId };
@@ -73,32 +75,20 @@ export function toEventFieldValue(state: DefaultValueFormState): EventFieldValue
   }
 }
 
-export function fromEventFieldValue(value: EventFieldValue): DefaultValueFormState {
+export function fromEventFieldValue(value: EventFieldValue): FieldValueFormState {
   switch (value.kind) {
     case 'text':
-      return value;
     case 'longText':
+    case 'boolean':
+    case 'date':
+    case 'time':
+    case 'select':
+    case 'multiSelect':
+    case 'location':
       return value;
     case 'number':
       return { kind: value.kind, value: String(value.value) };
-    case 'boolean':
-      return value;
-    case 'date':
-      return value;
-    case 'time':
-      return value;
-    case 'select':
-      return value;
-    case 'multiSelect':
-      return value;
-    case 'location':
-      return value;
-    case 'datetime': {
-      const date = new Date(value.value);
-      const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-      return { kind: value.kind, date: localDate, time };
-    }
+    case 'datetime':
+      return { kind: value.kind, ...timestampToParts(value.value) };
   }
 }
-*/

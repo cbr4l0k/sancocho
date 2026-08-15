@@ -1,4 +1,4 @@
-import { isValidDateInput, isValidTimeInput } from '@/i18n/formats';
+import { timestampFromParts, timestampToParts } from './timestamps';
 
 export type ProjectTimestampParts = {
   date: string;
@@ -10,32 +10,14 @@ export type ProjectDateRange = {
   endsAt?: number;
 };
 
-function localParts(date: Date): ProjectTimestampParts {
-  return {
-    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
-  };
-}
-
 /** Builds an absolute millisecond timestamp from explicit local calendar and clock parts. */
 export function projectTimestampFromParts(parts: ProjectTimestampParts): number | undefined {
-  if (!isValidDateInput(parts.date) || !isValidTimeInput(parts.time)) return undefined;
-  const year = Number(parts.date.slice(0, 4));
-  const month = Number(parts.date.slice(5, 7));
-  const day = Number(parts.date.slice(8, 10));
-  const hour = Number(parts.time.slice(0, 2));
-  const minute = Number(parts.time.slice(3, 5));
-  const date = new Date(year, month - 1, day, hour, minute);
-  const timestamp = date.getTime();
-  const reconstructed = localParts(date);
-  return Number.isFinite(timestamp) && reconstructed.date === parts.date && reconstructed.time === parts.time
-    ? timestamp
-    : undefined;
+  return timestampFromParts(parts);
 }
 
 /** Converts an absolute timestamp into the local form-control values used for editing. */
 export function projectTimestampToParts(timestamp: number): ProjectTimestampParts {
-  return localParts(new Date(timestamp));
+  return timestampToParts(timestamp);
 }
 
 /** Validates optional start/end values while preserving intentionally empty endpoints. */

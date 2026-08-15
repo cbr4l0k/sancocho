@@ -95,7 +95,7 @@ export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
         <PanelBody>
           <Link
             className="text-sm text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-            href={`/${locale}/services?projectId=${project._id}`}
+            href={`/${locale}/services/new?projectId=${project._id}`}
           >
             {t('projects.servicesLink')}
           </Link>
