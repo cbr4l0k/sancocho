@@ -1,8 +1,8 @@
 # Sancocho web
 
-The Sancocho web application is a Next.js App Router shell connected to the
-existing Convex backend and Clerk. It carries the shared design system and its
-demonstration page, and intentionally contains no product screens.
+The Sancocho web application is a Next.js App Router workspace connected to the
+existing Convex backend and Clerk. It carries the shared design system and the
+organization workspace.
 
 ## Prerequisites
 
@@ -33,10 +33,10 @@ bun install
 bun run --cwd apps/web dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Signed-out visitors see the
-demonstration page without making an authenticated Convex request. After Clerk
-sign-in, the focal panel calls `auth/queries:getCurrentUser` to confirm the live
-Convex connection.
+Open [http://localhost:3000](http://localhost:3000). Signed-out visitors can
+sign in or create an account without making an authenticated Convex request.
+After Clerk sign-in, the organization workspace calls
+`auth/queries:getCurrentUser` to provision the application session.
 
 ## Design system
 
@@ -53,7 +53,7 @@ screen.
   viewers whose OS asks for light, and `data-theme` on `<html>` overrides both.
 - Typefaces: Chivo and Chivo Mono, self-hosted through `next/font` in
   `app/fonts.ts`.
-- `/[locale]` is the demonstration of the system, not a product screen.
+- `/[locale]` is the organization workspace, built from these primitives.
 
 ## Decisions
 
@@ -85,6 +85,7 @@ screen.
 - Translation catalogues cover UI chrome and code-owned vocabulary only.
   Tenant-authored recipe names, field labels/descriptions, select option labels,
   project names, and location names are stored and rendered exactly as entered.
-  Built-in field labels are localized in the frontend by stable key; an unknown
-  key intentionally falls back to its stored label.
+  Built-in field labels are localized in the frontend by code-owned semantic
+  type; an absent or unknown semantic type intentionally falls back to its
+  stored label.
 - Run `bun run i18n:check` from the repository root to verify catalogue parity.

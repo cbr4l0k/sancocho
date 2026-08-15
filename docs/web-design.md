@@ -82,10 +82,11 @@ Chivo Mono is its matching monospace, so the console does not read as two
 unrelated typefaces stapled together.
 
 Both are loaded through `next/font/google` in `apps/web/app/fonts.ts`, which
-downloads and self-hosts the files at build time — no CDN request at runtime
-(the CSP forbids it) and no layout shift. `subsets: ['latin', 'latin-ext']` is
-requested explicitly: the default `latin` subset covers Colombian Spanish but
-drops the wider Latin range a multi-tenant customer list will eventually hold.
+downloads and self-hosts the files at build time — no runtime CDN request or
+layout shift. `subsets: ['latin', 'latin-ext']` is requested explicitly: the
+default `latin` subset covers Colombian Spanish but drops the wider Latin range
+a multi-tenant customer list will eventually hold. A CSP has not yet been
+implemented and remains an open security-hardening item.
 
 **Banned:** Inter, Roboto, Arial, `system-ui` stacks, Space Grotesk.
 
@@ -484,19 +485,12 @@ re-skinned the same way.
 
 ---
 
-## 12. The demonstration
+## 12. Deliverable
 
-`app/[locale]/page.tsx` is the proof, not a product screen. Every panel exercises
-a primitive against **real behaviour** — the live Convex connection, a working
-locale control, a filter that actually filters, a "load more" that actually
-loads. Nothing is mocked, because a demo made of fake rows proves nothing.
-
-It keeps the original `AuthLoading` / `Unauthenticated` / `Authenticated`
-behaviour: signed-out visitors still make no authenticated Convex request.
-
-Composition: 8/4 (focal connection panel + language preferences), 7/5 (the
-service-status reference table + the status vocabulary board), 4/4/4 (the
-loading, empty and unavailable patterns).
+The deliverable is the shared primitives and their documented contracts, not a
+demonstration page. Product screens compose these primitives with real Convex
+data and authenticated states as they are introduced; the primitives remain
+small, accessible, token-driven, and independently reusable.
 
 ---
 

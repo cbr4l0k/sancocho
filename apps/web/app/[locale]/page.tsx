@@ -1,401 +1,188 @@
 'use client';
 
-import { Authenticated, AuthLoading, Unauthenticated, useQuery, type PaginationStatus } from 'convex/react';
+import { UserButton } from '@clerk/nextjs';
+import { Authenticated, AuthLoading, Unauthenticated, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { api } from '@sancocho/convex/api';
 
 import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
+import { CurrentOrganizationProvider, useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Bento, BentoItem } from '@/components/ui/bento';
 import { Button } from '@/components/ui/button';
 import { EmptyState, UnavailableState } from '@/components/ui/empty-state';
-import { Field, FieldControl, FieldDescription, FieldLabel, FieldReadout } from '@/components/ui/field';
-import {
-  Panel,
-  PanelBody,
-  PanelBodyFlush,
-  PanelDescription,
-  PanelEyebrow,
-  PanelHeader,
-  PanelMetric,
-  PanelTitle,
-} from '@/components/ui/panel';
+import { Field, FieldControl, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
+import { Panel, PanelBody, PanelBodyFlush, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton';
-import { StatusChip } from '@/components/ui/status-chip';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableLoadMore,
-  TableRow,
-  TableSkeletonRows,
-} from '@/components/ui/table';
-import {
-  archivalStatuses,
-  projectStatuses,
-  recipeStatuses,
-  recipeVersionStatuses,
-  serviceStatuses,
-  serviceStatusTokens,
-  type StatusShape,
-  type StatusTone,
-} from '@/lib/status';
+import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableLoadMore, TableRow, TableRowHeaderCell, TableSkeletonRows } from '@/components/ui/table';
+import { errorMessageKey, presentConvexError, type ConvexErrorPresentation } from '@/lib/convex-errors';
+import { roleLabelKey } from '@/lib/roles';
+import { segmentForCanonicalLocale } from '@/i18n/locales';
 
-/**
- * The design system's own proof.
- *
- * Not a product screen: every panel here exercises a primitive against real
- * behaviour — the live Convex connection, the working locale control, a filter
- * that actually filters, a "load more" that actually loads. Nothing is a
- * mock-up, because a demo made of fake rows proves nothing about the system.
- */
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export default function HomePage() {
-  const t = useTranslations();
-
   return (
     <main className="mx-auto flex w-full max-w-[88rem] flex-col gap-5 px-4 py-8 sm:px-6 lg:py-12">
-      <header className="flex flex-col gap-1.5">
-        <p className="text-micro uppercase text-accent">{t('home.eyebrow')}</p>
-        <h1 className="text-xl font-extrabold text-ink">{t('home.title')}</h1>
-        <p className="max-w-prose text-sm text-ink-2">{t('home.lead')}</p>
-      </header>
-
-      <Bento>
-        <BentoItem span={8}>
-          <ConnectionPanel />
-        </BentoItem>
-        <BentoItem span={4}>
-          <PreferencesPanel />
-        </BentoItem>
-        <BentoItem span={7}>
-          <StatusReferencePanel />
-        </BentoItem>
-        <BentoItem span={5}>
-          <VocabularyPanel />
-        </BentoItem>
-        <BentoItem span={4}>
-          <LoadingPatternPanel />
-        </BentoItem>
-        <BentoItem span={4}>
-          <EmptyPatternPanel />
-        </BentoItem>
-        <BentoItem span={4}>
-          <UnavailablePatternPanel />
-        </BentoItem>
-      </Bento>
+      <AuthLoading>
+        <LoadingScreen />
+      </AuthLoading>
+      <Unauthenticated>
+        <SignedOutScreen />
+      </Unauthenticated>
+      <Authenticated>
+        <ProvisionedApplication />
+      </Authenticated>
     </main>
   );
 }
 
-type ConnectionState = 'connecting' | 'signedOut' | 'profilePending' | 'connected';
+function LoadingScreen() {
+  return <div aria-busy="true"><Skeleton className="h-7 w-52" /><SkeletonText className="mt-5 max-w-md" /></div>;
+}
 
-/**
- * Both catalogue paths are written out, so `t()` always receives a literal and
- * the short metric word can never drift from the sentence beneath it.
- */
-const connectionCopy = {
-  connecting: { state: 'home.connection.states.connecting', detail: 'auth.connecting' },
-  signedOut: { state: 'home.connection.states.signedOut', detail: 'auth.signedOut' },
-  profilePending: { state: 'home.connection.states.profilePending', detail: 'auth.profilePending' },
-  connected: { state: 'home.connection.states.connected', detail: 'auth.connected' },
-} as const satisfies Record<ConnectionState, { state: string; detail: string }>;
-
-/** The focal panel: one large number-sized fact, and the controls that act on it. */
-function ConnectionPanel() {
-  const t = useTranslations();
+function SignedOutScreen() {
   const locale = useLocale();
-  const router = useRouter();
+  const t = useTranslations();
 
   return (
-    <Panel emphasis="focal" className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.connection.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.connection.title')}</PanelTitle>
-        </div>
-        <Button variant="primary" size="sm" onClick={() => router.refresh()}>
-          {t('common.retry')}
-        </Button>
-      </PanelHeader>
-      <PanelBody className="gap-5">
-        <AuthLoading>
-          <ConnectionReadout state="connecting" />
-        </AuthLoading>
-        <Unauthenticated>
-          <ConnectionReadout state="signedOut" />
-        </Unauthenticated>
-        <Authenticated>
-          <AuthenticatedReadout />
-        </Authenticated>
-        <div className="grid grid-cols-1 gap-4 border-t border-line pt-4 sm:grid-cols-2">
-          <FieldReadout label={t('home.connection.frontendLabel')} value={t('home.connection.frontendValue')} />
-          <FieldReadout label={t('home.connection.localeLabel')} value={locale} mono />
-        </div>
+    <Panel emphasis="focal" className="mx-auto w-full max-w-xl">
+      <PanelHeader><PanelTitle>{t('auth.signedOut')}</PanelTitle></PanelHeader>
+      <PanelBody className="flex-row flex-wrap items-center">
+        <Button variant="primary" render={<a href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />}>{t('auth.signIn')}</Button>
+        <Button variant="secondary" render={<a href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />}>{t('auth.signUp')}</Button>
       </PanelBody>
     </Panel>
   );
 }
 
-function ConnectionReadout({ state }: { state: ConnectionState }) {
+function ProvisionedApplication() {
+  const user = useQuery(api.auth.queries.getCurrentUser);
+  const ensureUser = useMutation(api.auth.mutations.ensureUser);
+  const requested = useRef(false);
+  const router = useRouter();
+  const locale = useLocale();
+  const [error, setError] = useState<ConvexErrorPresentation | null>(null);
+
+  useEffect(() => {
+    if (user !== null || requested.current) return;
+    requested.current = true;
+    void ensureUser().catch((caught: unknown) => {
+      const presentation = presentConvexError(caught);
+      if (presentation === 'unauthenticated') {
+        router.replace(`/${segmentForCanonicalLocale(locale)}/sign-in`);
+        return;
+      }
+      setError(presentation);
+    });
+  }, [ensureUser, locale, router, user]);
+
+  if (error !== null) return <ProvisioningError presentation={error} />;
+  if (user === undefined || user === null) return <LoadingScreen />;
+
+  return <OrganizationApplication />;
+}
+
+function ProvisioningError({ presentation }: { presentation: ConvexErrorPresentation }) {
   const t = useTranslations();
-  const copy = connectionCopy[state];
+  if (presentation === 'notFound') return <UnavailableState />;
+  return <EmptyState tone="unavailable" title={t(errorMessageKey(presentation))} />;
+}
+
+function OrganizationApplication() {
+  const organizations = useQuery(api.organizations.queries.listMyOrganizations);
+  if (organizations === undefined) return <LoadingScreen />;
 
   return (
-    <div className="flex flex-col gap-2">
-      <PanelMetric label={t('home.connection.stateLabel')} value={t(copy.state)} />
-      <p className="max-w-prose text-sm text-ink-2">{t(copy.detail)}</p>
-    </div>
+    <CurrentOrganizationProvider organizations={organizations}>
+      <OrganizationWorkspace />
+    </CurrentOrganizationProvider>
   );
 }
 
-function AuthenticatedReadout() {
-  const currentUser = useQuery(api.auth.queries.getCurrentUser);
+function OrganizationWorkspace() {
+  const { currentOrganization, organizations, selectOrganization } = useCurrentOrganization();
+  const t = useTranslations();
 
-  if (currentUser === undefined) {
-    return (
-      <div aria-busy="true" className="flex flex-col gap-3">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-3.5 w-64" />
-      </div>
-    );
+  return (
+    <>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div><h1 className="text-xl font-extrabold text-ink">{t('organizations.title')}</h1></div>
+        <div className="flex flex-wrap items-center gap-3"><LocaleSwitcher /><UserButton /></div>
+      </header>
+      {organizations.length === 0 ? <CreateOrganization /> : (
+        <Bento>
+          <BentoItem span={4}>
+            <Panel className="h-full"><PanelHeader><PanelTitle>{t('organizations.title')}</PanelTitle></PanelHeader><PanelBody>
+              <Field>
+                <FieldLabel>{t('organizations.switcherLabel')}</FieldLabel>
+                <FieldControl render={<select value={currentOrganization?.organization._id ?? ''} onChange={(event) => {
+                  const next = organizations.find(({ organization }) => organization._id === event.target.value);
+                  if (next !== undefined) selectOrganization(next);
+                }} />}>
+                  <option value="" disabled>{t('organizations.chooseOrganization')}</option>
+                  {organizations.map(({ organization }) => <option key={organization._id} value={organization._id}>{organization.name}</option>)}
+                </FieldControl>
+              </Field>
+            </PanelBody></Panel>
+          </BentoItem>
+          <BentoItem span={8}>{currentOrganization === null ? <PickOrganization /> : <MemberRoster />}</BentoItem>
+        </Bento>
+      )}
+    </>
+  );
+}
+
+function PickOrganization() {
+  const t = useTranslations();
+  return <Panel emphasis="focal" className="h-full"><PanelBody><EmptyState title={t('organizations.chooseOrganization')} /></PanelBody></Panel>;
+}
+
+function CreateOrganization() {
+  const t = useTranslations();
+  const createOrganization = useMutation(api.organizations.mutations.createOrganization);
+  const { selectCreatedOrganization } = useCurrentOrganization();
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [error, setError] = useState<'invalid' | ConvexErrorPresentation | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!slugPattern.test(slug) || slug.length < 3 || slug.length > 63) { setError('invalid'); return; }
+    setSubmitting(true); setError(null);
+    try {
+      const organizationId = await createOrganization({ name, slug });
+      selectCreatedOrganization(organizationId);
+    } catch (caught: unknown) {
+      setError(presentConvexError(caught));
+    } finally { setSubmitting(false); }
   }
 
-  return <ConnectionReadout state={currentUser === null ? 'profilePending' : 'connected'} />;
-}
-
-function PreferencesPanel() {
-  const t = useTranslations();
-
+  const errorText = error === 'invalid' ? t('organizations.slugInvalid') : error === 'conflict' ? t('organizations.slugTaken') : error === null ? null : t(errorMessageKey(error));
   return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.preferences.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.preferences.title')}</PanelTitle>
-        </div>
-      </PanelHeader>
-      <PanelBody>
-        <LocaleSwitcher />
-      </PanelBody>
+    <Panel emphasis="focal" className="mx-auto w-full max-w-2xl"><PanelHeader><div><PanelTitle>{t('organizations.createTitle')}</PanelTitle><PanelDescription>{t('organizations.createDescription')}</PanelDescription></div></PanelHeader>
+      <PanelBody><form className="flex flex-col gap-4" onSubmit={submit}>
+        <Field><FieldLabel required>{t('organizations.nameLabel')}</FieldLabel><FieldControl required value={name} onChange={(event) => setName(event.target.value)} /></Field>
+        <Field invalid={error === 'invalid'}><FieldLabel required>{t('organizations.slugLabel')}</FieldLabel><FieldControl required value={slug} onChange={(event) => setSlug(event.target.value)} /><FieldDescription>{t('organizations.slugDescription')}</FieldDescription>{errorText === null ? null : <FieldError>{errorText}</FieldError>}</Field>
+        <div><Button variant="primary" type="submit" disabled={submitting}>{t('organizations.createAction')}</Button></div>
+      </form></PanelBody>
     </Panel>
   );
 }
 
-const phaseLabelKey = {
-  ring: 'home.phases.ring',
-  bar: 'home.phases.bar',
-  diamond: 'home.phases.diamond',
-  dot: 'home.phases.dot',
-  pulse: 'home.phases.pulse',
-  square: 'home.phases.square',
-  cross: 'home.phases.cross',
-} as const satisfies Record<StatusShape, string>;
-
-const dispositionLabelKey = {
-  mute: 'home.dispositions.mute',
-  hold: 'home.dispositions.hold',
-  go: 'home.dispositions.go',
-  live: 'home.dispositions.live',
-  done: 'home.dispositions.done',
-  stop: 'home.dispositions.stop',
-  shelf: 'home.dispositions.shelf',
-} as const satisfies Record<StatusTone, string>;
-
-const referencePageSize = 3;
-
-/**
- * The table primitive against the pagination contract it was built for: rows
- * arrive a page at a time, the footer reports only what is in hand, and the
- * filter narrows the loaded rows rather than pretending to query the server.
- */
-function StatusReferencePanel() {
+function MemberRoster() {
+  const { currentOrganization } = useCurrentOrganization();
   const t = useTranslations();
-  const [loadedCount, setLoadedCount] = useState(referencePageSize);
-  const [filter, setFilter] = useState('');
+  const members = usePaginatedQuery(api.organizations.queries.listMembers, currentOrganization === null ? 'skip' : { organizationId: currentOrganization.organization._id }, { initialNumItems: 25 });
 
-  const loaded = serviceStatuses.slice(0, loadedCount);
-  const needle = filter.trim().toLowerCase();
-  const rows = needle === '' ? loaded : loaded.filter((status) => status.includes(needle));
-  const paginationStatus: PaginationStatus = loadedCount >= serviceStatuses.length ? 'Exhausted' : 'CanLoadMore';
-
-  return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.reference.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.reference.title')}</PanelTitle>
-          <PanelDescription>{t('home.reference.description')}</PanelDescription>
-        </div>
-        <Field className="w-full sm:w-44">
-          <FieldLabel>{t('home.reference.filterLabel')}</FieldLabel>
-          <FieldControl
-            value={filter}
-            placeholder={t('home.reference.filterPlaceholder')}
-            onValueChange={(value) => setFilter(value)}
-          />
-          <FieldDescription>{t('home.reference.filterDescription')}</FieldDescription>
-        </Field>
-      </PanelHeader>
-      <PanelBodyFlush>
-        {rows.length === 0 ? (
-          <EmptyState
-            tone="filtered"
-            title={t('empty.noMatches')}
-            description={t('empty.noMatchesBody')}
-            action={
-              <Button variant="ghost" size="sm" onClick={() => setFilter('')}>
-                {t('common.clear')}
-              </Button>
-            }
-          />
-        ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{t('home.reference.columns.key')}</TableHeaderCell>
-                <TableHeaderCell>{t('home.reference.columns.label')}</TableHeaderCell>
-                <TableHeaderCell>{t('home.reference.columns.phase')}</TableHeaderCell>
-                <TableHeaderCell align="end">{t('home.reference.columns.disposition')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((status) => {
-                const token = serviceStatusTokens[status];
-                return (
-                  <TableRow key={status}>
-                    <TableCell mono>{status}</TableCell>
-                    <TableCell>
-                      <StatusChip kind="service" status={status} />
-                    </TableCell>
-                    <TableCell>{t(phaseLabelKey[token.shape])}</TableCell>
-                    <TableCell align="end">{t(dispositionLabelKey[token.tone])}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-        <TableLoadMore
-          status={paginationStatus}
-          loadedCount={loaded.length}
-          pageSize={referencePageSize}
-          onLoadMore={(pageSize) => setLoadedCount((current) => current + pageSize)}
-        />
-      </PanelBodyFlush>
-    </Panel>
-  );
-}
-
-function VocabularyPanel() {
-  const t = useTranslations();
-
-  return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.vocabulary.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.vocabulary.title')}</PanelTitle>
-          <PanelDescription>{t('home.vocabulary.description')}</PanelDescription>
-        </div>
-      </PanelHeader>
-      <PanelBody className="gap-3.5">
-        <ChipRow label={t('home.vocabulary.groups.projects')}>
-          {projectStatuses.map((status) => (
-            <StatusChip key={status} kind="project" status={status} />
-          ))}
-        </ChipRow>
-        <ChipRow label={t('home.vocabulary.groups.recipes')}>
-          {recipeStatuses.map((status) => (
-            <StatusChip key={status} kind="recipe" status={status} />
-          ))}
-        </ChipRow>
-        <ChipRow label={t('home.vocabulary.groups.recipeVersions')}>
-          {recipeVersionStatuses.map((status) => (
-            <StatusChip key={status} kind="recipeVersion" status={status} />
-          ))}
-        </ChipRow>
-        <ChipRow label={t('home.vocabulary.groups.services')}>
-          {serviceStatuses.map((status) => (
-            <StatusChip key={status} kind="service" status={status} emphasis="loud" />
-          ))}
-        </ChipRow>
-        <ChipRow label={t('home.vocabulary.groups.archival')}>
-          {archivalStatuses.map((status) => (
-            <StatusChip key={status} kind="archival" status={status} />
-          ))}
-        </ChipRow>
-      </PanelBody>
-    </Panel>
-  );
-}
-
-function ChipRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-micro uppercase text-ink-3">{label}</span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
-    </div>
-  );
-}
-
-function LoadingPatternPanel() {
-  const t = useTranslations();
-
-  return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.patterns.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.patterns.loading')}</PanelTitle>
-        </div>
-      </PanelHeader>
-      <PanelBody className="gap-4">
-        <SkeletonText lines={2} />
-        <Table>
-          <TableSkeletonRows rows={3} columns={3} />
-        </Table>
-      </PanelBody>
-    </Panel>
-  );
-}
-
-function EmptyPatternPanel() {
-  const t = useTranslations();
-
-  return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.patterns.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.patterns.empty')}</PanelTitle>
-        </div>
-      </PanelHeader>
-      <PanelBody className="justify-center">
-        <EmptyState title={t('empty.noRecords')} description={t('empty.noRecordsBody')} />
-      </PanelBody>
-    </Panel>
-  );
-}
-
-function UnavailablePatternPanel() {
-  const t = useTranslations();
-
-  return (
-    <Panel className="h-full">
-      <PanelHeader>
-        <div className="flex flex-col gap-0.5">
-          <PanelEyebrow>{t('home.patterns.eyebrow')}</PanelEyebrow>
-          <PanelTitle>{t('home.patterns.unavailable')}</PanelTitle>
-        </div>
-      </PanelHeader>
-      <PanelBody className="justify-center">
-        <UnavailableState />
-      </PanelBody>
-    </Panel>
-  );
+  if (currentOrganization === null) return null;
+  return <Panel className="h-full"><PanelHeader><div><PanelTitle>{t('organizations.rosterTitle')}</PanelTitle><PanelDescription>{t('organizations.rosterDescription')}</PanelDescription></div></PanelHeader><PanelBodyFlush>
+    <Table><TableHead><TableRow><TableHeaderCell>{t('organizations.memberName')}</TableHeaderCell><TableHeaderCell>{t('organizations.memberEmail')}</TableHeaderCell><TableHeaderCell>{t('organizations.memberRole')}</TableHeaderCell></TableRow></TableHead>
+      {members.status === 'LoadingFirstPage' ? <TableSkeletonRows columns={3} /> : <TableBody>{members.results.map(({ membership, user }) => <TableRow key={membership._id}><TableRowHeaderCell>{user.name ?? user.email ?? t('common.notAvailable')}</TableRowHeaderCell><TableCell>{user.email ?? t('common.notAvailable')}</TableCell><TableCell>{t(roleLabelKey[membership.role])}</TableCell></TableRow>)}</TableBody>}
+    </Table>
+    {members.status === 'Exhausted' && members.results.length === 0 ? <EmptyState title={t('empty.noRecords')} description={t('empty.noRecordsBody')} /> : <TableLoadMore status={members.status} loadedCount={members.results.length} onLoadMore={members.loadMore} />}
+  </PanelBodyFlush></Panel>;
 }

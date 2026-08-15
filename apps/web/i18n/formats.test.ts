@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime, formatTime, parseDateForStorage, parseTimeForStorage } from './formats';
+import { formatDate, formatDateTime, formatTime, isValidDateInput, parseDateForStorage, parseTimeForStorage } from './formats';
 
 declare function test(name: string, body: () => void): void;
 
@@ -29,6 +29,17 @@ test('keeps a validated wall-clock time in strict storage format', () => {
 test('formats absolute datetimes for each locale', () => {
   const value = Date.UTC(2026, 2, 1, 15, 30);
   if (formatDateTime('es-CO', value) === formatDateTime('en-US', value)) throw new Error('Expected locale-specific datetime output');
+  expectContains(formatDateTime('en-US', value, 'America/Bogota'), 'GMT');
+});
+
+test('accepts a calendar date skipped by Pacific/Apia', () => {
+  const originalTimeZone = process.env.TZ;
+  process.env.TZ = 'Pacific/Apia';
+  try {
+    expectEqual(isValidDateInput('2011-12-30'), true);
+  } finally {
+    process.env.TZ = originalTimeZone;
+  }
 });
 
 test('rejects invalid strict date and time values', () => {

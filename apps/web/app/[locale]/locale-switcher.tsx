@@ -36,7 +36,7 @@ export function LocaleSwitcher() {
           {t('common.english')}
         </Button>
       </div>
-      <FieldDescription>{t('home.preferences.description')}</FieldDescription>
+      <FieldDescription>{t('common.languageDescription')}</FieldDescription>
     </Field>
   );
 }

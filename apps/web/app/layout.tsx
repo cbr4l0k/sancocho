@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { ConvexClientProvider } from '@/app/convex-client-provider';
 import { chivo, chivoMono } from '@/app/fonts';
+import { clerkLocalizations } from '@/i18n/clerk';
 import { defaultLocale, isCanonicalLocale } from '@/i18n/locales';
 import './globals.css';
 
@@ -13,7 +14,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     localeHeader !== null && isCanonicalLocale(localeHeader) ? localeHeader : defaultLocale;
 
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      localization={clerkLocalizations[locale]}
+      appearance={{
+        variables: {
+          colorPrimary: 'var(--sc-accent)',
+          colorBackground: 'var(--sc-ground-1)',
+          borderRadius: '8px',
+          fontFamily: 'var(--font-chivo)',
+        },
+      }}
+    >
       {/*
         No `data-theme` is stamped here on purpose: `:root` carries the dark
         palette, so dark is what everyone gets unless their OS asks for light.

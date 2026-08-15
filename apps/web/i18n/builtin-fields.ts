@@ -1,9 +1,14 @@
+import type { SemanticType } from '@sancocho/convex/validators';
+
 import type { CanonicalLocale } from './locales';
 import { messagesForLocale } from './messages';
 
-/** Tenant-authored labels are never translated; only known built-in keys use this catalogue. */
-export function builtinFieldLabel(locale: CanonicalLocale, key: string, storedLabel: string): string {
+/**
+ * Only the code-owned semantic type may select a localized built-in label.
+ * Tenant-authored keys and labels are always rendered as entered.
+ */
+export function builtinFieldLabel(locale: CanonicalLocale, semanticType: SemanticType | undefined, storedLabel: string): string {
+  if (semanticType === undefined) return storedLabel;
   const semanticTypes = messagesForLocale(locale).fields.semanticTypes;
-  const entry = Object.entries(semanticTypes).find(([semanticKey]) => semanticKey === key);
-  return entry?.[1].label ?? storedLabel;
+  return semanticTypes[semanticType]?.label ?? storedLabel;
 }
