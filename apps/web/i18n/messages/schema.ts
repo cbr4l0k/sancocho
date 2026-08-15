@@ -9,6 +9,7 @@ import type {
   relationshipTypeValidator,
   roleValidator,
 } from '@sancocho/convex/validators';
+import type { SemanticCapability } from '@sancocho/convex/validators';
 import type {
   AuditActionMessageKey,
   SemanticTypeMessageKey,
@@ -63,6 +64,52 @@ export type MessageSchema = {
   projects: { title: string; statuses: Record<ProjectStatus, string> };
   fields: {
     title: string;
+    eyebrow: string;
+    lead: string;
+    create: string;
+    builtin: string;
+    custom: string;
+    key: string;
+    label: string;
+    description: string;
+    dataType: string;
+    semanticType: string;
+    noSemanticType: string;
+    rules: string;
+    options: string;
+    optionId: string;
+    optionLabel: string;
+    addOption: string;
+    removeOption: string;
+    min: string;
+    max: string;
+    minLength: string;
+    maxLength: string;
+    minSelections: string;
+    maxSelections: string;
+    integerOnly: string;
+    save: string;
+    edit: string;
+    archive: string;
+    delete: string;
+    close: string;
+    createTitle: string;
+    editTitle: string;
+    immutableNotice: string;
+    snapshotNotice: string;
+    optionIdentityNotice: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    cancelArchive: string;
+    deleteTitle: string;
+    deleteWarning: string;
+    deleteConfirm: string;
+    emptyTitle: string;
+    emptyBody: string;
+    builtinsTitle: string;
+    customTitle: string;
+    capabilities: Record<SemanticCapability, string>;
     dataTypes: Record<FieldDataType, string>;
     statuses: Record<ArchivalStatus, string>;
     semanticTypes: Record<
@@ -92,7 +139,19 @@ export type MessageSchema = {
     clear: string;
     notAvailable: string;
   };
-  errors: { generic: string; notFound: string };
+  errors: {
+    generic: string;
+    notFound: string;
+    fieldKeyInvalid: string;
+    fieldKeyTaken: string;
+    fieldKeyBuiltin: string;
+    fieldDescriptionTooLong: string;
+    fieldSemanticIncompatible: string;
+    fieldHistoricalFrozen: string;
+    fieldArchived: string;
+    fieldDeleteBlocked: string;
+    fieldConfigInvalid: string;
+  };
   nav: {
     home: string;
     chat: string;

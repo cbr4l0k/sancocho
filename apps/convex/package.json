@@ -9,7 +9,8 @@
       "default": "./convex/_generated/api.js"
     },
     "./validators": {
-      "types": "./convex/validators/index.ts"
+      "types": "./convex/validators/index.ts",
+      "default": "./convex/validators/index.ts"
     }
   },
   "scripts": {

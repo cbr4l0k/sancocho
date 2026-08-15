@@ -1,2 +1,5 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function FieldsPage() { return <ComingSoon surface="fields" />; }
+import { FieldDefinitionsSurface } from '@/components/fields/field-definitions-surface';
+
+export default function FieldsPage() {
+  return <FieldDefinitionsSurface />;
+}

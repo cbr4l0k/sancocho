@@ -1,2 +1,5 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function FieldDetailPage() { return <ComingSoon surface="fields" />; }
+import { redirect } from 'next/navigation';
+
+export default function FieldDetailPage({ params }: { params: { locale: string } }) {
+  redirect(`/${params.locale}/fields`);
+}
