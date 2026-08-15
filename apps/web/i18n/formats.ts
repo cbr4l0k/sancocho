@@ -34,7 +34,9 @@ export function formatDate(locale: CanonicalLocale, value: string): string {
   const parts = dateParts(value);
   if (parts === undefined) return value;
   // A bare ISO date is UTC midnight; construct a local Date so Colombia never displays the prior day.
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(parts.year, parts.month - 1, parts.day));
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+    new Date(parts.year, parts.month - 1, parts.day),
+  );
 }
 
 export function formatTime(locale: CanonicalLocale, value: string): string {
@@ -42,7 +44,11 @@ export function formatTime(locale: CanonicalLocale, value: string): string {
   const [hourText, minuteText] = value.split(':');
   const hour = Number(hourText);
   const minute = Number(minuteText);
-  return new Intl.DateTimeFormat(locale, { hour: locale === 'es-CO' ? '2-digit' : 'numeric', minute: '2-digit', hour12: locale === 'en-US' }).format(new Date(2000, 0, 1, hour, minute));
+  return new Intl.DateTimeFormat(locale, {
+    hour: locale === 'es-CO' ? '2-digit' : 'numeric',
+    minute: '2-digit',
+    hour12: locale === 'en-US',
+  }).format(new Date(2000, 0, 1, hour, minute));
 }
 
 /**

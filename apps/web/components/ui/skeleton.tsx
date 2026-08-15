@@ -13,10 +13,7 @@ import { cn } from '@/lib/utils';
  * Always mark the region that contains skeletons with `aria-busy`; the skeleton
  * itself is hidden from assistive technology.
  */
-export function Skeleton({
-  className,
-  ...props
-}: ComponentPropsWithoutRef<'div'>) {
+export function Skeleton({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
   return (
     <div
       aria-hidden="true"
@@ -33,23 +30,11 @@ export function Skeleton({
 }
 
 /** A stack of text-height bars, for paragraph- and list-shaped placeholders. */
-export function SkeletonText({
-  lines = 3,
-  className,
-}: {
-  lines?: number | undefined;
-  className?: string | undefined;
-}) {
+export function SkeletonText({ lines = 3, className }: { lines?: number | undefined; className?: string | undefined }) {
   return (
-    <div
-      data-slot="skeleton-text"
-      className={cn('flex flex-col gap-2', className)}
-    >
+    <div data-slot="skeleton-text" className={cn('flex flex-col gap-2', className)}>
       {Array.from({ length: lines }, (_, index) => (
-        <Skeleton
-          key={index}
-          className={cn('h-3.5', index === lines - 1 ? 'w-3/5' : 'w-full')}
-        />
+        <Skeleton key={index} className={cn('h-3.5', index === lines - 1 ? 'w-3/5' : 'w-full')} />
       ))}
     </div>
   );

@@ -32,8 +32,10 @@ const dottedSpanishKeys = dottedKeys(esCO);
 const dottedEnglishKeys = dottedKeys(enUS);
 
 if (dottedSpanishKeys.length > 0 || dottedEnglishKeys.length > 0) {
-  if (dottedSpanishKeys.length > 0) console.error(`Invalid dotted message keys in es-CO: ${dottedSpanishKeys.join(', ')}`);
-  if (dottedEnglishKeys.length > 0) console.error(`Invalid dotted message keys in en-US: ${dottedEnglishKeys.join(', ')}`);
+  if (dottedSpanishKeys.length > 0)
+    console.error(`Invalid dotted message keys in es-CO: ${dottedSpanishKeys.join(', ')}`);
+  if (dottedEnglishKeys.length > 0)
+    console.error(`Invalid dotted message keys in en-US: ${dottedEnglishKeys.join(', ')}`);
   process.exit(1);
 }
 

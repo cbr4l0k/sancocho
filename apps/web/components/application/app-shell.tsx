@@ -1,13 +1,7 @@
 'use client';
 
 import { UserButton } from '@clerk/nextjs';
-import {
-  Authenticated,
-  AuthLoading,
-  Unauthenticated,
-  useMutation,
-  useQuery,
-} from 'convex/react';
+import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from 'convex/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -16,32 +10,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '@sancocho/convex/api';
 
 import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
-import {
-  CurrentOrganizationProvider,
-  useCurrentOrganization,
-} from '@/components/organizations/current-organization';
+import { CurrentOrganizationProvider, useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { EmptyState, UnavailableState } from '@/components/ui/empty-state';
-import {
-  Field,
-  FieldControl,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from '@/components/ui/field';
-import {
-  Panel,
-  PanelBody,
-  PanelDescription,
-  PanelHeader,
-  PanelTitle,
-} from '@/components/ui/panel';
+import { Field, FieldControl, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
+import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton';
-import {
-  errorMessageKey,
-  presentConvexError,
-  type ConvexErrorPresentation,
-} from '@/lib/convex-errors';
+import { errorMessageKey, presentConvexError, type ConvexErrorPresentation } from '@/lib/convex-errors';
 import { segmentForCanonicalLocale } from '@/i18n/locales';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -69,10 +44,7 @@ export function ApplicationShell({ children }: ApplicationShellProps) {
 
 function ShellLoading() {
   return (
-    <main
-      className="mx-auto w-full max-w-[88rem] px-4 py-8 sm:px-6 lg:py-12"
-      aria-busy="true"
-    >
+    <main className="mx-auto w-full max-w-[88rem] px-4 py-8 sm:px-6 lg:py-12" aria-busy="true">
       <Skeleton className="h-8 w-56" />
       <SkeletonText className="mt-5 max-w-md" />
     </main>
@@ -93,20 +65,10 @@ function SignedOut() {
           <PanelDescription>{t('auth.signedOut')}</PanelDescription>
         </PanelHeader>
         <PanelBody className="flex-row flex-wrap items-center">
-          <Button
-            variant="primary"
-            render={
-              <Link href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />
-            }
-          >
+          <Button variant="primary" render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />}>
             {t('auth.signIn')}
           </Button>
-          <Button
-            variant="secondary"
-            render={
-              <Link href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />
-            }
-          >
+          <Button variant="secondary" render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />}>
             {t('auth.signUp')}
           </Button>
         </PanelBody>
@@ -144,11 +106,7 @@ function ProvisionedShell({ children }: ApplicationShellProps) {
   return <OrganizationGate>{children}</OrganizationGate>;
 }
 
-function ShellError({
-  presentation,
-}: {
-  presentation: ConvexErrorPresentation;
-}) {
+function ShellError({ presentation }: { presentation: ConvexErrorPresentation }) {
   const t = useTranslations();
 
   return (
@@ -156,10 +114,7 @@ function ShellError({
       {presentation === 'notFound' ? (
         <UnavailableState />
       ) : (
-        <EmptyState
-          tone="unavailable"
-          title={t(errorMessageKey(presentation))}
-        />
+        <EmptyState tone="unavailable" title={t(errorMessageKey(presentation))} />
       )}
     </main>
   );
@@ -171,26 +126,18 @@ function OrganizationGate({ children }: ApplicationShellProps) {
 
   return (
     <CurrentOrganizationProvider organizations={organizations}>
-      {organizations.length === 0 ? (
-        <CreateOrganization />
-      ) : (
-        <ShellFrame>{children}</ShellFrame>
-      )}
+      {organizations.length === 0 ? <CreateOrganization /> : <ShellFrame>{children}</ShellFrame>}
     </CurrentOrganizationProvider>
   );
 }
 
 function CreateOrganization() {
   const t = useTranslations();
-  const createOrganization = useMutation(
-    api.organizations.mutations.createOrganization,
-  );
+  const createOrganization = useMutation(api.organizations.mutations.createOrganization);
   const { selectCreatedOrganization } = useCurrentOrganization();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [error, setError] = useState<
-    'invalid' | ConvexErrorPresentation | null
-  >(null);
+  const [error, setError] = useState<'invalid' | ConvexErrorPresentation | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -228,31 +175,19 @@ function CreateOrganization() {
             <PanelTitle className="text-display font-extrabold tracking-[-0.025em]">
               {t('organizations.createTitle')}
             </PanelTitle>
-            <PanelDescription>
-              {t('organizations.createDescription')}
-            </PanelDescription>
+            <PanelDescription>{t('organizations.createDescription')}</PanelDescription>
           </div>
         </PanelHeader>
         <PanelBody>
           <form className="flex flex-col gap-4" onSubmit={submit}>
             <Field>
               <FieldLabel required>{t('organizations.nameLabel')}</FieldLabel>
-              <FieldControl
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
+              <FieldControl required value={name} onChange={(event) => setName(event.target.value)} />
             </Field>
             <Field invalid={error === 'invalid'}>
               <FieldLabel required>{t('organizations.slugLabel')}</FieldLabel>
-              <FieldControl
-                required
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-              />
-              <FieldDescription>
-                {t('organizations.slugDescription')}
-              </FieldDescription>
+              <FieldControl required value={slug} onChange={(event) => setSlug(event.target.value)} />
+              <FieldDescription>{t('organizations.slugDescription')}</FieldDescription>
               {errorText === null ? null : <FieldError>{errorText}</FieldError>}
             </Field>
             <div>
@@ -268,8 +203,7 @@ function CreateOrganization() {
 }
 
 function ShellFrame({ children }: ApplicationShellProps) {
-  const { currentOrganization, organizations, selectOrganization } =
-    useCurrentOrganization();
+  const { currentOrganization, organizations, selectOrganization } = useCurrentOrganization();
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations();
@@ -293,16 +227,10 @@ function ShellFrame({ children }: ApplicationShellProps) {
             href={`/${segment}`}
             className="flex shrink-0 items-center gap-2 text-lg font-extrabold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
-            <span
-              aria-hidden="true"
-              className="size-2.5 rounded-full bg-accent"
-            />
+            <span aria-hidden="true" className="size-2.5 rounded-full bg-accent" />
             {t('nav.application')}
           </Link>
-          <nav
-            aria-label={t('nav.label')}
-            className="min-w-0 flex-1 overflow-x-auto"
-          >
+          <nav aria-label={t('nav.label')} className="min-w-0 flex-1 overflow-x-auto">
             <div className="flex w-max min-w-full items-center justify-center gap-0.5 rounded-pill bg-ground-1 p-1">
               {nav.map((item) => {
                 return (
@@ -321,30 +249,16 @@ function ShellFrame({ children }: ApplicationShellProps) {
           </nav>
           <div className="flex shrink-0 items-center gap-3">
             <div className="relative flex h-[34px] max-w-48 items-center gap-2 rounded-pill bg-ground-1 px-3 text-sm font-semibold text-ink">
-              <span className="truncate">
-                {currentOrganization?.organization.name}
-              </span>
-              <svg
-                aria-hidden="true"
-                className="size-3 shrink-0 text-ink-3"
-                viewBox="0 0 12 12"
-              >
-                <path
-                  d="m3 4.5 3 3 3-3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
+              <span className="truncate">{currentOrganization?.organization.name}</span>
+              <svg aria-hidden="true" className="size-3 shrink-0 text-ink-3" viewBox="0 0 12 12">
+                <path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
               </svg>
               <select
                 aria-label={t('organizations.switcherLabel')}
                 className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
                 value={currentOrganization?.organization._id ?? ''}
                 onChange={(event) => {
-                  const next = organizations.find(
-                    ({ organization }) =>
-                      organization._id === event.target.value,
-                  );
+                  const next = organizations.find(({ organization }) => organization._id === event.target.value);
                   if (next !== undefined) selectOrganization(next);
                 }}
               >
@@ -368,13 +282,7 @@ function ShellFrame({ children }: ApplicationShellProps) {
               aria-label={t('nav.settings')}
               render={<Link href={`/${segment}/settings`} />}
             >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
                 <path d="m19.4 13.6 1.1.9-1.8 3.1-1.3-.5a7.7 7.7 0 0 1-1.6.9l-.2 1.4h-3.6l-.2-1.4a7.7 7.7 0 0 1-1.6-.9l-1.3.5-1.8-3.1 1.1-.9a7 7 0 0 1 0-1.8l-1.1-.9L9 7l1.3.5a7.7 7.7 0 0 1 1.6-.9l.2-1.4h3.6l.2 1.4a7.7 7.7 0 0 1 1.6.9l1.3-.5 1.8 3.1-1.1.9a7 7 0 0 1 0 1.8Z" />
               </svg>

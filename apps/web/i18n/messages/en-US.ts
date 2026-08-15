@@ -4,11 +4,9 @@ import type esCO from './es-CO';
 const enUS = {
   auth: {
     connecting: 'Connecting to Sancocho…',
-    signedOut:
-      'You are not signed in. The Sancocho connection is ready when you are.',
+    signedOut: 'You are not signed in. The Sancocho connection is ready when you are.',
     signedOutTitle: 'Welcome to Sancocho',
-    profilePending:
-      'Connected to Convex. Your Sancocho user profile is not set up yet.',
+    profilePending: 'Connected to Convex. Your Sancocho user profile is not set up yet.',
     connected: 'Connected to Convex.',
     signIn: 'Sign in',
     signUp: 'Create account',
@@ -16,23 +14,19 @@ const enUS = {
   },
   organizations: {
     title: 'Organizations',
-    members:
-      '{count, plural, =0 {No members} one {# member} other {# members}}',
+    members: '{count, plural, =0 {No members} one {# member} other {# members}}',
     switcherLabel: 'Active organization',
     chooseOrganization: 'Choose an organization',
     createTitle: 'Create your organization',
     createDescription: 'Set up the workspace for your operation.',
     nameLabel: 'Organization name',
     slugLabel: 'Organization identifier',
-    slugDescription:
-      'Use lowercase letters, 3–63 characters, with letters, numbers, and single dashes.',
+    slugDescription: 'Use lowercase letters, 3–63 characters, with letters, numbers, and single dashes.',
     createAction: 'Create organization',
-    slugInvalid:
-      'Use a valid identifier: lowercase letters, numbers, and single dashes, 3–63 characters long.',
+    slugInvalid: 'Use a valid identifier: lowercase letters, numbers, and single dashes, 3–63 characters long.',
     slugTaken: 'That identifier is not available. Choose another.',
     rosterTitle: 'Organization members',
-    rosterDescription:
-      'These are the people who currently have access to this organization.',
+    rosterDescription: 'These are the people who currently have access to this organization.',
     memberName: 'Name',
     memberEmail: 'Email',
     memberRole: 'Role',
@@ -72,6 +66,7 @@ const enUS = {
     maxLength: 'Maximum length',
     minSelections: 'Minimum selections',
     maxSelections: 'Maximum selections',
+    definitionAllows: 'Definition allows {min}–{max}',
     integerOnly: 'Whole numbers only',
     save: 'Save field',
     edit: 'Edit',
@@ -193,34 +188,72 @@ const enUS = {
     create: 'Create recipe',
     createTitle: 'Create event recipe',
     createLead: 'The key identifies this recipe permanently and cannot change later.',
-    name: 'Name', key: 'Key',
+    name: 'Name',
+    key: 'Key',
     keyHelp: 'Use 2–64 lowerCamelCase characters, starting with a lowercase letter.',
-    description: 'Description', save: 'Save recipe', edit: 'Edit metadata',
-    archive: 'Archive recipe', archiveTitle: 'Archive this recipe?',
+    description: 'Description',
+    save: 'Save recipe',
+    edit: 'Edit metadata',
+    archive: 'Archive recipe',
+    archiveTitle: 'Archive this recipe?',
     archiveWarning:
       'Archiving retires its published version. It can no longer source new services, ' +
       'while existing services stay interpretable.',
-    archiveConfirm: 'Archive recipe', currentVersion: 'Current version',
-    noPublishedVersion: 'No published version', emptyTitle: 'No recipes yet',
+    archiveConfirm: 'Archive recipe',
+    currentVersion: 'Current version',
+    noPublishedVersion: 'No published version',
+    emptyTitle: 'No recipes yet',
     emptyBody: 'Create an event recipe to start assembling versioned service configuration.',
-    versionsTitle: 'Version timeline', created: 'Created', current: 'Current',
-    noVersions: 'This recipe has no versions yet.', createFirstDraft: 'Create the first draft',
-    newVersionFrom: 'New version from v{version}', publishDraft: 'Publish draft',
+    versionsTitle: 'Version timeline',
+    created: 'Created',
+    current: 'Current',
+    noVersions: 'This recipe has no versions yet.',
+    createFirstDraft: 'Create the first draft',
+    newVersionFrom: 'New version from v{version}',
+    publishDraft: 'Publish draft',
     draftEditor: 'Open draft editor',
     draftEditorNote: 'The draft field editor is coming in the next step.',
     archivedNotice: 'This recipe is archived and read-only. Its published version was retired when it was archived.',
     immutableNotice:
       'Published and retired versions are locked snapshots. To change a published recipe, ' +
       'start a new version from it.',
-    contentsTitle: 'Version contents', locked: 'Locked snapshot', position: 'Position',
-    field: 'Field', requiredField: 'Required', visibleField: 'Visible',
+    contentsTitle: 'Version contents',
+    locked: 'Locked snapshot',
+    position: 'Position',
+    field: 'Field',
+    requiredField: 'Required',
+    visibleField: 'Visible',
     rules: 'Snapshot rules',
     definitionUnresolved: 'Definition could not be resolved; showing the stored snapshot.',
-    no: 'No', yes: 'Yes', emptyDraft: 'Add at least one field before publishing this draft.',
+    no: 'No',
+    yes: 'Yes',
+    emptyDraft: 'Add at least one field before publishing this draft.',
     duplicateDefinition: 'This field definition appears more than once.',
     duplicatePosition: 'This position is already in use.',
     invalidPosition: 'Position must be a non-negative whole number.',
     requiredHidden: 'A required field must be visible.',
+    draftEditorLead: 'Compose this draft in order. Everything shown here freezes permanently when you publish.',
+    draftMissing: 'This recipe has no draft version. Return to the recipe to create one.',
+    draftArchived: 'Archived recipes cannot be edited. Return to the recipe.',
+    fieldCount: '{count} of {max} fields',
+    addField: 'Add field',
+    noAvailableFields: 'No active field definitions are available to add.',
+    moveUp: 'Move field up',
+    moveDown: 'Move field down',
+    removeField: 'Remove field',
+    removeFieldTitle: 'Remove this field?',
+    removeFieldWarning: 'Removing it changes only this draft version.',
+    removeFieldConfirm: 'Remove field',
+    defaultValue: 'Default value',
+    clearDefault: 'Clear default',
+    noDefault: 'No default',
+    tightenRules: 'Tighten validation for this recipe',
+    tightenRulesHelp: 'Recipe rules may narrow this definition’s rules, never widen them.',
+    tightenRulesVersionOnly:
+      'These rules apply only to this recipe version and freeze at publish. They do not change the Field Definition.',
+    locationDefaultWarning:
+      'Important: if this location is archived after publishing, this version cannot create new services and cannot be repaired.',
+    editDraft: 'Edit draft',
     statuses: { draft: 'Draft', active: 'Active', archived: 'Archived' },
     versionStatuses: {
       draft: 'Draft',
@@ -261,8 +294,7 @@ const enUS = {
     },
   },
   stats: {
-    itemsSelected:
-      '{count, plural, =0 {No items selected} one {# item selected} other {# items selected}}',
+    itemsSelected: '{count, plural, =0 {No items selected} one {# item selected} other {# items selected}}',
     welcome: 'Hello, {name}. Everything is ready to get started.',
   },
   chat: {
@@ -272,8 +304,7 @@ const enUS = {
   },
   common: {
     language: 'Language',
-    languageDescription:
-      'Your choice is stored in a cookie and sets the application route.',
+    languageDescription: 'Your choice is stored in a cookie and sets the application route.',
     spanish: 'Spanish',
     english: 'English',
     save: 'Save',
@@ -292,8 +323,7 @@ const enUS = {
     fieldDescriptionTooLong: 'The description can contain at most 2,000 characters.',
     fieldSemanticIncompatible: 'Choose a semantic type compatible with the data type.',
     fieldHistoricalFrozen:
-      'This field is used by a published or retired recipe version; only its label ' +
-      'and description can change.',
+      'This field is used by a published or retired recipe version; only its label ' + 'and description can change.',
     fieldArchived: 'Archived fields cannot be edited.',
     fieldDeleteBlocked: 'This field is in use. Archive it instead.',
     fieldConfigInvalid: 'Review the validation rules and options for this field.',
@@ -318,10 +348,8 @@ const enUS = {
   },
   shell: {
     comingSoonTitle: 'Available in a future stage',
-    comingSoonDescription:
-      'This surface already has a route and shares the operations frame.',
-    comingSoonBody:
-      'The operational functionality for this surface will arrive in its planned stage.',
+    comingSoonDescription: 'This surface already has a route and shares the operations frame.',
+    comingSoonBody: 'The operational functionality for this surface will arrive in its planned stage.',
   },
   vocab: {
     roles: {
@@ -368,16 +396,14 @@ const enUS = {
     },
   },
   table: {
-    loaded:
-      '{count, plural, =0 {No records loaded} one {# record loaded} other {# records loaded}}',
+    loaded: '{count, plural, =0 {No records loaded} one {# record loaded} other {# records loaded}}',
     loadMore: 'Load more',
     loadingMore: 'Loading…',
     endOfList: 'End of list',
   },
   empty: {
     noRecords: 'No records yet',
-    noRecordsBody:
-      'The first one will show up in this list as soon as it is created.',
+    noRecordsBody: 'The first one will show up in this list as soon as it is created.',
     noMatches: 'No records match the filter',
     noMatchesBody: 'Adjust or clear the filter to see more results.',
     unavailable: 'Content unavailable',

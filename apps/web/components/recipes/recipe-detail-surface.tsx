@@ -4,6 +4,7 @@ import { useMutation, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import Link from 'next/link';
 
 import { api } from '@sancocho/convex/api';
 
@@ -183,7 +184,7 @@ function LifecycleActions({
 
   if (!canManage || archived) return null;
   if (draft !== undefined) {
-    return <DraftActions draft={draft} onAction={onAction} publish={publish} />;
+    return <DraftActions draft={draft} onAction={onAction} publish={publish} recipeId={recipeId} />;
   }
   if (published !== undefined) {
     return (
@@ -204,16 +205,19 @@ function LifecycleActions({
 
 function DraftActions({
   draft,
+  recipeId,
   publish,
   onAction,
 }: {
   draft: RecipeVersion;
+  recipeId: RecipeId;
   publish: ReturnType<
     typeof useMutation<typeof api.recipes.mutations.publishRecipeVersion>
   >;
   onAction: OnAction;
 }) {
   const t = useTranslations();
+  const locale = useCanonicalLocale();
   const details = useQuery(api.recipes.queries.getRecipeVersion, {
     recipeVersionId: draft._id,
   });
@@ -229,8 +233,9 @@ function DraftActions({
       >
         {t('recipes.publishDraft')}
       </Button>
-      <Button>{t('recipes.draftEditor')}</Button>
-      <span className="text-xs text-ink-3">{t('recipes.draftEditorNote')}</span>
+      <Button render={<Link href={`/${locale}/recipes/${recipeId}/draft`} />}>
+        {t('recipes.draftEditor')}
+      </Button>
     </div>
   );
 }

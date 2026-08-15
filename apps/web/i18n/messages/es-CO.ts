@@ -3,11 +3,9 @@ import type { MessageSchema } from './schema';
 const esCO = {
   auth: {
     connecting: 'Conectando con Sancocho…',
-    signedOut:
-      'No has iniciado sesión. La conexión con Sancocho estará lista cuando tú lo estés.',
+    signedOut: 'No has iniciado sesión. La conexión con Sancocho estará lista cuando tú lo estés.',
     signedOutTitle: 'Bienvenido a Sancocho',
-    profilePending:
-      'La conexión con Convex está lista. Tu perfil de usuario de Sancocho todavía no está configurado.',
+    profilePending: 'La conexión con Convex está lista. Tu perfil de usuario de Sancocho todavía no está configurado.',
     connected: 'Conexión con Convex establecida.',
     signIn: 'Iniciar sesión',
     signUp: 'Crear cuenta',
@@ -15,23 +13,19 @@ const esCO = {
   },
   organizations: {
     title: 'Organizaciones',
-    members:
-      '{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}}',
+    members: '{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}}',
     switcherLabel: 'Organización activa',
     chooseOrganization: 'Elige una organización',
     createTitle: 'Crea tu organización',
     createDescription: 'Configura el espacio de trabajo para tu operación.',
     nameLabel: 'Nombre de la organización',
     slugLabel: 'Identificador de la organización',
-    slugDescription:
-      'Usa minúsculas, de 3 a 63 caracteres, con letras, números y guiones simples.',
+    slugDescription: 'Usa minúsculas, de 3 a 63 caracteres, con letras, números y guiones simples.',
     createAction: 'Crear organización',
-    slugInvalid:
-      'Usa un identificador válido: minúsculas, números y guiones simples, de 3 a 63 caracteres.',
+    slugInvalid: 'Usa un identificador válido: minúsculas, números y guiones simples, de 3 a 63 caracteres.',
     slugTaken: 'Ese identificador no está disponible. Elige otro.',
     rosterTitle: 'Miembros de la organización',
-    rosterDescription:
-      'Estas son las personas que actualmente tienen acceso a esta organización.',
+    rosterDescription: 'Estas son las personas que actualmente tienen acceso a esta organización.',
     memberName: 'Nombre',
     memberEmail: 'Correo electrónico',
     memberRole: 'Rol',
@@ -71,6 +65,7 @@ const esCO = {
     maxLength: 'Longitud máxima',
     minSelections: 'Selecciones mínimas',
     maxSelections: 'Selecciones máximas',
+    definitionAllows: 'La definición permite {min}–{max}',
     integerOnly: 'Solo números enteros',
     save: 'Guardar campo',
     edit: 'Editar',
@@ -191,36 +186,75 @@ const esCO = {
     title: 'Recetas',
     eyebrow: 'Configuración de eventos',
     lead: 'Configuraciones versionadas que mantienen cada servicio interpretable con el tiempo.',
-    create: 'Crear receta', createTitle: 'Crear receta de evento',
+    create: 'Crear receta',
+    createTitle: 'Crear receta de evento',
     createLead: 'La clave identifica esta receta de forma permanente y no se puede cambiar después.',
-    name: 'Nombre', key: 'Clave',
+    name: 'Nombre',
+    key: 'Clave',
     keyHelp: 'Usa entre 2 y 64 caracteres lowerCamelCase y empieza con una letra minúscula.',
-    description: 'Descripción', save: 'Guardar receta', edit: 'Editar metadatos',
-    archive: 'Archivar receta', archiveTitle: '¿Archivar esta receta?',
+    description: 'Descripción',
+    save: 'Guardar receta',
+    edit: 'Editar metadatos',
+    archive: 'Archivar receta',
+    archiveTitle: '¿Archivar esta receta?',
     archiveWarning:
       'Al archivarla se retira su versión publicada. Ya no podrá originar servicios nuevos, ' +
       'pero los servicios existentes seguirán siendo interpretables.',
-    archiveConfirm: 'Archivar receta', currentVersion: 'Versión actual',
-    noPublishedVersion: 'No hay versión publicada', emptyTitle: 'Aún no hay recetas',
+    archiveConfirm: 'Archivar receta',
+    currentVersion: 'Versión actual',
+    noPublishedVersion: 'No hay versión publicada',
+    emptyTitle: 'Aún no hay recetas',
     emptyBody: 'Crea una receta de evento para empezar a componer configuraciones versionadas de servicio.',
-    versionsTitle: 'Línea de tiempo de versiones', created: 'Creada', current: 'Actual',
-    noVersions: 'Esta receta todavía no tiene versiones.', createFirstDraft: 'Crear el primer borrador',
-    newVersionFrom: 'Nueva versión desde v{version}', publishDraft: 'Publicar borrador',
+    versionsTitle: 'Línea de tiempo de versiones',
+    created: 'Creada',
+    current: 'Actual',
+    noVersions: 'Esta receta todavía no tiene versiones.',
+    createFirstDraft: 'Crear el primer borrador',
+    newVersionFrom: 'Nueva versión desde v{version}',
+    publishDraft: 'Publicar borrador',
     draftEditor: 'Abrir editor del borrador',
     draftEditorNote: 'El editor de campos del borrador llegará en el siguiente paso.',
     archivedNotice: 'Esta receta está archivada y es de solo lectura. Su versión publicada se retiró al archivarla.',
     immutableNotice:
       'Las versiones publicadas y retiradas son capturas bloqueadas. ' +
       'Para cambiar una receta publicada, inicia una versión nueva desde ella.',
-    contentsTitle: 'Contenido de la versión', locked: 'Captura bloqueada', position: 'Posición',
-    field: 'Campo', requiredField: 'Obligatorio', visibleField: 'Visible',
+    contentsTitle: 'Contenido de la versión',
+    locked: 'Captura bloqueada',
+    position: 'Posición',
+    field: 'Campo',
+    requiredField: 'Obligatorio',
+    visibleField: 'Visible',
     rules: 'Reglas de la captura',
     definitionUnresolved: 'No se pudo resolver la definición; se muestra la captura almacenada.',
-    no: 'No', yes: 'Sí', emptyDraft: 'Agrega al menos un campo antes de publicar este borrador.',
+    no: 'No',
+    yes: 'Sí',
+    emptyDraft: 'Agrega al menos un campo antes de publicar este borrador.',
     duplicateDefinition: 'Esta definición de campo aparece más de una vez.',
     duplicatePosition: 'Esta posición ya está en uso.',
     invalidPosition: 'La posición debe ser un número entero no negativo.',
     requiredHidden: 'Un campo obligatorio debe ser visible.',
+    draftEditorLead: 'Compón este borrador en orden. Todo lo que ves aquí queda congelado permanentemente al publicar.',
+    draftMissing: 'Esta receta no tiene una versión en borrador. Vuelve a la receta para crearla.',
+    draftArchived: 'Las recetas archivadas no se pueden editar. Vuelve a la receta.',
+    fieldCount: '{count} de {max} campos',
+    addField: 'Agregar campo',
+    noAvailableFields: 'No hay definiciones de campo activas disponibles para agregar.',
+    moveUp: 'Subir campo',
+    moveDown: 'Bajar campo',
+    removeField: 'Quitar campo',
+    removeFieldTitle: '¿Quitar este campo?',
+    removeFieldWarning: 'Quitar el campo solo cambia esta versión en borrador.',
+    removeFieldConfirm: 'Quitar campo',
+    defaultValue: 'Valor predeterminado',
+    clearDefault: 'Quitar valor predeterminado',
+    noDefault: 'Sin valor predeterminado',
+    tightenRules: 'Restringir validación para esta receta',
+    tightenRulesHelp: 'Las reglas de la receta pueden restringir las de la definición, pero nunca ampliarlas.',
+    tightenRulesVersionOnly:
+      'Estas reglas solo se aplican a esta versión de la receta y se congelan al publicar. No cambian la Definición de campo.',
+    locationDefaultWarning:
+      'Importante: si esta ubicación se archiva después de publicar, esta versión no podrá crear servicios nuevos y no tendrá reparación.',
+    editDraft: 'Editar borrador',
     statuses: { draft: 'Borrador', active: 'Activa', archived: 'Archivada' },
     versionStatuses: {
       draft: 'Borrador',
@@ -269,13 +303,11 @@ const esCO = {
   chat: {
     title: 'Chat operativo',
     eyebrow: 'Centro de operaciones',
-    description:
-      'Un espacio de conversación para coordinar el trabajo operativo.',
+    description: 'Un espacio de conversación para coordinar el trabajo operativo.',
   },
   common: {
     language: 'Idioma',
-    languageDescription:
-      'Tu elección se guarda en una cookie y define la ruta de la aplicación.',
+    languageDescription: 'Tu elección se guarda en una cookie y define la ruta de la aplicación.',
     spanish: 'Español',
     english: 'Inglés',
     save: 'Guardar',
@@ -294,8 +326,7 @@ const esCO = {
     fieldDescriptionTooLong: 'La descripción puede tener máximo 2.000 caracteres.',
     fieldSemanticIncompatible: 'Elige un tipo semántico compatible con el tipo de dato.',
     fieldHistoricalFrozen:
-      'Este campo se usa en una versión publicada o retirada; solo pueden cambiar su etiqueta ' +
-      'y descripción.',
+      'Este campo se usa en una versión publicada o retirada; solo pueden cambiar su etiqueta ' + 'y descripción.',
     fieldArchived: 'Los campos archivados no se pueden editar.',
     fieldDeleteBlocked: 'Este campo está en uso. Archívalo en su lugar.',
     fieldConfigInvalid: 'Revisa las reglas de validación y las opciones del campo.',
@@ -320,10 +351,8 @@ const esCO = {
   },
   shell: {
     comingSoonTitle: 'Disponible en una próxima etapa',
-    comingSoonDescription:
-      'Esta superficie ya tiene una ruta y comparte el marco de operación.',
-    comingSoonBody:
-      'La funcionalidad operativa de esta superficie se incorporará en su etapa planificada.',
+    comingSoonDescription: 'Esta superficie ya tiene una ruta y comparte el marco de operación.',
+    comingSoonBody: 'La funcionalidad operativa de esta superficie se incorporará en su etapa planificada.',
   },
   vocab: {
     roles: {
@@ -370,8 +399,7 @@ const esCO = {
     },
   },
   table: {
-    loaded:
-      '{count, plural, =0 {Sin registros cargados} one {# registro cargado} other {# registros cargados}}',
+    loaded: '{count, plural, =0 {Sin registros cargados} one {# registro cargado} other {# registros cargados}}',
     loadMore: 'Cargar más',
     loadingMore: 'Cargando…',
     endOfList: 'Fin de la lista',

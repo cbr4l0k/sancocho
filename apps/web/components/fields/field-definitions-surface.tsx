@@ -10,6 +10,12 @@ import { semanticRegistry } from '@sancocho/convex/validators';
 import type { FieldDataType, SemanticType } from '@sancocho/convex/validators';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
+import {
+  fieldDataTypes,
+  FieldConfigEditor,
+  freshConfig,
+  type FieldConfig,
+} from '@/components/fields/field-config-editor';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
@@ -33,15 +39,7 @@ import {
   TableSkeletonRows,
 } from '@/components/ui/table';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
-import {
-  formatDate,
-  formatDateTime,
-  formatTime,
-  isValidDateInput,
-  isValidTimeInput,
-  parseDateForStorage,
-  parseTimeForStorage,
-} from '@/i18n/formats';
+import { formatDate, formatDateTime, formatTime } from '@/i18n/formats';
 import type { CanonicalLocale } from '@/i18n/locales';
 import { messagesForLocale } from '@/i18n/messages';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
@@ -52,13 +50,11 @@ import { roleAtLeast } from '@/lib/roles';
 type FieldDefinition = FunctionReturnType<
   typeof api.fields.queries.listFieldDefinitions
 >['page'][number];
-type Option = { id: string; label: string };
 type CreateFieldArgs = Omit<
   FunctionArgs<typeof api.fields.mutations.createFieldDefinition>,
   'organizationId'
 >;
 type UpdateFieldArgs = FunctionArgs<typeof api.fields.mutations.updateFieldDefinition>;
-type FieldConfig = CreateFieldArgs['config'];
 type EditorState =
   | { mode: 'closed' }
   | { mode: 'create' }
@@ -68,49 +64,6 @@ type ConfirmationState =
   | { mode: 'delete'; field: FieldDefinition }
   | null;
 
-const fieldDataTypes = [
-  'text',
-  'longText',
-  'number',
-  'boolean',
-  'date',
-  'datetime',
-  'time',
-  'select',
-  'multiSelect',
-  'location',
-] as const;
-
-type CoversExactly<Listed extends Union, Union> = [Union] extends [Listed]
-  ? true
-  : never;
-
-const _fieldDataTypesInSync: CoversExactly<
-  (typeof fieldDataTypes)[number],
-  FieldDataType
-> = true;
-
-void _fieldDataTypesInSync;
-
-const freshConfig: Record<FieldDataType, () => FieldConfig> = {
-  text: () => ({ kind: 'text' }),
-  longText: () => ({ kind: 'longText' }),
-  number: () => ({ kind: 'number' }),
-  boolean: () => ({ kind: 'boolean' }),
-  date: () => ({ kind: 'date' }),
-  datetime: () => ({ kind: 'datetime' }),
-  time: () => ({ kind: 'time' }),
-  select: () => ({ kind: 'select', options: [{ id: '', label: '' }] }),
-  multiSelect: () => ({ kind: 'multiSelect', options: [{ id: '', label: '' }] }),
-  location: () => ({ kind: 'location' }),
-};
-
-function optionalNumber(value: string): number | undefined {
-  if (value.trim() === '') return undefined;
-
-  const result = Number(value);
-  return Number.isFinite(result) ? result : undefined;
-}
 
 function semanticTypesFor(kind: FieldDataType): SemanticType[] {
   return Object.keys(semanticTypeMessageKey)
@@ -501,21 +454,6 @@ function FieldEditor({
     }
   }
 
-  function updateOptions(
-    index: number,
-    property: keyof Option,
-    value: string,
-  ): void {
-    if (config.kind !== 'select' && config.kind !== 'multiSelect') return;
-
-    const options = config.options.map((option, optionIndex) =>
-      optionIndex === index ? { ...option, [property]: value } : option,
-    );
-    setConfig(
-      config.kind === 'select' ? { kind: 'select', options } : { ...config, options },
-    );
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError(null);
@@ -611,11 +549,7 @@ function FieldEditor({
               ))}
             </EditorSelect>
           </div>
-          <ConfigEditor
-            config={config}
-            setConfig={setConfig}
-            updateOptions={updateOptions}
-          />
+          <FieldConfigEditor config={config} setConfig={setConfig} />
           {semanticType === undefined ? null : (
             <p className="text-xs text-ink-2">
               {
@@ -710,303 +644,5 @@ function EditorSelect({
         {children}
       </select>
     </EditorLabel>
-  );
-}
-
-type ConfigEditorProps = {
-  config: FieldConfig;
-  setConfig: (config: FieldConfig) => void;
-  updateOptions: (index: number, property: keyof Option, value: string) => void;
-};
-
-function ConfigEditor({
-  config,
-  setConfig,
-  updateOptions,
-}: ConfigEditorProps) {
-  const t = useTranslations();
-
-  function bound(
-    label: string,
-    value: number | undefined,
-    change: (value: number | undefined) => void,
-  ) {
-    return (
-      <EditorInput
-        label={label}
-        value={value?.toString() ?? ''}
-        onChange={(next) => change(optionalNumber(next))}
-      />
-    );
-  }
-
-  switch (config.kind) {
-    case 'text':
-    case 'longText':
-      return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {bound(t('fields.minLength'), config.minLength, (minLength) =>
-            setConfig({
-              kind: config.kind,
-              ...(minLength === undefined ? {} : { minLength }),
-              ...(config.maxLength === undefined
-                ? {}
-                : { maxLength: config.maxLength }),
-            }),
-          )}
-          {bound(t('fields.maxLength'), config.maxLength, (maxLength) =>
-            setConfig({
-              kind: config.kind,
-              ...(config.minLength === undefined
-                ? {}
-                : { minLength: config.minLength }),
-              ...(maxLength === undefined ? {} : { maxLength }),
-            }),
-          )}
-        </div>
-      );
-    case 'number':
-      return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {bound(t('fields.min'), config.min, (min) =>
-            setConfig({
-              kind: 'number',
-              ...(min === undefined ? {} : { min }),
-              ...(config.max === undefined ? {} : { max: config.max }),
-              ...(config.integer === undefined ? {} : { integer: config.integer }),
-            }),
-          )}
-          {bound(t('fields.max'), config.max, (max) =>
-            setConfig({
-              kind: 'number',
-              ...(config.min === undefined ? {} : { min: config.min }),
-              ...(max === undefined ? {} : { max }),
-              ...(config.integer === undefined ? {} : { integer: config.integer }),
-            }),
-          )}
-          <label className="flex items-center gap-2 text-sm text-ink-2">
-            <input
-              type="checkbox"
-              checked={config.integer ?? false}
-              onChange={(event) =>
-                setConfig({
-                  kind: 'number',
-                  ...(config.min === undefined ? {} : { min: config.min }),
-                  ...(config.max === undefined ? {} : { max: config.max }),
-                  ...(event.target.checked ? { integer: true } : {}),
-                })
-              }
-            />
-            {t('fields.integerOnly')}
-          </label>
-        </div>
-      );
-    case 'date':
-      return (
-        <TemporalBounds
-          type="date"
-          min={config.min}
-          max={config.max}
-          onChange={(min, max) =>
-            setConfig({
-              kind: 'date',
-              ...(min === undefined ? {} : { min }),
-              ...(max === undefined ? {} : { max }),
-            })
-          }
-        />
-      );
-    case 'time':
-      return (
-        <TemporalBounds
-          type="time"
-          min={config.min}
-          max={config.max}
-          onChange={(min, max) =>
-            setConfig({
-              kind: 'time',
-              ...(min === undefined ? {} : { min }),
-              ...(max === undefined ? {} : { max }),
-            })
-          }
-        />
-      );
-    case 'datetime':
-      return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {bound(t('fields.min'), config.min, (min) =>
-            setConfig({
-              kind: 'datetime',
-              ...(min === undefined ? {} : { min }),
-              ...(config.max === undefined ? {} : { max: config.max }),
-            }),
-          )}
-          {bound(t('fields.max'), config.max, (max) =>
-            setConfig({
-              kind: 'datetime',
-              ...(config.min === undefined ? {} : { min: config.min }),
-              ...(max === undefined ? {} : { max }),
-            }),
-          )}
-        </div>
-      );
-    case 'select':
-    case 'multiSelect':
-      return (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-ink-3">
-            {t('fields.optionIdentityNotice')}
-          </p>
-          {config.options.map((option, index) => (
-            <div
-              key={index}
-              className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]"
-            >
-              <EditorInput
-                label={t('fields.optionId')}
-                value={option.id}
-                onChange={(value) => updateOptions(index, 'id', value)}
-              />
-              <EditorInput
-                label={t('fields.optionLabel')}
-                value={option.label}
-                onChange={(value) => updateOptions(index, 'label', value)}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                className="self-end"
-                onClick={() =>
-                  setConfig(
-                    config.kind === 'select'
-                      ? {
-                          kind: 'select',
-                          options: config.options.filter(
-                            (_, optionIndex) => optionIndex !== index,
-                          ),
-                        }
-                      : {
-                          ...config,
-                          options: config.options.filter(
-                            (_, optionIndex) => optionIndex !== index,
-                          ),
-                        },
-                  )
-                }
-              >
-                {t('fields.removeOption')}
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            className="self-start"
-            onClick={() =>
-              setConfig(
-                config.kind === 'select'
-                  ? {
-                      kind: 'select',
-                      options: [...config.options, { id: '', label: '' }],
-                    }
-                  : {
-                      ...config,
-                      options: [...config.options, { id: '', label: '' }],
-                    },
-              )
-            }
-          >
-            {t('fields.addOption')}
-          </Button>
-          {config.kind === 'multiSelect' ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {bound(
-                t('fields.minSelections'),
-                config.minSelections,
-                (minSelections) =>
-                  setConfig({
-                    kind: 'multiSelect',
-                    options: config.options,
-                    ...(minSelections === undefined ? {} : { minSelections }),
-                    ...(config.maxSelections === undefined
-                      ? {}
-                      : { maxSelections: config.maxSelections }),
-                  }),
-              )}
-              {bound(
-                t('fields.maxSelections'),
-                config.maxSelections,
-                (maxSelections) =>
-                  setConfig({
-                    kind: 'multiSelect',
-                    options: config.options,
-                    ...(config.minSelections === undefined
-                      ? {}
-                      : { minSelections: config.minSelections }),
-                    ...(maxSelections === undefined ? {} : { maxSelections }),
-                  }),
-              )}
-            </div>
-          ) : null}
-        </div>
-      );
-    case 'boolean':
-    case 'location':
-      return null;
-  }
-}
-
-function TemporalBounds({
-  type,
-  min,
-  max,
-  onChange,
-}: {
-  type: 'date' | 'time';
-  min: string | undefined;
-  max: string | undefined;
-  onChange: (min: string | undefined, max: string | undefined) => void;
-}) {
-  const t = useTranslations();
-  const parse = type === 'date' ? parseDateForStorage : parseTimeForStorage;
-  const valid = type === 'date' ? isValidDateInput : isValidTimeInput;
-
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <EditorLabel label={t('fields.min')}>
-        <input
-          type={type}
-          className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm"
-          value={min ?? ''}
-          onChange={(event) =>
-            onChange(
-              event.target.value === ''
-                ? undefined
-                : valid(event.target.value)
-                  ? parse(event.target.value)
-                  : undefined,
-              max,
-            )
-          }
-        />
-      </EditorLabel>
-      <EditorLabel label={t('fields.max')}>
-        <input
-          type={type}
-          className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm"
-          value={max ?? ''}
-          onChange={(event) =>
-            onChange(
-              min,
-              event.target.value === ''
-                ? undefined
-                : valid(event.target.value)
-                  ? parse(event.target.value)
-                  : undefined,
-            )
-          }
-        />
-      </EditorLabel>
-    </div>
   );
 }
