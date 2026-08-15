@@ -29,6 +29,6 @@ export const seedOptInVariable = 'SANCOCHO_ENABLE_SEED';
 
 export function assertSeedingEnabled(): void {
   if (process.env[seedOptInVariable] !== 'true') {
-    return invalidInput(`Seeding is disabled on this deployment; set ${seedOptInVariable}=true to allow it`);
+    return invalidInput('seedDisabled', `Seeding is disabled on this deployment; set ${seedOptInVariable}=true to allow it`);
   }
 }

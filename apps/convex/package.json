@@ -11,6 +11,10 @@
     "./validators": {
       "types": "./convex/validators/index.ts",
       "default": "./convex/validators/index.ts"
+    },
+    "./errors": {
+      "types": "./convex/lib/errors.ts",
+      "default": "./convex/lib/errors.ts"
     }
   },
   "scripts": {

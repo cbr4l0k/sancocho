@@ -25,10 +25,10 @@ const addRecipeField = api.recipes.fields.mutations.addRecipeField;
 const updateRecipeField = api.recipes.fields.mutations.updateRecipeField;
 const listRecipeFields = api.recipes.fields.queries.listRecipeFields;
 
-const inaccessible = 'Not found or inaccessible';
-const unauthenticated = 'Unauthenticated';
-const referenced = 'Referenced locations cannot be deleted; retain the archived location instead';
-const archivedLocation = 'Archived locations cannot be updated';
+const inaccessible = 'notFoundOrInaccessible';
+const unauthenticated = 'unauthenticated';
+const referenced = 'locationDeleteBlocked';
+const archivedLocation = 'locationArchived';
 const issuer = 'https://example.clerk.accounts.dev';
 const firstPage = { numItems: 10, cursor: null };
 
@@ -123,12 +123,12 @@ test('coordinates require a finite, bounded pair at creation and update', async 
     [{ latitude: 0, longitude: Number.POSITIVE_INFINITY }, 'Longitude must be finite'],
     [{ latitude: 0, longitude: Number.NEGATIVE_INFINITY }, 'Longitude must be finite'],
   ];
-  for (const [coordinates, data] of rejections) {
-    await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bad', type: 'custom', ...coordinates })).rejects.toMatchObject({ data });
-    await expect(owner.client.mutation(updateLocation, { locationId, ...coordinates })).rejects.toMatchObject({ data });
+  for (const [coordinates] of rejections) {
+    await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bad', type: 'custom', ...coordinates })).rejects.toMatchObject({ data: { code: 'locationCoordinatesInvalid' } });
+    await expect(owner.client.mutation(updateLocation, { locationId, ...coordinates })).rejects.toMatchObject({ data: { code: 'locationCoordinatesInvalid' } });
   }
-  await expect(owner.client.mutation(createLocation, { organizationId, name: 'Lone', type: 'custom', latitude: 1 })).rejects.toMatchObject({ data: 'Latitude and longitude must be provided together' });
-  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 1 })).rejects.toMatchObject({ data: 'Latitude and longitude must be provided together' });
+  await expect(owner.client.mutation(createLocation, { organizationId, name: 'Lone', type: 'custom', latitude: 1 })).rejects.toMatchObject({ data: { code: 'locationCoordinatesIncomplete' } });
+  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 1 })).rejects.toMatchObject({ data: { code: 'locationCoordinatesIncomplete' } });
   // Both extremes are inclusive, at creation and at update.
   await expect(owner.client.mutation(createLocation, { organizationId, name: 'Southwest', type: 'custom', latitude: -90, longitude: -180 })).resolves.toBeDefined();
   await expect(owner.client.mutation(createLocation, { organizationId, name: 'Northeast', type: 'custom', latitude: 90, longitude: 180 })).resolves.toBeDefined();
@@ -148,7 +148,7 @@ test('a half-supplied coordinate patch is validated against the merged stored pa
     expect(await ctx.db.get(locationId)).toMatchObject({ latitude: 30, longitude: 20 });
   });
   // The merged pair is what is validated, so an out-of-range lone latitude is refused.
-  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 91 })).rejects.toMatchObject({ data: 'Latitude must be between -90 and 90' });
+  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 91 })).rejects.toMatchObject({ data: { code: 'locationCoordinatesInvalid' } });
   await t.run(async (ctx) => {
     expect(await ctx.db.get(locationId)).toMatchObject({ latitude: 30, longitude: 20 });
   });
@@ -158,8 +158,8 @@ test('location names are trimmed, non-empty, and bounded at creation and update'
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);
   for (const name of ['', '   ', 'x'.repeat(201)]) {
-    await expect(owner.client.mutation(createLocation, { organizationId, name, type: 'custom' })).rejects.toMatchObject({ data: 'Invalid location name' });
-    await expect(owner.client.mutation(updateLocation, { locationId, name })).rejects.toMatchObject({ data: 'Invalid location name' });
+    await expect(owner.client.mutation(createLocation, { organizationId, name, type: 'custom' })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
+    await expect(owner.client.mutation(updateLocation, { locationId, name })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
   }
   // A padded name passes the bound only because it is trimmed, so the trimmed
   // value is what must be stored.
@@ -171,8 +171,8 @@ test('location names are trimmed, non-empty, and bounded at creation and update'
   await expect(owner.client.query(getLocation, { locationId })).resolves.toMatchObject({ name: 'Trimmed' });
 
   // Addresses are free-form but bounded.
-  await expect(owner.client.mutation(createLocation, { organizationId, name: 'Long address', type: 'custom', address: 'a'.repeat(501) })).rejects.toMatchObject({ data: 'Location address must not exceed 500 characters' });
-  await expect(owner.client.mutation(updateLocation, { locationId, address: 'a'.repeat(501) })).rejects.toMatchObject({ data: 'Location address must not exceed 500 characters' });
+  await expect(owner.client.mutation(createLocation, { organizationId, name: 'Long address', type: 'custom', address: 'a'.repeat(501) })).rejects.toMatchObject({ data: { code: 'locationAddressTooLong' } });
+  await expect(owner.client.mutation(updateLocation, { locationId, address: 'a'.repeat(501) })).rejects.toMatchObject({ data: { code: 'locationAddressTooLong' } });
   await expect(owner.client.mutation(createLocation, { organizationId, name: 'Bounded address', type: 'custom', address: 'a'.repeat(500) })).resolves.toBeDefined();
 });
 
@@ -229,21 +229,21 @@ test('access probes are generic, operators cannot manage, and viewers can read',
   await owner.client.mutation(addMember, { organizationId, userId: operator.userId, role: 'operator' });
   const fabricatedId = await t.run(async (ctx) => { const id = await ctx.db.insert('locations', { organizationId, name: 'Gone', type: 'custom', status: 'active' }); await ctx.db.delete(id); return id; });
   for (const id of [foreignId, fabricatedId]) {
-    await expect(member.client.query(getLocation, { locationId: id })).rejects.toMatchObject({ data: inaccessible });
-    await expect(member.client.mutation(updateLocation, { locationId: id, name: 'No' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(member.client.mutation(archiveLocation, { locationId: id })).rejects.toMatchObject({ data: inaccessible });
-    await expect(member.client.mutation(deleteLocation, { locationId: id })).rejects.toMatchObject({ data: inaccessible });
+    await expect(member.client.query(getLocation, { locationId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(updateLocation, { locationId: id, name: 'No' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(archiveLocation, { locationId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(deleteLocation, { locationId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   for (const action of [
     () => t.query(getLocation, { locationId }),
     () => t.mutation(updateLocation, { locationId, name: 'No' }),
     () => t.mutation(archiveLocation, { locationId }),
     () => t.mutation(deleteLocation, { locationId }),
-  ]) await expect(action()).rejects.toMatchObject({ data: unauthenticated });
-  await expect(operator.client.mutation(createLocation, { organizationId, name: 'No', type: 'custom' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(operator.client.mutation(updateLocation, { locationId, name: 'No' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(operator.client.mutation(archiveLocation, { locationId })).rejects.toMatchObject({ data: inaccessible });
-  await expect(operator.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: inaccessible });
+  ]) await expect(action()).rejects.toMatchObject({ data: { code: unauthenticated } });
+  await expect(operator.client.mutation(createLocation, { organizationId, name: 'No', type: 'custom' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(operator.client.mutation(updateLocation, { locationId, name: 'No' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(operator.client.mutation(archiveLocation, { locationId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(operator.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(member.client.query(getLocation, { locationId })).resolves.toMatchObject({ _id: locationId });
   await expect(member.client.query(listLocations, { organizationId, paginationOpts: firstPage })).resolves.toMatchObject({ page: [{ _id: locationId }] });
 });
@@ -257,11 +257,11 @@ test('creating and listing require membership in the organization named by the c
   // A non-member passing a foreign organizationId, and a fabricated one, are
   // indistinguishable — knowing an id grants nothing (I1/I9).
   for (const orgId of [organizationId, fabricatedOrgId]) {
-    await expect(outsider.client.mutation(createLocation, { organizationId: orgId, name: 'Intruder', type: 'custom' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(outsider.client.query(listLocations, { organizationId: orgId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+    await expect(outsider.client.mutation(createLocation, { organizationId: orgId, name: 'Intruder', type: 'custom' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(outsider.client.query(listLocations, { organizationId: orgId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
-  await expect(t.mutation(createLocation, { organizationId, name: 'Intruder', type: 'custom' })).rejects.toMatchObject({ data: unauthenticated });
-  await expect(t.query(listLocations, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: unauthenticated });
+  await expect(t.mutation(createLocation, { organizationId, name: 'Intruder', type: 'custom' })).rejects.toMatchObject({ data: { code: unauthenticated } });
+  await expect(t.query(listLocations, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
   await expect(owner.client.query(listLocations, { organizationId, paginationOpts: firstPage })).resolves.toMatchObject({ isDone: true });
 });
 
@@ -297,10 +297,10 @@ test('archival is idempotent, keeps the location readable, and locks every updat
   const { owner, organizationId, locationId } = await makeLocation(t);
   await owner.client.mutation(archiveLocation, { locationId });
   await expect(owner.client.mutation(archiveLocation, { locationId })).resolves.toBeNull();
-  await expect(owner.client.mutation(updateLocation, { locationId, name: 'No' })).rejects.toMatchObject({ data: archivedLocation });
+  await expect(owner.client.mutation(updateLocation, { locationId, name: 'No' })).rejects.toMatchObject({ data: { code: archivedLocation } });
   // The archived guard precedes coordinate validation, so even a patch that
   // touches nothing but coordinates is refused with the archived message.
-  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 1, longitude: 2 })).rejects.toMatchObject({ data: archivedLocation });
+  await expect(owner.client.mutation(updateLocation, { locationId, latitude: 1, longitude: 2 })).rejects.toMatchObject({ data: { code: archivedLocation } });
 
   // Archived locations stay readable so historical references stay resolvable.
   await expect(owner.client.query(getLocation, { locationId })).resolves.toMatchObject({ _id: locationId, status: 'archived' });
@@ -315,15 +315,15 @@ test('archival is idempotent, keeps the location readable, and locks every updat
 test('deletion requires archival and no indexed event reference, and audits lifecycle writes', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: 'Locations must be archived before deletion' });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: 'locationArchiveRequired' } });
   const valueId = await referenceLocationFromEventValue(t, organizationId, locationId);
   await owner.client.mutation(archiveLocation, { locationId });
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: referenced });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
   // The guard is live rather than sticky: removing the reference releases it.
   await t.run(async (ctx) => ctx.db.delete(valueId));
   await expect(owner.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   const deletable = await owner.client.mutation(createLocation, { organizationId, name: 'Delete', type: 'custom' });
   await owner.client.mutation(updateLocation, { locationId: deletable, name: 'Delete updated', type: 'office' });
@@ -350,7 +350,7 @@ test('a location a published version defaults to cannot be deleted, and clones c
   // Nothing but the published version's immutable default references it, and
   // that is exactly why deleting it would permanently break that version (I2/I3).
   await owner.client.mutation(archiveLocation, { locationId });
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: referenced });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
   // A clone re-derives the mirror, so the cloned draft is guarded too.
   const clonedVersionId = await owner.client.mutation(cloneVersion, { recipeId });
@@ -364,7 +364,7 @@ test('a location a published version defaults to cannot be deleted, and clones c
   // still holds the location.
   await owner.client.mutation(updateRecipeField, { recipeFieldId: clonedField._id, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(1);
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: referenced });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 });
 
 test('clearing a draft recipe field default releases the location for deletion', async () => {
@@ -375,7 +375,7 @@ test('clearing a draft recipe field default releases the location for deletion',
   expect(await countDefaultReferences(t, locationId)).toBe(1);
 
   await owner.client.mutation(archiveLocation, { locationId });
-  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: referenced });
+  await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
   await owner.client.mutation(updateRecipeField, { recipeFieldId, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(0);

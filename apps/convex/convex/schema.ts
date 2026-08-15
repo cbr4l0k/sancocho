@@ -72,6 +72,9 @@ export default defineSchema({
     recipeId: v.id('eventRecipes'),
     versionNumber: v.number(),
     status: recipeVersionStatusValidator,
+    // Older published versions have no truthful publish time: leaving this
+    // optional distinguishes that absence from a known publication instant.
+    publishedAt: v.optional(v.number()),
   })
     .index('by_recipe_version', ['recipeId', 'versionNumber'])
     .index('by_recipe_status', ['recipeId', 'status']),

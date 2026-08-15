@@ -1,10 +1,10 @@
 import { convexTest } from 'convex-test';
 import { expect, test } from 'vitest';
 
-import { api } from '../convex/_generated/api';
+import { api, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
-import { modules } from './helpers';
+import { enableSeedMutations, modules } from './helpers';
 
 const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
@@ -19,12 +19,15 @@ const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
 const getRecipe = api.recipes.queries.getRecipe;
 const getRecipeVersion = api.recipes.queries.getRecipeVersion;
 const listRecipes = api.recipes.queries.listRecipes;
+const backfillRecipeVersionPublishedAt = internal.seed.mutations.backfillRecipeVersionPublishedAt;
 
 const issuer = 'https://example.clerk.accounts.dev';
-const unauthenticated = 'Unauthenticated';
-const inaccessible = 'Not found or inaccessible';
+const unauthenticated = 'unauthenticated';
+const inaccessible = 'notFoundOrInaccessible';
 const firstPage = { numItems: 10, cursor: null };
 const textConfig = { kind: 'text' } as const;
+
+enableSeedMutations();
 
 function identity(subject: string) {
   return { issuer, subject, name: subject, email: `${subject}@example.com`, emailVerified: true };
@@ -100,6 +103,117 @@ test('versions are server-assigned, published versions retire, and sequence neve
   expect(v3).toBeDefined();
 });
 
+test('publishing records a server-side publish time, exposes it through recipe queries, and leaves drafts without one', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'eventCode',
+    label: 'Code',
+    config: textConfig,
+  });
+  const published = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await setDraftFields(t, organizationId, published, [{ fieldDefinitionId }]);
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: published });
+  const draft = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
+
+  const recipe = await owner.client.query(getRecipe, { recipeId });
+  const publishedFromRecipe = recipe.versions.find((version) => version._id === published);
+  const draftFromRecipe = recipe.versions.find((version) => version._id === draft);
+  const version = await owner.client.query(getRecipeVersion, { recipeVersionId: published });
+
+  expect(publishedFromRecipe?.publishedAt).toEqual(expect.any(Number));
+  expect(version.version.publishedAt).toBe(publishedFromRecipe?.publishedAt);
+  expect(draftFromRecipe?.publishedAt).toBeUndefined();
+});
+
+test('retiring a published version preserves its original publish time', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'eventCode',
+    label: 'Code',
+    config: textConfig,
+  });
+  const v1 = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await setDraftFields(t, organizationId, v1, [{ fieldDefinitionId }]);
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: v1 });
+  const beforeRetirement = await owner.client.query(getRecipeVersion, { recipeVersionId: v1 });
+  const v2 = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: v2 });
+  const afterRetirement = await owner.client.query(getRecipeVersion, { recipeVersionId: v1 });
+
+  expect(afterRetirement.version).toMatchObject({ status: 'retired', publishedAt: beforeRetirement.version.publishedAt });
+});
+
+test('published-at backfill uses publication audit times, skips known values, and leaves missing audit history absent', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const versions = await t.run(async (ctx) => {
+    const fromAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 1,
+      status: 'published',
+    });
+    const retiredFromAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 2,
+      status: 'retired',
+    });
+    const alreadySet = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 3,
+      status: 'published',
+      publishedAt: 123,
+    });
+    const noAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 4,
+      status: 'retired',
+    });
+    const firstAuditId = await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: fromAudit,
+      metadata: { versionNumber: 1 },
+    });
+    const secondAuditId = await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: retiredFromAudit,
+      metadata: { versionNumber: 2 },
+    });
+    await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: alreadySet,
+      metadata: { versionNumber: 3 },
+    });
+    const firstAudit = await ctx.db.get(firstAuditId);
+    const secondAudit = await ctx.db.get(secondAuditId);
+    if (firstAudit === null || secondAudit === null) throw new Error('Expected publication audit rows');
+    return { fromAudit, retiredFromAudit, alreadySet, noAudit, firstAudit, secondAudit };
+  });
+
+  await t.mutation(backfillRecipeVersionPublishedAt, {});
+  await t.mutation(backfillRecipeVersionPublishedAt, {});
+
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(versions.fromAudit)).toMatchObject({ publishedAt: versions.firstAudit._creationTime });
+    expect(await ctx.db.get(versions.retiredFromAudit)).toMatchObject({ publishedAt: versions.secondAudit._creationTime });
+    expect(await ctx.db.get(versions.alreadySet)).toMatchObject({ publishedAt: 123 });
+    expect((await ctx.db.get(versions.noAudit))?.publishedAt).toBeUndefined();
+  });
+});
+
 test('I7: a client cannot choose a version number, and the rejection is argument validation', async () => {
   const { owner, organizationId } = await recipeFixture();
   // Probed against a recipe with NO open draft, deliberately: against a recipe
@@ -129,7 +243,7 @@ test('recipe keys must be 2–64 lowerCamelCase characters', async () => {
   const { owner, organizationId } = await recipeFixture();
   for (const key of ['Bad_key', 'a', 'a'.repeat(65), '1leading', 'has space', 'kebab-case', '']) {
     await expect(owner.client.mutation(createRecipe, { organizationId, key, name: 'Rejected' })).rejects.toMatchObject({
-      data: 'Recipe key must be 2–64 lowerCamelCase characters',
+      data: { code: 'recipeKeyInvalid' },
     });
   }
   // Both length bounds are inclusive, and interior capitals and digits are legal.
@@ -142,13 +256,13 @@ test('one-draft conflict and archived/non-draft publish rules are enforced', asy
   const { t, owner, organizationId, recipeId } = await recipeFixture();
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'eventCode', label: 'Code', config: textConfig });
   const draft = await owner.client.mutation(createInitialDraftVersion, { recipeId });
-  await expect(owner.client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: 'Conflict' });
+  await expect(owner.client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: { code: 'conflict' } });
   await setDraftFields(t, organizationId, draft, [{ fieldDefinitionId }]);
   await owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft });
-  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: 'Only draft recipe versions can be published' });
+  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: { code: 'recipeVersionNotDraft' } });
   const clone = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
   await owner.client.mutation(archiveRecipe, { recipeId });
-  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: clone })).rejects.toMatchObject({ data: 'Archived recipes cannot be published' });
+  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: clone })).rejects.toMatchObject({ data: { code: 'recipeArchived' } });
 });
 
 test('publish validates draft snapshots and clones keep independent recipe field rows', async () => {
@@ -176,7 +290,7 @@ test('invalid recipe field rows cannot be published', async () => {
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'eventCode', label: 'Code', config: textConfig });
   const draft = await owner.client.mutation(createInitialDraftVersion, { recipeId });
   await setDraftFields(t, organizationId, draft, [{ fieldDefinitionId, required: true, visible: false }]);
-  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: 'Required recipe fields must be visible' });
+  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: { code: 'recipeFieldRequiredHidden' } });
 });
 
 test('every publish-time snapshot rule rejects before a version becomes immutable', async () => {
@@ -197,38 +311,38 @@ test('every publish-time snapshot rule rejects before a version becomes immutabl
   }));
 
   const draft = await owner.client.mutation(createInitialDraftVersion, { recipeId });
-  const expectRejection = async (rows: DraftFieldRow[], data: string) => {
+  const expectRejection = async (rows: DraftFieldRow[], code: string) => {
     await setDraftFields(t, organizationId, draft, rows);
-    await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data });
+    await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: { code } });
   };
 
-  await expectRejection([], 'Cannot publish a version with no fields');
-  await expectRejection([{ fieldDefinitionId: textField }, { fieldDefinitionId: textField }], 'Recipe version cannot contain duplicate field definitions');
-  await expectRejection([{ fieldDefinitionId: archivedField }], 'Recipe fields must reference active fields in the same organization or built-ins');
+  await expectRejection([], 'recipeVersionEmpty');
+  await expectRejection([{ fieldDefinitionId: textField }, { fieldDefinitionId: textField }], 'recipeFieldDuplicateDefinition');
+  await expectRejection([{ fieldDefinitionId: archivedField }], 'recipeFieldDefinitionUnavailable');
   // A foreign definition is refused by the same rule, so composing across tenants
   // never becomes publishable configuration (I1).
-  await expectRejection([{ fieldDefinitionId: foreignField }], 'Recipe fields must reference active fields in the same organization or built-ins');
-  await expectRejection([{ fieldDefinitionId: textField, config: { kind: 'number' } }], 'Recipe field config kind must match the current field definition');
-  await expectRejection([{ fieldDefinitionId: selectField, config: { kind: 'select', options: [] } }], 'Select fields must define at least one option');
+  await expectRejection([{ fieldDefinitionId: foreignField }], 'recipeFieldDefinitionUnavailable');
+  await expectRejection([{ fieldDefinitionId: textField, config: { kind: 'number' } }], 'recipeFieldConfigMismatch');
+  await expectRejection([{ fieldDefinitionId: selectField, config: { kind: 'select', options: [] } }], 'fieldSelectOptionsInvalid');
   // F3 regression: a snapshot may narrow the definition's options but may never
   // carry an option the definition no longer offers.
   await expectRejection(
     [{ fieldDefinitionId: selectField, config: { kind: 'select', options: [{ id: 'vip', label: 'VIP' }, { id: 'ghost', label: 'Removed' }] } }],
-    'Recipe field snapshot options must still exist in the current field definition',
+    'recipeFieldSnapshotOptionInvalid',
   );
-  await expectRejection([{ fieldDefinitionId: textField, defaultValue: { kind: 'number', value: 1 } }], 'Field value kind must match its field configuration');
+  await expectRejection([{ fieldDefinitionId: textField, defaultValue: { kind: 'number', value: 1 } }], 'fieldValueKindMismatch');
   await expectRejection(
     [{ fieldDefinitionId: selectField, config: { kind: 'select', options: [{ id: 'vip', label: 'VIP' }] }, defaultValue: { kind: 'select', optionId: 'ghost' } }],
-    'Field value must reference an option defined by the field configuration',
+    'fieldValueOptionInvalid',
   );
-  await expectRejection([{ fieldDefinitionId: numberField, config: { kind: 'number' }, defaultValue: { kind: 'number', value: Number.NaN } }], 'Field value must be a finite number');
-  await expectRejection([{ fieldDefinitionId: dateField, config: { kind: 'date' }, defaultValue: { kind: 'date', value: '2026-02-30' } }], 'Field value must be a YYYY-MM-DD calendar date');
+  await expectRejection([{ fieldDefinitionId: numberField, config: { kind: 'number' }, defaultValue: { kind: 'number', value: Number.NaN } }], 'fieldValueInvalid');
+  await expectRejection([{ fieldDefinitionId: dateField, config: { kind: 'date' }, defaultValue: { kind: 'date', value: '2026-02-30' } }], 'fieldValueInvalid');
   // F1 regression: a location default from another tenant — and one that is
   // merely archived here — are both refused with the same generic error, so
   // publishing cannot be used to probe foreign ids (I9).
   await expectRejection([{ fieldDefinitionId: locationField, config: { kind: 'location' }, defaultValue: { kind: 'location', locationId: locations.foreign } }], inaccessible);
   await expectRejection([{ fieldDefinitionId: locationField, config: { kind: 'location' }, defaultValue: { kind: 'location', locationId: locations.archived } }], inaccessible);
-  const positionMessage = 'Recipe field positions must be unique non-negative integers';
+  const positionMessage = 'recipeFieldPositionInvalid';
   await expectRejection([{ fieldDefinitionId: textField, position: 0 }, { fieldDefinitionId: selectField, config: { kind: 'select', options: [{ id: 'vip', label: 'VIP' }] }, position: 0 }], positionMessage);
   await expectRejection([{ fieldDefinitionId: textField, position: -1 }], positionMessage);
   await expectRejection([{ fieldDefinitionId: textField, position: 1.5 }], positionMessage);
@@ -262,7 +376,7 @@ test('a retired version keeps its snapshot readable and can never be republished
   // Retirement changes the status and nothing else: the snapshot Events were
   // validated against is byte-for-byte what it was when published (I3).
   expect(afterRetirement.recipeFields).toEqual(beforeRetirement.recipeFields);
-  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: v1 })).rejects.toMatchObject({ data: 'Only draft recipe versions can be published' });
+  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: v1 })).rejects.toMatchObject({ data: { code: 'recipeVersionNotDraft' } });
 });
 
 test('recipe authoring is closed to operators and viewers and open from planner up', async () => {
@@ -278,12 +392,12 @@ test('recipe authoring is closed to operators and viewers and open from planner 
   await setDraftFields(t, organizationId, versionId, [{ fieldDefinitionId }]);
 
   for (const { client } of [operator, viewer]) {
-    await expect(client.mutation(createRecipe, { organizationId, key: 'blockedPlan', name: 'Blocked' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(updateRecipeMetadata, { recipeId, name: 'Blocked' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(archiveRecipe, { recipeId })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(publishRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: inaccessible });
+    await expect(client.mutation(createRecipe, { organizationId, key: 'blockedPlan', name: 'Blocked' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(updateRecipeMetadata, { recipeId, name: 'Blocked' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(archiveRecipe, { recipeId })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(publishRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   // Reading stays open to any member, so the rejections above are a role floor
   // on authoring, not on visibility.
@@ -294,17 +408,17 @@ test('recipe authoring is closed to operators and viewers and open from planner 
 
 test('recipe metadata updates are validated, refused on archived recipes, and no-ops early', async () => {
   const { owner, organizationId, recipeId } = await recipeFixture();
-  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: '   ' })).rejects.toMatchObject({ data: 'Invalid recipe name' });
-  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'x'.repeat(201) })).rejects.toMatchObject({ data: 'Invalid recipe name' });
+  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: '   ' })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
+  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'x'.repeat(201) })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
   await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, description: 'x'.repeat(2001) })).rejects.toMatchObject({
-    data: 'Recipe description must not exceed 2000 characters',
+    data: { code: 'recipeDescriptionTooLong' },
   });
   await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'Renamed plan', description: 'x'.repeat(2000) })).resolves.toBeNull();
   // Resubmitting the stored values changes nothing and is accepted as a no-op.
   await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'Renamed plan' })).resolves.toBeNull();
 
   await owner.client.mutation(archiveRecipe, { recipeId });
-  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'Too late' })).rejects.toMatchObject({ data: 'Archived recipes cannot be updated' });
+  await expect(owner.client.mutation(updateRecipeMetadata, { recipeId, name: 'Too late' })).rejects.toMatchObject({ data: { code: 'recipeArchived' } });
   const recipe = await owner.client.query(getRecipe, { recipeId });
   expect(recipe.recipe).toMatchObject({ name: 'Renamed plan', status: 'archived' });
 });
@@ -322,9 +436,9 @@ test('listRecipes is membership-gated, tenant-scoped, and paginated', async () =
   ];
   await owner.client.mutation(createRecipe, { organizationId: otherOrganizationId, key: 'eventPlan', name: 'Their plan' });
 
-  await expect(t.query(listRecipes, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: unauthenticated });
-  await expect(outsider.client.query(listRecipes, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
-  await expect(member.client.query(listRecipes, { organizationId: otherOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+  await expect(t.query(listRecipes, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
+  await expect(outsider.client.query(listRecipes, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(member.client.query(listRecipes, { organizationId: otherOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   const page = await member.client.query(listRecipes, { organizationId, paginationOpts: firstPage });
   expect(page.page.map((recipe) => recipe._id).sort()).toEqual([...ours].sort());
@@ -342,18 +456,18 @@ test('recipe lifecycle edges: key uniqueness is per tenant and dead-end transiti
   const outsider = await provision(t, 'recipe-edge-outsider');
   const otherOrganizationId = await owner.client.mutation(createOrganization, { name: 'Other', slug: 'recipes-edges-other' });
 
-  await expect(owner.client.mutation(createRecipe, { organizationId, key: 'eventPlan', name: 'Duplicate' })).rejects.toMatchObject({ data: 'Conflict' });
+  await expect(owner.client.mutation(createRecipe, { organizationId, key: 'eventPlan', name: 'Duplicate' })).rejects.toMatchObject({ data: { code: 'conflict' } });
   await expect(owner.client.mutation(createRecipe, { organizationId: otherOrganizationId, key: 'eventPlan', name: 'Same key elsewhere' })).resolves.toBeDefined();
-  await expect(owner.client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: 'A published recipe version is required to clone' });
+  await expect(owner.client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: { code: 'recipePublishedVersionRequired' } });
 
   const versionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
-  await expect(outsider.client.query(getRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(outsider.client.query(getRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   await owner.client.mutation(archiveRecipe, { recipeId });
   // Idempotent: the second archive neither re-patches nor writes a second audit row.
   await expect(owner.client.mutation(archiveRecipe, { recipeId })).resolves.toBeNull();
-  await expect(owner.client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: 'Archived recipes cannot get new drafts' });
-  await expect(owner.client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: 'Archived recipes cannot get new drafts' });
+  await expect(owner.client.mutation(createInitialDraftVersion, { recipeId })).rejects.toMatchObject({ data: { code: 'recipeArchived' } });
+  await expect(owner.client.mutation(clonePublishedVersionToDraft, { recipeId })).rejects.toMatchObject({ data: { code: 'recipeArchived' } });
   await t.run(async (ctx) => {
     const audits = await ctx.db
       .query('auditEvents')
@@ -378,7 +492,7 @@ test('archiving a recipe retires its published version in the same transaction',
   // readable; the untouched draft is inert because publishing it is refused.
   expect(recipe.versions.map((version) => [version.versionNumber, version.status])).toEqual([[1, 'retired'], [2, 'draft']]);
   await expect(owner.client.query(getRecipeVersion, { recipeVersionId: published })).resolves.toMatchObject({ version: { status: 'retired' } });
-  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: 'Archived recipes cannot be published' });
+  await expect(owner.client.mutation(publishRecipeVersion, { recipeVersionId: draft })).rejects.toMatchObject({ data: { code: 'recipeArchived' } });
 });
 
 test('recipe lifecycle writes attributed audit rows naming versions and sources', async () => {
@@ -437,7 +551,7 @@ test('concurrent initial-draft creation leaves exactly one draft (one-draft cont
   ]);
   expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
   for (const outcome of outcomes) {
-    if (outcome.status === 'rejected') expect(outcome.reason).toMatchObject({ data: 'Conflict' });
+    if (outcome.status === 'rejected') expect(outcome.reason).toMatchObject({ data: { code: 'conflict' } });
   }
   await t.run(async (ctx) => {
     const drafts = await ctx.db.query('recipeVersions').withIndex('by_recipe_status', (q) => q.eq('recipeId', recipeId).eq('status', 'draft')).collect();
@@ -452,23 +566,23 @@ test('recipe and version probes are uniform for unauthenticated and outsider cal
   const outsider = await provision(t, 'recipe-outsider');
   const missingRecipe = await t.run(async (ctx) => { const id = await ctx.db.insert('eventRecipes', { organizationId, key: 'temporary', name: 'Temporary', status: 'draft' }); await ctx.db.delete(id); return id; });
   for (const id of [recipeId, missingRecipe]) {
-    await expect(t.query(getRecipe, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(outsider.client.query(getRecipe, { recipeId: id })).rejects.toMatchObject({ data: inaccessible });
+    await expect(t.query(getRecipe, { recipeId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(outsider.client.query(getRecipe, { recipeId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
-  await expect(t.query(getRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: unauthenticated });
-  await expect(outsider.client.mutation(publishRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(t.query(getRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: { code: unauthenticated } });
+  await expect(outsider.client.mutation(publishRecipeVersion, { recipeVersionId: versionId })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // Every authoring mutation is closed to an unauthenticated caller too, for a
   // real id as for a fabricated one: none of them may reach a database read.
   const missingVersion = await t.run(async (ctx) => { const id = await ctx.db.insert('recipeVersions', { organizationId, recipeId, versionNumber: 99, status: 'draft' }); await ctx.db.delete(id); return id; });
   for (const id of [recipeId, missingRecipe]) {
-    await expect(t.mutation(updateRecipeMetadata, { recipeId: id, name: 'Nope' })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(archiveRecipe, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(createInitialDraftVersion, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(clonePublishedVersionToDraft, { recipeId: id })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(updateRecipeMetadata, { recipeId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(archiveRecipe, { recipeId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(createInitialDraftVersion, { recipeId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(clonePublishedVersionToDraft, { recipeId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
   for (const id of [versionId, missingVersion]) {
-    await expect(t.mutation(publishRecipeVersion, { recipeVersionId: id })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(publishRecipeVersion, { recipeVersionId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
-  await expect(t.mutation(createRecipe, { organizationId, key: 'unauthenticatedPlan', name: 'Nope' })).rejects.toMatchObject({ data: unauthenticated });
+  await expect(t.mutation(createRecipe, { organizationId, key: 'unauthenticatedPlan', name: 'Nope' })).rejects.toMatchObject({ data: { code: unauthenticated } });
 });

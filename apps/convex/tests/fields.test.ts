@@ -30,9 +30,9 @@ const listRecipeFields = api.recipes.fields.queries.listRecipeFields;
 // tenant's namespace permanently); several tests below drive it.
 enableSeedMutations();
 
-const NOT_FOUND_OR_INACCESSIBLE = 'Not found or inaccessible';
-const UNAUTHENTICATED = 'Unauthenticated';
-const IMMUTABLE_MEANING = 'Fields referenced by published or retired recipe versions may only update label or description';
+const NOT_FOUND_OR_INACCESSIBLE = 'notFoundOrInaccessible';
+const UNAUTHENTICATED = 'unauthenticated';
+const IMMUTABLE_MEANING = 'fieldHistoricalFrozen';
 const issuer = 'https://example.clerk.accounts.dev';
 const firstPage = { numItems: 10, cursor: null };
 
@@ -57,14 +57,14 @@ test('field keys are indexed-unique and organization fields cannot shadow built-
 
   await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
   await expect(t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Duplicate', config: textConfig })).rejects.toMatchObject({
-    data: 'A field with this key already exists',
+    data: { code: 'fieldKeyTaken' },
   });
   await expect(owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'eventName', label: 'Shadow', config: textConfig })).rejects.toMatchObject({
-    data: 'Custom field keys cannot shadow built-in field keys',
+    data: { code: 'fieldKeyShadowsBuiltin' },
   });
   await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'pickupNote', label: 'Pickup note', config: textConfig });
   await expect(owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'pickupNote', label: 'Again', config: textConfig })).rejects.toMatchObject({
-    data: 'A field with this key already exists',
+    data: { code: 'fieldKeyTaken' },
   });
   await expect(owner.client.mutation(createFieldDefinition, { organizationId: orgB, key: 'pickupNote', label: 'Allowed elsewhere', config: textConfig })).resolves.toBeDefined();
 });
@@ -78,14 +78,14 @@ test('renaming a key is held to exactly the rules creation is held to', async ()
   const renaming = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'dropoffNote', label: 'Dropoff note', config: textConfig });
 
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'pickupNote' })).rejects.toMatchObject({
-    data: 'A field with this key already exists',
+    data: { code: 'fieldKeyTaken' },
   });
   // Create-then-rename must not be a back door into shadowing a global built-in.
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'eventName' })).rejects.toMatchObject({
-    data: 'Custom field keys cannot shadow built-in field keys',
+    data: { code: 'fieldKeyShadowsBuiltin' },
   });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'Bad_key' })).rejects.toMatchObject({
-    data: 'Field key must be 2–64 lowerCamelCase characters',
+    data: { code: 'fieldKeyInvalid' },
   });
   // Renaming a field to the key it already has is a no-op, not a self-collision.
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: taken, key: 'pickupNote' })).resolves.toBeNull();
@@ -99,7 +99,7 @@ test('field keys must be 2–64 lowerCamelCase characters', async () => {
 
   for (const key of ['Bad_key', 'a', 'a'.repeat(65), '1leading', 'has space', '']) {
     await expect(owner.client.mutation(createFieldDefinition, { organizationId, key, label: 'Rejected', config: textConfig })).rejects.toMatchObject({
-      data: 'Field key must be 2–64 lowerCamelCase characters',
+      data: { code: 'fieldKeyInvalid' },
     });
   }
   await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'a'.repeat(64), label: 'Accepted', config: textConfig })).resolves.toBeDefined();
@@ -111,19 +111,19 @@ test('labels and descriptions are bounded on creation and update', async () => {
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-text' });
 
   await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'blankLabel', label: '   ', config: textConfig })).rejects.toMatchObject({
-    data: 'Invalid field name',
+    data: { code: 'entityNameInvalid' },
   });
   await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'longLabel', label: 'x'.repeat(201), config: textConfig })).rejects.toMatchObject({
-    data: 'Invalid field name',
+    data: { code: 'entityNameInvalid' },
   });
   await expect(
     owner.client.mutation(createFieldDefinition, { organizationId, key: 'longDescription', label: 'Long description', description: 'x'.repeat(2001), config: textConfig }),
-  ).rejects.toMatchObject({ data: 'Field description must not exceed 2000 characters' });
+  ).rejects.toMatchObject({ data: { code: 'fieldDescriptionTooLong' } });
 
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'goodField', label: 'Good field', config: textConfig });
-  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: '  ' })).rejects.toMatchObject({ data: 'Invalid field name' });
+  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: '  ' })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, description: 'x'.repeat(2001) })).rejects.toMatchObject({
-    data: 'Field description must not exceed 2000 characters',
+    data: { code: 'fieldDescriptionTooLong' },
   });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, description: 'x'.repeat(2000) })).resolves.toBeNull();
 });
@@ -136,28 +136,28 @@ test('incoherent field configurations are refused before they can be snapshotted
     owner.client.mutation(createFieldDefinition, { organizationId, key, label: 'Config check', config });
 
   await expect(create('badDateBound', { kind: 'date', min: 'not-a-date' })).rejects.toMatchObject({
-    data: 'Field date bounds must be YYYY-MM-DD calendar dates',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('impossibleDay', { kind: 'date', min: '2026-02-30' })).rejects.toMatchObject({
-    data: 'Field date bounds must be YYYY-MM-DD calendar dates',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('badTimeBound', { kind: 'time', min: '99:99' })).rejects.toMatchObject({
-    data: 'Field time bounds must be HH:mm wall-clock times',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('nanBound', { kind: 'number', min: Number.NaN })).rejects.toMatchObject({
-    data: 'Field numeric bounds must be finite numbers',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('infiniteBound', { kind: 'datetime', max: Number.POSITIVE_INFINITY })).rejects.toMatchObject({
-    data: 'Field numeric bounds must be finite numbers',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('invertedNumber', { kind: 'number', min: 10, max: 5 })).rejects.toMatchObject({
-    data: 'Field maximum must not be less than its minimum',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('invertedDate', { kind: 'date', min: '2026-03-01', max: '2026-02-01' })).rejects.toMatchObject({
-    data: 'Field maximum must not be less than its minimum',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(create('invertedLength', { kind: 'text', minLength: 10, maxLength: 5 })).rejects.toMatchObject({
-    data: 'Field maximum length must not be less than its minimum length',
+    data: { code: 'fieldConfigInvalid' },
   });
   // Length bounds get the same finiteness rule numeric bounds do, and it is the
   // ONLY rule that catches them: NaN compares false against every other check,
@@ -169,48 +169,48 @@ test('incoherent field configurations are refused before they can be snapshotted
     { kind: 'longText', maxLength: Number.POSITIVE_INFINITY } as const,
   ]) {
     await expect(create(`badLength${config.kind}${config.minLength === undefined ? 'Max' : 'Min'}`, config)).rejects.toMatchObject({
-      data: 'Field length bounds must be finite numbers',
+      data: { code: 'fieldConfigInvalid' },
     });
   }
   await expect(create('emptyOptions', { kind: 'select', options: [] })).rejects.toMatchObject({
-    data: 'Select fields must define at least one option',
+    data: { code: 'fieldSelectOptionsInvalid' },
   });
   await expect(create('duplicateOptions', { kind: 'select', options: [{ id: 'a', label: 'A' }, { id: 'a', label: 'Also A' }] })).rejects.toMatchObject({
-    data: 'Select option ids must be unique and non-empty',
+    data: { code: 'fieldSelectOptionsInvalid' },
   });
   await expect(create('blankOptionId', { kind: 'select', options: [{ id: '', label: 'Blank' }] })).rejects.toMatchObject({
-    data: 'Select option ids must be unique and non-empty',
+    data: { code: 'fieldSelectOptionsInvalid' },
   });
   await expect(create('emptyMultiSelect', { kind: 'multiSelect', options: [], minSelections: 3, maxSelections: 1 })).rejects.toMatchObject({
-    data: 'Select fields must define at least one option',
+    data: { code: 'fieldSelectOptionsInvalid' },
   });
   await expect(
     create('invertedSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], minSelections: 3, maxSelections: 1 }),
-  ).rejects.toMatchObject({ data: 'Maximum selections must not be less than minimum selections' });
+  ).rejects.toMatchObject({ data: { code: 'fieldSelectOptionsInvalid' } });
   await expect(
     create('unsatisfiableSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], minSelections: 2, maxSelections: 2 }),
-  ).rejects.toMatchObject({ data: 'Minimum selections must not exceed the number of options' });
+  ).rejects.toMatchObject({ data: { code: 'fieldSelectOptionsInvalid' } });
   await expect(
     create('tooManySelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], maxSelections: 2 }),
-  ).rejects.toMatchObject({ data: 'Maximum selections must not exceed the number of options' });
+  ).rejects.toMatchObject({ data: { code: 'fieldSelectOptionsInvalid' } });
   // Selection bounds get their own finiteness rule, and NaN is the case only that
   // rule catches: it is neither less than the minimum nor greater than the
   // option count, so every other selection check passes it through.
   await expect(
     create('nanMinSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], minSelections: Number.NaN }),
-  ).rejects.toMatchObject({ data: 'Selection bounds must be finite numbers' });
+  ).rejects.toMatchObject({ data: { code: 'fieldConfigInvalid' } });
   await expect(
     create('nanMaxSelections', { kind: 'multiSelect', options: [{ id: 'a', label: 'A' }], maxSelections: Number.NaN }),
-  ).rejects.toMatchObject({ data: 'Selection bounds must be finite numbers' });
+  ).rejects.toMatchObject({ data: { code: 'fieldConfigInvalid' } });
 
   // Coherent configurations, including equal bounds, are stored.
   await expect(create('validRange', { kind: 'number', min: 5, max: 5, integer: true })).resolves.toBeDefined();
   const numeric = await create('editableRange', { kind: 'number', min: 0, max: 100 });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: numeric, config: { kind: 'number', min: 10, max: 5 } })).rejects.toMatchObject({
-    data: 'Field maximum must not be less than its minimum',
+    data: { code: 'fieldConfigInvalid' },
   });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: numeric, config: { kind: 'number', min: Number.NaN } })).rejects.toMatchObject({
-    data: 'Field numeric bounds must be finite numbers',
+    data: { code: 'fieldConfigInvalid' },
   });
   await t.run(async (ctx) => {
     expect(await ctx.db.get(numeric)).toMatchObject({ config: { kind: 'number', min: 0, max: 100 } });
@@ -233,11 +233,11 @@ test('field mutation probes are generic across organizations and viewers cannot 
     return id;
   });
 
-  await expect(viewer.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'noAccess', label: 'No access', config: textConfig })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(viewer.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'noAccess', label: 'No access', config: textConfig })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   for (const fieldDefinitionId of [foreignFieldId, missingFieldId]) {
-    await expect(plannerA.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(plannerA.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(plannerA.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(plannerA.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(plannerA.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(plannerA.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 });
 
@@ -249,9 +249,9 @@ test('built-in fields are not editable through the public field mutations', asyn
 
   // A built-in belongs to no organization, so no membership can ever reach it;
   // the caller learns nothing about it beyond the generic error (I9).
-  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Hijacked' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Hijacked' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   await t.run(async (ctx) => {
     expect(await ctx.db.get(fieldDefinitionId)).toMatchObject({ scope: 'builtin', label: 'Event name' });
   });
@@ -269,12 +269,12 @@ test('field operations are indistinguishable for unauthenticated probes (I9)', a
   });
 
   for (const fieldDefinitionId of [realFieldId, fakeFieldId]) {
-    await expect(t.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   }
-  await expect(t.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-  await expect(t.query(listFieldDefinitions, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  await expect(t.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+  await expect(t.query(listFieldDefinitions, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   const fakeOrganizationId = await t.run(async (ctx) => {
     const id = await ctx.db.insert('organizations', { name: 'Temporary', slug: 'fields-probe-ghost' });
     await ctx.db.delete(id);
@@ -282,7 +282,7 @@ test('field operations are indistinguishable for unauthenticated probes (I9)', a
   });
   for (const orgId of [organizationId, fakeOrganizationId]) {
     await expect(t.mutation(createFieldDefinition, { organizationId: orgId, key: 'ghostField', label: 'Nope', config: textConfig })).rejects.toMatchObject({
-      data: UNAUTHENTICATED,
+      data: { code: UNAUTHENTICATED },
     });
   }
 });
@@ -297,10 +297,10 @@ test('operators cannot author fields; planners and above can', async () => {
   await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
   const fieldDefinitionId = await planner.client.mutation(createFieldDefinition, { organizationId, key: 'plannerField', label: 'Planner field', config: textConfig });
 
-  await expect(operator.client.mutation(createFieldDefinition, { organizationId, key: 'operatorField', label: 'Nope', config: textConfig })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(operator.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(operator.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(operator.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(operator.client.mutation(createFieldDefinition, { organizationId, key: 'operatorField', label: 'Nope', config: textConfig })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(operator.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(operator.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(operator.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   await expect(planner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Renamed' })).resolves.toBeNull();
 });
 
@@ -309,7 +309,7 @@ test('semantic compatibility is enforced on creation and update, and absent sema
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-semantics' });
   await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'badDate', label: 'Bad date', semanticType: 'eventDate', config: textConfig })).rejects.toMatchObject({
-    data: 'Semantic type is incompatible with the field configuration',
+    data: { code: 'fieldSemanticIncompatible' },
   });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'plainText', label: 'Plain text', config: textConfig });
   await t.run(async (ctx) => {
@@ -321,11 +321,11 @@ test('semantic compatibility is enforced on creation and update, and absent sema
   // Adding a semantic type the current config cannot carry, and changing the
   // config out from under an existing semantic type, are both incompatible.
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventDate' })).rejects.toMatchObject({
-    data: 'Semantic type is incompatible with the field configuration',
+    data: { code: 'fieldSemanticIncompatible' },
   });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventName' })).resolves.toBeNull();
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({
-    data: 'Semantic type is incompatible with the field configuration',
+    data: { code: 'fieldSemanticIncompatible' },
   });
   await t.run(async (ctx) => {
     const field = await ctx.db.get(fieldDefinitionId);
@@ -347,9 +347,9 @@ test('published and retired references preserve field meaning while allowing pre
     // the rule is proven against states the API can actually reach.
     await referenceFieldFromRecipeVersion(owner, organizationId, fieldDefinitionId, status);
 
-    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, key: 'changedTitle' })).rejects.toMatchObject({ data: IMMUTABLE_MEANING });
-    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({ data: IMMUTABLE_MEANING });
-    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventDescription' })).rejects.toMatchObject({ data: IMMUTABLE_MEANING });
+    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, key: 'changedTitle' })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
+    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
+    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventDescription' })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Renamed', description: 'Still interpretable' })).resolves.toBeNull();
   }
 });
@@ -397,7 +397,7 @@ test('draft-only references allow config edits; references block deletion but no
   const referenced = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'draftField', label: 'Draft', config: textConfig });
   await referenceFieldFromRecipeVersion(owner, organizationId, referenced, 'draft');
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: referenced, config: longTextConfig })).resolves.toBeNull();
-  await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId: referenced })).rejects.toMatchObject({ data: 'Referenced field definitions cannot be deleted; archive the field instead' });
+  await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId: referenced })).rejects.toMatchObject({ data: { code: 'fieldDeleteBlocked' } });
   await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: referenced })).resolves.toBeNull();
 
   const unreferenced = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'deleteField', label: 'Delete', config: textConfig });
@@ -416,7 +416,7 @@ test('stored event values also protect a field from deletion', async () => {
   await insertEventFieldValueReference(t, organizationId, fieldDefinitionId);
 
   await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({
-    data: 'Referenced field definitions cannot be deleted; archive the field instead',
+    data: { code: 'fieldDeleteBlocked' },
   });
   await t.run(async (ctx) => {
     expect(await ctx.db.get(fieldDefinitionId)).not.toBeNull();
@@ -433,7 +433,7 @@ test('archived fields are read-only and archiving stays idempotent', async () =>
   await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).resolves.toBeNull();
   for (const patch of [{ label: 'Nope' }, { description: 'Nope' }, { key: 'nopeField' }, { config: longTextConfig }]) {
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, ...patch })).rejects.toMatchObject({
-      data: 'Archived fields cannot be updated',
+      data: { code: 'fieldArchived' },
     });
   }
 
@@ -463,8 +463,8 @@ test('listFieldDefinitions is membership-gated, tenant-scoped, and paginated', a
   ];
   await owner.client.mutation(createFieldDefinition, { organizationId: orgB, key: 'theirField', label: 'Theirs', config: textConfig });
 
-  await expect(outsider.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(member.client.query(listFieldDefinitions, { organizationId: orgB, paginationOpts: firstPage })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(outsider.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(member.client.query(listFieldDefinitions, { organizationId: orgB, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
 
   const page = await member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage });
   // Neither the other tenant's fields nor the global built-ins appear here.
@@ -598,7 +598,7 @@ test('getFieldDefinitionsByIds bounds and de-duplicates caller-supplied ids', as
 
   await expect(
     owner.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: Array.from({ length: 201 }, () => fieldDefinitionId) }),
-  ).rejects.toMatchObject({ data: 'Field definition lookup cannot exceed 200 ids' });
+  ).rejects.toMatchObject({ data: { code: 'fieldLookupTooLarge' } });
   const fields = await owner.client.query(getFieldDefinitionsByIds, {
     organizationId,
     fieldDefinitionIds: [fieldDefinitionId, fieldDefinitionId, fieldDefinitionId],
@@ -619,10 +619,10 @@ test('getFieldDefinitionsByIds requires membership and authentication', async ()
   });
 
   await expect(outsider.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [fieldDefinitionId] })).rejects.toMatchObject({
-    data: NOT_FOUND_OR_INACCESSIBLE,
+    data: { code: NOT_FOUND_OR_INACCESSIBLE },
   });
   await expect(t.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [fieldDefinitionId] })).rejects.toMatchObject({
-    data: UNAUTHENTICATED,
+    data: { code: UNAUTHENTICATED },
   });
 });
 

@@ -263,7 +263,8 @@ function VersionCard({ version, current }: { version: RecipeVersion; current: bo
           {version.status !== 'draft' ? <LockedBadge>{t('recipes.locked')}</LockedBadge> : null}
         </div>
         <span className="text-xs text-ink-3">
-          {t('recipes.created')}: {formatDateTime(locale, version._creationTime)}
+          {version.publishedAt === undefined ? t('recipes.created') : t('recipes.published')}:{' '}
+          {formatDateTime(locale, version.publishedAt ?? version._creationTime)}
         </span>
       </PanelHeader>
       <PanelBody>

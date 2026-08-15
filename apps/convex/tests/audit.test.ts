@@ -23,8 +23,8 @@ const listOrganizationAuditEvents = api.audit.queries.listOrganizationAuditEvent
 const listEntityAuditEvents = api.audit.queries.listEntityAuditEvents;
 
 const issuer = 'https://example.clerk.accounts.dev';
-const inaccessible = 'Not found or inaccessible';
-const unauthenticated = 'Unauthenticated';
+const inaccessible = 'notFoundOrInaccessible';
+const unauthenticated = 'unauthenticated';
 
 function identity(subject: string) {
   return { issuer, subject, name: subject, email: `${subject}@example.com`, emailVerified: true };
@@ -109,16 +109,16 @@ test('audit reads are admin-only, tenant-isolated, paginated, and append-only', 
       expect(organizationPage.page.length).toBeGreaterThan(0);
       expect(entityPage.page.length).toBeGreaterThan(0);
     } else {
-      await expect(member.client.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: inaccessible });
-      await expect(member.client.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: inaccessible });
+      await expect(member.client.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: { code: inaccessible } });
+      await expect(member.client.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: { code: inaccessible } });
     }
   }
   for (const blockedOrganizationId of [otherOrganizationId, fabricatedOrganizationId]) {
-    await expect(owner.client.query(listOrganizationAuditEvents, { ...args, organizationId: blockedOrganizationId })).rejects.toMatchObject({ data: inaccessible });
-    await expect(owner.client.query(listEntityAuditEvents, { ...args, organizationId: blockedOrganizationId, entityType: 'project', entityId: projectId })).rejects.toMatchObject({ data: inaccessible });
+    await expect(owner.client.query(listOrganizationAuditEvents, { ...args, organizationId: blockedOrganizationId })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(owner.client.query(listEntityAuditEvents, { ...args, organizationId: blockedOrganizationId, entityType: 'project', entityId: projectId })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
-  await expect(t.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: unauthenticated });
-  await expect(t.query(listEntityAuditEvents, { ...args, entityType: 'project', entityId: projectId })).rejects.toMatchObject({ data: unauthenticated });
+  await expect(t.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: { code: unauthenticated } });
+  await expect(t.query(listEntityAuditEvents, { ...args, entityType: 'project', entityId: projectId })).rejects.toMatchObject({ data: { code: unauthenticated } });
 
   let cursor: string | null = null;
   const ids: string[] = [];
@@ -148,11 +148,11 @@ test('the metadata guard rejects unknown keys and long caller strings, leaving n
     // @ts-expect-error `token` is not an allowlisted metadata key: the compiler is
     // the first gate (M1), and this test proves the runtime guard behind it.
     metadata: { token: 'secret' },
-  }))).rejects.toMatchObject({ data: 'Audit metadata key is not permitted: token' });
+  }))).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
   await expect(t.run((ctx) => recordAuditEvent(ctx, {
     organizationId, actorUserId: owner.userId, action: 'project.updated', entityType: 'project', entityId: projectId,
     metadata: { name: 'x'.repeat(513) },
-  }))).rejects.toMatchObject({ data: 'Audit metadata string values must not exceed 512 characters' });
+  }))).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
   // The guard runs before the insert, so a rejected write must leave the log
   // exactly as it was — no half-written row bearing the rejected metadata.
   expect(await countAuditEvents(t)).toBe(before);
@@ -261,7 +261,7 @@ test('entity-scoped audit history paginates across cursors and isolates unknown 
   // The one free-form public input is bounded rather than passed to the index.
   await expect(owner.client.query(listEntityAuditEvents, {
     organizationId, entityType: 'event', entityId: 'x'.repeat(129), paginationOpts: { numItems: 10, cursor: null },
-  })).rejects.toMatchObject({ data: 'Audit entity id must not exceed 128 characters' });
+  })).rejects.toMatchObject({ data: { code: 'auditEntityIdTooLong' } });
 });
 
 test('an admin reads only their own organization rows while another tenant is active', async () => {
@@ -298,12 +298,12 @@ test('signed-in callers without an app user or a membership get the same generic
 
   // Authenticated but never provisioned: no `users` row at all.
   const unprovisioned = t.withIdentity(identity('audit-unprovisioned'));
-  await expect(unprovisioned.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: inaccessible });
-  await expect(unprovisioned.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: inaccessible });
+  await expect(unprovisioned.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(unprovisioned.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // Provisioned but a member of nothing: a different failure point on the I1
   // chain that must be indistinguishable from the outside (I9).
   const stranger = await provision(t, 'audit-zero-membership');
-  await expect(stranger.client.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: inaccessible });
-  await expect(stranger.client.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: inaccessible });
+  await expect(stranger.client.query(listOrganizationAuditEvents, args)).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(stranger.client.query(listEntityAuditEvents, entityArgs)).rejects.toMatchObject({ data: { code: inaccessible } });
 });

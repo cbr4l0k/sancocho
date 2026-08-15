@@ -40,7 +40,7 @@ const maxProjectDescriptionLength = 2000;
 
 function validateProjectDescription(description: string | undefined): void {
   if (description !== undefined && description.length > maxProjectDescriptionLength) {
-    return invalidInput(`Project description must not exceed ${maxProjectDescriptionLength} characters`);
+    return invalidInput('projectDescriptionTooLong', `Project description must not exceed ${maxProjectDescriptionLength} characters`);
   }
 }
 
@@ -99,7 +99,7 @@ export async function updateProject(
   const { project, access } = await requireProjectAccess(ctx, projectId, 'planner');
   // Archived projects are immutable regardless of which fields are patched.
   if (project.status === 'archived') {
-    return invalidInput('Archived projects cannot be updated');
+    return invalidInput('projectArchived', 'Archived projects cannot be updated');
   }
   // Validated (and therefore trimmed) before the diff, so what is compared
   // against the stored name is exactly what would be stored.
@@ -229,10 +229,10 @@ export async function requireProjectAccess(
  */
 function assertProjectStatusTransition(current: ProjectStatus, next: ProjectStatus): void {
   if (current === 'archived') {
-    return invalidInput('Archived projects cannot be updated');
+    return invalidInput('projectArchived', 'Archived projects cannot be updated');
   }
   if (next === 'archived') {
-    return invalidInput('Use archiveProject to archive a project');
+    return invalidInput('projectArchiveRequired', 'Use archiveProject to archive a project');
   }
 }
 
@@ -240,12 +240,12 @@ function validateProjectDates({ startsAt, endsAt }: ProjectDates): void {
   // Convex accepts NaN/Infinity in v.number(); unorderable bounds must never be
   // stored, because the comparison below silently passes for NaN.
   if (startsAt !== undefined && !isFiniteNumber(startsAt)) {
-    return invalidInput('Project start must be a finite timestamp');
+    return invalidInput('projectStartInvalid', 'Project start must be a finite timestamp');
   }
   if (endsAt !== undefined && !isFiniteNumber(endsAt)) {
-    return invalidInput('Project end must be a finite timestamp');
+    return invalidInput('projectEndInvalid', 'Project end must be a finite timestamp');
   }
   if (startsAt !== undefined && endsAt !== undefined && endsAt < startsAt) {
-    return invalidInput('Project end must not precede its start');
+    return invalidInput('projectDateRangeInvalid', 'Project end must not precede its start');
   }
 }

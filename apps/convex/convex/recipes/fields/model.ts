@@ -68,8 +68,8 @@ export async function requireDraftVersionForEdit(
   const recipe = await ctx.db.get(version.recipeId);
   if (recipe === null || recipe.organizationId !== version.organizationId) return notFoundOrInaccessible();
   const access = await requireOrganizationRole(ctx, version.organizationId, minimumRole, authenticated);
-  if (recipe.status === 'archived') return invalidInput('Archived recipes cannot be edited');
-  if (version.status !== 'draft') return invalidInput('Published and retired versions are immutable');
+  if (recipe.status === 'archived') return invalidInput('recipeArchived', 'Archived recipes cannot be edited');
+  if (version.status !== 'draft') return invalidInput('recipeVersionNotDraft', 'Published and retired versions are immutable');
   return { version, recipe, access };
 }
 
@@ -86,7 +86,7 @@ export async function addRecipeField(ctx: MutationCtx, args: AddRecipeFieldArgs)
   // and — being an indexed read in the same mutation as the insert — is exactly
   // the read-before-write that makes both race-safe under Convex OCC.
   const siblings = await getVersionFields(ctx, version._id);
-  if (siblings.length >= maxFieldsPerVersion) return invalidInput(`A recipe version cannot hold more than ${maxFieldsPerVersion} fields`);
+  if (siblings.length >= maxFieldsPerVersion) return invalidInput('recipeFieldLimitExceeded', `A recipe version cannot hold more than ${maxFieldsPerVersion} fields`);
   const position = args.position === undefined ? nextPosition(siblings) : availablePosition(siblings, args.position);
   // The location mirror is derived from the default, never taken from args (I4).
   const defaultLocationId = locationIdFromValue(args.defaultValue);
@@ -145,11 +145,11 @@ export async function updateRecipeField(ctx: MutationCtx, args: UpdateRecipeFiel
 export async function reorderRecipeFields(ctx: MutationCtx, recipeVersionId: Id<'recipeVersions'>, orderedRecipeFieldIds: Id<'recipeFields'>[]): Promise<void> {
   const { version, access } = await requireDraftVersionForEdit(ctx, recipeVersionId, 'planner');
   const fields = await getVersionFields(ctx, version._id);
-  if (fields.length !== orderedRecipeFieldIds.length) return invalidInput('Recipe field order must contain exactly this version’s fields');
+  if (fields.length !== orderedRecipeFieldIds.length) return invalidInput('recipeFieldOrderInvalid', 'Recipe field order must contain exactly this version’s fields');
   const actual = new Set(fields.map((field) => field._id));
   const proposed = new Set(orderedRecipeFieldIds);
   if (proposed.size !== orderedRecipeFieldIds.length || proposed.size !== actual.size || orderedRecipeFieldIds.some((id) => !actual.has(id))) {
-    return invalidInput('Recipe field order must contain exactly this version’s fields');
+    return invalidInput('recipeFieldOrderInvalid', 'Recipe field order must contain exactly this version’s fields');
   }
   for (const [position, id] of orderedRecipeFieldIds.entries()) {
     const field = fields.find((candidate) => candidate._id === id);
@@ -205,8 +205,7 @@ function nextPosition(siblings: Doc<'recipeFields'>[]): number {
 }
 
 function availablePosition(siblings: Doc<'recipeFields'>[], position: number): number {
-  if (!Number.isInteger(position) || position < 0) return invalidInput('Recipe field position must be a non-negative integer');
+  if (!Number.isInteger(position) || position < 0) return invalidInput('recipeFieldPositionInvalid', 'Recipe field position must be a non-negative integer');
   if (siblings.some((field) => field.position === position)) return conflict();
   return position;
 }
-

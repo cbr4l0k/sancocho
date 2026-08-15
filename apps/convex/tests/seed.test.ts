@@ -145,13 +145,13 @@ test('seeding is refused unless the deployment opted in, on all four irreversibl
   delete process.env[seedOptInVariable];
   const t = convexTest(schema, modules);
   const builtinField = { key: 'squatted', label: 'Squatted', config: { kind: 'text' } as const };
-  await expect(t.mutation(seedDemonstrationData, {})).rejects.toThrow('Seeding is disabled');
-  await expect(t.mutation(seedBuiltinFieldDefinitions, {})).rejects.toThrow('Seeding is disabled');
-  await expect(t.mutation(grantDemoMembership, { owner: { issuer, subject } })).rejects.toThrow('Seeding is disabled');
+  await expect(t.mutation(seedDemonstrationData, {})).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
+  await expect(t.mutation(seedBuiltinFieldDefinitions, {})).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
+  await expect(t.mutation(grantDemoMembership, { owner: { issuer, subject } })).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
   // The fourth door: creating ONE built-in has the same irreversible effect as
   // seeding the catalogue — the key is squatted in every tenant's namespace and
   // cannot be released — so being an internal function is not the guard.
-  await expect(t.mutation(createBuiltinFieldDefinition, builtinField)).rejects.toThrow('Seeding is disabled');
+  await expect(t.mutation(createBuiltinFieldDefinition, builtinField)).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
   // The refusal is total: not one built-in key is squatted on the deployment.
   expect(await readBuiltins(t)).toHaveLength(0);
 
@@ -230,7 +230,7 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
     fieldDefinitionId: recipeVersion.recipeFields[0]?.fieldDefinitionId ?? (() => { throw new Error('Expected recipe field'); })(),
     required: false,
     visible: true,
-  })).rejects.toThrow('Published and retired versions are immutable');
+  })).rejects.toMatchObject({ data: { code: 'recipeVersionNotDraft' } });
 
   // Re-running writes nothing new anywhere: the counts cover every table the
   // seed touches, including the ones a duplicate user or membership would show up in.
@@ -281,8 +281,8 @@ test('demonstration entities stay invisible to identities without a membership',
   // parameter rather than a fabricated issuer.
   const outsider = t.withIdentity({ issuer: 'https://example.clerk.accounts.dev', subject: 'outsider', name: 'Outsider' });
   await outsider.mutation(ensureUser, {});
-  await expect(outsider.query(getEvent, { eventId: event._id })).rejects.toThrow('Not found or inaccessible');
-  await expect(outsider.query(getRecipeVersion, { recipeVersionId: snapshot.version._id })).rejects.toThrow('Not found or inaccessible');
+  await expect(outsider.query(getEvent, { eventId: event._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
+  await expect(outsider.query(getRecipeVersion, { recipeVersionId: snapshot.version._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
 });
 
 test('a real identity can own the demonstration, before or after it is seeded', async () => {
@@ -320,7 +320,7 @@ test('the seed refuses to write into an organization that already owns the demon
 
   // Generic conflict: the seed cannot proceed, and says nothing about who holds
   // the deployment-wide slug (I9).
-  await expect(t.mutation(seedDemonstrationData, {})).rejects.toThrow('Conflict');
+  await expect(t.mutation(seedDemonstrationData, {})).rejects.toMatchObject({ data: { code: 'conflict' } });
   const counts = await countRows(t);
   expect(counts).toMatchObject({ organizations: 1, projects: 0, recipes: 0, events: 0 });
 });

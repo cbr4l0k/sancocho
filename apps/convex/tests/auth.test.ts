@@ -11,8 +11,8 @@ const createOrganization = api.organizations.mutations.createOrganization;
 const listMyOrganizations = api.organizations.queries.listMyOrganizations;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 
-const UNAUTHENTICATED_ERROR = 'Unauthenticated';
-const NOT_FOUND_OR_INACCESSIBLE = 'Not found or inaccessible';
+const UNAUTHENTICATED_ERROR = 'unauthenticated';
+const NOT_FOUND_OR_INACCESSIBLE = 'notFoundOrInaccessible';
 const ISSUER = 'https://example.clerk.accounts.dev';
 
 const clerkIdentity = {
@@ -28,7 +28,7 @@ test('unauthenticated current-user reads return null and provisioning is rejecte
 
   await expect(t.query(getCurrentUser, {})).resolves.toBeNull();
   await expect(t.mutation(ensureUser, {})).rejects.toMatchObject({
-    data: UNAUTHENTICATED_ERROR,
+    data: { code: UNAUTHENTICATED_ERROR },
   });
 });
 
@@ -124,12 +124,12 @@ test('an authenticated identity that never called ensureUser is refused with the
   // and the caller learns nothing beyond the generic error (I9). `getCurrentUser`
   // is the one deliberate exception, because "are you provisioned?" is its job.
   await expect(unprovisioned.query(getCurrentUser, {})).resolves.toBeNull();
-  await expect(unprovisioned.query(listMyOrganizations, {})).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(unprovisioned.query(listMyOrganizations, {})).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   await expect(unprovisioned.mutation(createOrganization, { name: 'Ghost', slug: 'unprovisioned-org' })).rejects.toMatchObject({
-    data: NOT_FOUND_OR_INACCESSIBLE,
+    data: { code: NOT_FOUND_OR_INACCESSIBLE },
   });
   await expect(unprovisioned.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 10, cursor: null } })).rejects.toMatchObject({
-    data: NOT_FOUND_OR_INACCESSIBLE,
+    data: { code: NOT_FOUND_OR_INACCESSIBLE },
   });
 });
 

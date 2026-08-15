@@ -43,7 +43,7 @@ export async function createRelationship(
 ): Promise<Id<'eventRelationships'>> {
   // Authenticate before either caller-supplied Event id is resolved (I9).
   const authenticated = await requireAuthenticatedUser(ctx);
-  if (args.sourceEventId === args.targetEventId) return invalidInput('An Event cannot relate to itself');
+  if (args.sourceEventId === args.targetEventId) return invalidInput('relationshipSelfReference', 'An Event cannot relate to itself');
 
   const { event: sourceEvent, project: sourceProject, access } = await requireEventAccess(ctx, args.sourceEventId, authoringRole, authenticated);
   const { event: targetEvent, project: targetProject } = await requireEventAccess(ctx, args.targetEventId, authoringRole, authenticated);

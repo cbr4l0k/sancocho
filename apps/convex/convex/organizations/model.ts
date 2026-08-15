@@ -18,7 +18,7 @@ const maxSlugLength = 63;
 
 export function validateOrganizationSlug(slug: string): void {
   if (slug.length < minSlugLength || slug.length > maxSlugLength || !slugPattern.test(slug)) {
-    return invalidInput('Invalid organization slug');
+    return invalidInput('organizationSlugInvalid', 'Invalid organization slug');
   }
 }
 
