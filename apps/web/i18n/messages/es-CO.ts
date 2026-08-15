@@ -60,7 +60,8 @@ const esCO = {
   chat: { title: 'Chat operativo' },
   common: { language: 'Idioma', languageDescription: 'Tu elección se guarda en una cookie y define la ruta de la aplicación.', spanish: 'Español', english: 'Inglés', save: 'Guardar', cancel: 'Cancelar', required: 'Obligatorio', retry: 'Reintentar', clear: 'Quitar el filtro', notAvailable: 'No disponible' },
   errors: { generic: 'Ocurrió un error. Inténtalo de nuevo.', notFound: 'No se encontró el recurso o no tienes acceso.' },
-  nav: { home: 'Inicio', projects: 'Proyectos', services: 'Servicios', recipes: 'Recetas', locations: 'Ubicaciones' },
+  nav: { home: 'Inicio', chat: 'Chat', projects: 'Proyectos', services: 'Servicios', recipes: 'Recetas', locations: 'Ubicaciones', fields: 'Campos', statistics: 'Estadísticas', settings: 'Organización y ajustes', account: 'Cuenta', label: 'Navegación principal', application: 'Sancocho' },
+  shell: { comingSoonTitle: 'Disponible en una próxima etapa', comingSoonDescription: 'Esta superficie ya tiene una ruta y comparte el marco de operación.', comingSoonBody: 'La funcionalidad operativa de esta superficie se incorporará en su etapa planificada.' },
   vocab: {
     roles: { owner: 'Propietario', admin: 'Administrador', planner: 'Planificador', operator: 'Operador', viewer: 'Consulta' },
     auditActions: {

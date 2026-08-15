@@ -506,3 +506,43 @@ small, accessible, token-driven, and independently reusable.
   `datetime` = absolute ms); the controls do not.
 - **Charts.** No colour scale for data visualisation is defined here; the status
   tones are not one and must not be borrowed as one.
+
+---
+
+## 14. Application shell and routes
+
+The authenticated console is a single application frame: a compact masthead
+holds the product mark, the primary navigation, organization switcher, language
+switcher, and Clerk account menu. Its main area is the mounting point for every
+product screen. A stage-G-or-later screen is a route child that composes its own
+content from the existing primitives; it must not recreate navigation, auth
+checks, organization selection, language controls, or error handling.
+
+The default route is the chat surface (`/{locale}`), with an honest placeholder
+until chat is delivered. Primary surface routes are `/{locale}/recipes`,
+`/{locale}/services`, `/{locale}/projects`, `/{locale}/locations`,
+`/{locale}/fields`, and `/{locale}/statistics`; organization settings, including
+the read-only member roster, are at `/{locale}/settings`. Locale is always the
+short URL segment (`es` or `en`). Every entity detail is deep-linkable using
+`/{locale}/{collection}/{id}`: for example, `/es/services/{id}`,
+`/es/recipes/{id}`, `/es/projects/{id}`, `/es/locations/{id}`, and
+`/es/fields/{id}`. Detail screens inherit the same shell.
+
+The guard order is deliberate: Clerk authentication first, then Convex user
+provisioning, then organization selection. While a signed-in Clerk user is being
+provisioned, the shell renders a known-shape skeleton and does not redirect or
+interpret the temporary `getCurrentUser() === null` result as no organization.
+Only a provisioned user with zero memberships sees the organization-creation
+flow.
+
+Errors surface in the application route-level error boundary and in the small
+number of mutation/query call sites that can recover locally. Both use
+`presentConvexError()`; a generic not-found-or-inaccessible result always becomes
+`UnavailableState`, with no action. A route-level panel is preferred to a toast:
+the failed surface remains visible in context, it is durable for keyboard and
+screen-reader users, and it does not create a second, transient error pattern.
+
+The theme toggle remains deferred. The shell preserves the documented
+OS-preference and `data-theme` token behavior, but does not add a preference
+control or persistence policy before that behavior has a dedicated product
+decision.

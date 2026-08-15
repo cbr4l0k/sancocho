@@ -49,7 +49,8 @@ const enUS = {
   chat: { title: 'Operations chat' },
   common: { language: 'Language', languageDescription: 'Your choice is stored in a cookie and sets the application route.', spanish: 'Spanish', english: 'English', save: 'Save', cancel: 'Cancel', required: 'Required', retry: 'Retry', clear: 'Clear filter', notAvailable: 'Not available' },
   errors: { generic: 'Something went wrong. Please try again.', notFound: 'The resource was not found or you do not have access.' },
-  nav: { home: 'Home', projects: 'Projects', services: 'Services', recipes: 'Recipes', locations: 'Locations' },
+  nav: { home: 'Home', chat: 'Chat', projects: 'Projects', services: 'Services', recipes: 'Recipes', locations: 'Locations', fields: 'Fields', statistics: 'Statistics', settings: 'Organization and settings', account: 'Account', label: 'Main navigation', application: 'Sancocho' },
+  shell: { comingSoonTitle: 'Available in a future stage', comingSoonDescription: 'This surface already has a route and shares the operations frame.', comingSoonBody: 'The operational functionality for this surface will arrive in its planned stage.' },
   vocab: {
     roles: { owner: 'Owner', admin: 'Administrator', planner: 'Planner', operator: 'Operator', viewer: 'Viewer' },
     auditActions: {

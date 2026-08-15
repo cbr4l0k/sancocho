@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -17,10 +17,12 @@ export function LocaleSwitcher() {
   const locale = useLocale();
   const t = useTranslations();
   const router = useRouter();
+  const pathname = usePathname();
 
   function selectLocale(nextLocale: CanonicalLocale) {
     document.cookie = `${localeCookieName}=${nextLocale}; Path=/; Max-Age=31536000; SameSite=Lax`;
-    router.replace(`/${segmentForCanonicalLocale(nextLocale)}`);
+    const pathWithoutLocale = pathname.replace(/^\/(?:es|en)(?=\/|$)/, '');
+    router.replace(`/${segmentForCanonicalLocale(nextLocale)}${pathWithoutLocale}`);
   }
 
   return (

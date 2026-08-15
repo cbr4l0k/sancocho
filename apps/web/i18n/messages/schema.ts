@@ -65,7 +65,8 @@ export type MessageSchema = {
   chat: { title: string };
   common: { language: string; languageDescription: string; spanish: string; english: string; save: string; cancel: string; required: string; retry: string; clear: string; notAvailable: string };
   errors: { generic: string; notFound: string };
-  nav: { home: string; projects: string; services: string; recipes: string; locations: string };
+  nav: { home: string; chat: string; projects: string; services: string; recipes: string; locations: string; fields: string; statistics: string; settings: string; account: string; label: string; application: string };
+  shell: { comingSoonTitle: string; comingSoonDescription: string; comingSoonBody: string };
   vocab: { roles: Record<Role, string>; auditActions: Record<AuditAction, string> };
   /** Cursor pagination chrome. There is no total, so no "page N of M" string exists. */
   table: { loaded: string; loadMore: string; loadingMore: string; endOfList: string };
