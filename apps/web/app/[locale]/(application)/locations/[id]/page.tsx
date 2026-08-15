@@ -1,2 +1,13 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function LocationDetailPage() { return <ComingSoon surface="locations" />; }
+import type { FunctionArgs } from 'convex/server';
+
+import { api } from '@sancocho/convex/api';
+
+import { LocationDetailSurface } from '@/components/locations/locations-surface';
+
+export default function LocationDetailPage({
+  params,
+}: {
+  params: { id: FunctionArgs<typeof api.locations.queries.getLocation>['locationId'] };
+}) {
+  return <LocationDetailSurface locationId={params.id} />;
+}

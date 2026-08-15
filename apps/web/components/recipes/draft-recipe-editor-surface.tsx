@@ -10,6 +10,7 @@ import { api } from '@sancocho/convex/api';
 
 import { useFieldDefinitionIndex } from '@/components/fields/use-field-definition-index';
 import { FieldConfigEditor } from '@/components/fields/field-config-editor';
+import { LocationPicker } from '@/components/locations/location-picker';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
@@ -316,22 +317,15 @@ function DefaultEditor({
   const t = useTranslations();
   const current = state?.kind === config.kind ? state : defaultFormState(config.kind);
   const { currentOrganization } = useCurrentOrganization();
-  const locations = usePaginatedQuery(
-    api.locations.queries.listLocations,
-    config.kind === 'location' && currentOrganization !== null
-      ? { organizationId: currentOrganization.organization._id }
-      : 'skip',
-    { initialNumItems: 50 },
-  );
   return (
     <div className="mt-4 rounded-input border border-line p-3">
       <p className="text-micro font-semibold uppercase text-ink-3">{t('recipes.defaultValue')}</p>
       <DefaultControl
         config={config}
-        locations={locations.results}
         state={current}
         onChange={setState}
         disabled={!canManage}
+        organizationId={currentOrganization?.organization._id}
       />
       <div className="mt-2 flex gap-2">
         <Button size="sm" disabled={!canManage} onClick={onSave}>
@@ -350,16 +344,16 @@ function DefaultEditor({
 
 function DefaultControl({
   config,
-  locations,
   state,
   onChange,
   disabled,
+  organizationId,
 }: {
   config: RecipeField['config'];
-  locations: FunctionReturnType<typeof api.locations.queries.listLocations>['page'];
   state: DefaultValueFormState;
   onChange: (state: DefaultValueFormState) => void;
   disabled: boolean;
+  organizationId: FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'] | undefined;
 }) {
   if (config.kind === 'boolean' && state.kind === 'boolean')
     return (
@@ -446,22 +440,13 @@ function DefaultControl({
       </select>
     );
   if (config.kind === 'location' && state.kind === 'location')
-    return (
-      <div className="flex flex-wrap gap-2">
-        {locations
-          .filter((location) => location.status === 'active')
-          .map((location) => (
-            <Button
-              key={location._id}
-              size="sm"
-              selected={state.locationId === location._id}
-              disabled={disabled}
-              onClick={() => onChange({ kind: 'location', locationId: location._id })}
-            >
-              {location.name}
-            </Button>
-          ))}
-      </div>
+    return organizationId === undefined ? null : (
+      <LocationPicker
+        organizationId={organizationId}
+        value={state.locationId}
+        disabled={disabled}
+        onChange={(locationId) => onChange({ kind: 'location', locationId })}
+      />
     );
   return null;
 }

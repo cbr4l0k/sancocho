@@ -1,2 +1,5 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function LocationsPage() { return <ComingSoon surface="locations" />; }
+import { LocationsSurface } from '@/components/locations/locations-surface';
+
+export default function LocationsPage() {
+  return <LocationsSurface />;
+}
