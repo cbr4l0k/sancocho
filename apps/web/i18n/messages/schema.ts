@@ -1,6 +1,5 @@
 import type {
   archivalStatusValidator,
-  auditActionValidator,
   eventStatusValidator,
   fieldDataTypeValidator,
   locationTypeValidator,
@@ -9,8 +8,11 @@ import type {
   recipeVersionStatusValidator,
   relationshipTypeValidator,
   roleValidator,
-  SemanticType,
 } from '@sancocho/convex/validators';
+import type {
+  AuditActionMessageKey,
+  SemanticTypeMessageKey,
+} from '../vocab-keys';
 export type TranslationShape<Value> = Value extends string
   ? string
   : Value extends object
@@ -26,10 +28,18 @@ type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
 type RelationshipType = typeof relationshipTypeValidator.type;
 type FieldDataType = typeof fieldDataTypeValidator.type;
-type AuditAction = typeof auditActionValidator.type;
 
 export type MessageSchema = {
-  auth: { connecting: string; signedOut: string; profilePending: string; connected: string; signIn: string; signUp: string; signOut: string };
+  auth: {
+    connecting: string;
+    signedOut: string;
+    signedOutTitle: string;
+    profilePending: string;
+    connected: string;
+    signIn: string;
+    signUp: string;
+    signOut: string;
+  };
   organizations: {
     title: string;
     members: string;
@@ -55,20 +65,69 @@ export type MessageSchema = {
     title: string;
     dataTypes: Record<FieldDataType, string>;
     statuses: Record<ArchivalStatus, string>;
-    semanticTypes: Record<SemanticType, { label: string; description: string }>;
+    semanticTypes: Record<
+      SemanticTypeMessageKey,
+      { label: string; description: string }
+    >;
   };
-  recipes: { title: string; statuses: Record<RecipeStatus, string>; versionStatuses: Record<RecipeVersionStatus, string> };
+  recipes: {
+    title: string;
+    statuses: Record<RecipeStatus, string>;
+    versionStatuses: Record<RecipeVersionStatus, string>;
+  };
   services: { title: string; statuses: Record<EventStatus, string> };
   locations: { title: string; types: Record<LocationType, string> };
   relationships: { title: string; types: Record<RelationshipType, string> };
   stats: { itemsSelected: string; welcome: string };
-  chat: { title: string };
-  common: { language: string; languageDescription: string; spanish: string; english: string; save: string; cancel: string; required: string; retry: string; clear: string; notAvailable: string };
+  chat: { title: string; eyebrow: string; description: string };
+  common: {
+    language: string;
+    languageDescription: string;
+    spanish: string;
+    english: string;
+    save: string;
+    cancel: string;
+    required: string;
+    retry: string;
+    clear: string;
+    notAvailable: string;
+  };
   errors: { generic: string; notFound: string };
-  nav: { home: string; chat: string; projects: string; services: string; recipes: string; locations: string; fields: string; statistics: string; settings: string; account: string; label: string; application: string };
-  shell: { comingSoonTitle: string; comingSoonDescription: string; comingSoonBody: string };
-  vocab: { roles: Record<Role, string>; auditActions: Record<AuditAction, string> };
+  nav: {
+    home: string;
+    chat: string;
+    projects: string;
+    services: string;
+    recipes: string;
+    locations: string;
+    fields: string;
+    statistics: string;
+    settings: string;
+    account: string;
+    label: string;
+    application: string;
+  };
+  shell: {
+    comingSoonTitle: string;
+    comingSoonDescription: string;
+    comingSoonBody: string;
+  };
+  vocab: {
+    roles: Record<Role, string>;
+    auditActions: Record<AuditActionMessageKey, string>;
+  };
   /** Cursor pagination chrome. There is no total, so no "page N of M" string exists. */
-  table: { loaded: string; loadMore: string; loadingMore: string; endOfList: string };
-  empty: { noRecords: string; noRecordsBody: string; noMatches: string; noMatchesBody: string; unavailable: string };
+  table: {
+    loaded: string;
+    loadMore: string;
+    loadingMore: string;
+    endOfList: string;
+  };
+  empty: {
+    noRecords: string;
+    noRecordsBody: string;
+    noMatches: string;
+    noMatchesBody: string;
+    unavailable: string;
+  };
 };
