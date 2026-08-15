@@ -10,10 +10,7 @@ import type {
   roleValidator,
 } from '@sancocho/convex/validators';
 import type { SemanticCapability } from '@sancocho/convex/validators';
-import type {
-  AuditActionMessageKey,
-  SemanticTypeMessageKey,
-} from '../vocab-keys';
+import type { AuditActionMessageKey, SemanticTypeMessageKey } from '../vocab-keys';
 export type TranslationShape<Value> = Value extends string
   ? string
   : Value extends object
@@ -61,7 +58,44 @@ export type MessageSchema = {
     memberRole: string;
     noOrganizationTitle: string;
   };
-  projects: { title: string; statuses: Record<ProjectStatus, string> };
+  projects: {
+    title: string;
+    eyebrow: string;
+    lead: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    name: string;
+    description: string;
+    status: string;
+    start: string;
+    end: string;
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+    dateRange: string;
+    noDates: string;
+    listTitle: string;
+    detailsTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    statusFilter: string;
+    allStatuses: string;
+    loadedFilterNotice: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    cancelArchive: string;
+    archivedNotice: string;
+    servicesTitle: string;
+    servicesPlaceholder: string;
+    servicesLink: string;
+    statuses: Record<ProjectStatus, string>;
+  };
   fields: {
     title: string;
     eyebrow: string;
@@ -113,10 +147,7 @@ export type MessageSchema = {
     capabilities: Record<SemanticCapability, string>;
     dataTypes: Record<FieldDataType, string>;
     statuses: Record<ArchivalStatus, string>;
-    semanticTypes: Record<
-      SemanticTypeMessageKey,
-      { label: string; description: string }
-    >;
+    semanticTypes: Record<SemanticTypeMessageKey, { label: string; description: string }>;
   };
   recipes: {
     title: string;
