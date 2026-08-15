@@ -80,15 +80,23 @@ const enUS = {
     close: 'Close',
     createTitle: 'Create field definition',
     editTitle: 'Edit field definition',
-    immutableNotice: 'If this field is used by a published or retired recipe version, only its label and description can change.',
-    snapshotNotice: 'A field configuration is snapshotted when a recipe version is published. Editing this field later does not change published versions.',
-    optionIdentityNotice: 'An option ID is stored identity. Changing it creates a different option; use the label only for a rename.',
+    immutableNotice:
+      'If this field is used by a published or retired recipe version, only its label and description can change.',
+    snapshotNotice:
+      'A field configuration is snapshotted when a recipe version is published. ' +
+      'Editing this field later does not change published versions.',
+    optionIdentityNotice:
+      'An option ID is stored identity. Changing it creates a different option; use the label only for a rename.',
     archiveTitle: 'Archive this field?',
-    archiveWarning: 'Archiving is irreversible. This field cannot be added to new recipe drafts, and versions using it cannot be cloned until it is removed from the draft.',
+    archiveWarning:
+      'Archiving is irreversible. This field cannot be added to new recipe drafts, ' +
+      'and versions using it cannot be cloned until it is removed from the draft.',
     archiveConfirm: 'Archive field',
     cancelArchive: 'Keep active',
     deleteTitle: 'Delete this field?',
-    deleteWarning: 'Deletion is only possible for an unused field with no stored event values. Archive it instead if it is still in use.',
+    deleteWarning:
+      'Deletion is only possible for an unused field with no stored event values. ' +
+      'Archive it instead if it is still in use.',
     deleteConfirm: 'Delete field',
     emptyTitle: 'No custom fields yet',
     emptyBody: 'Create a reusable field definition for your recipes.',
@@ -180,6 +188,39 @@ const enUS = {
   },
   recipes: {
     title: 'Recipes',
+    eyebrow: 'Event configuration',
+    lead: 'Versioned configurations that keep every service interpretable over time.',
+    create: 'Create recipe',
+    createTitle: 'Create event recipe',
+    createLead: 'The key identifies this recipe permanently and cannot change later.',
+    name: 'Name', key: 'Key',
+    keyHelp: 'Use 2–64 lowerCamelCase characters, starting with a lowercase letter.',
+    description: 'Description', save: 'Save recipe', edit: 'Edit metadata',
+    archive: 'Archive recipe', archiveTitle: 'Archive this recipe?',
+    archiveWarning:
+      'Archiving retires its published version. It can no longer source new services, ' +
+      'while existing services stay interpretable.',
+    archiveConfirm: 'Archive recipe', currentVersion: 'Current version',
+    noPublishedVersion: 'No published version', emptyTitle: 'No recipes yet',
+    emptyBody: 'Create an event recipe to start assembling versioned service configuration.',
+    versionsTitle: 'Version timeline', created: 'Created', current: 'Current',
+    noVersions: 'This recipe has no versions yet.', createFirstDraft: 'Create the first draft',
+    newVersionFrom: 'New version from v{version}', publishDraft: 'Publish draft',
+    draftEditor: 'Open draft editor',
+    draftEditorNote: 'The draft field editor is coming in the next step.',
+    archivedNotice: 'This recipe is archived and read-only. Its published version was retired when it was archived.',
+    immutableNotice:
+      'Published and retired versions are locked snapshots. To change a published recipe, ' +
+      'start a new version from it.',
+    contentsTitle: 'Version contents', locked: 'Locked snapshot', position: 'Position',
+    field: 'Field', requiredField: 'Required', visibleField: 'Visible',
+    rules: 'Snapshot rules',
+    definitionUnresolved: 'Definition could not be resolved; showing the stored snapshot.',
+    no: 'No', yes: 'Yes', emptyDraft: 'Add at least one field before publishing this draft.',
+    duplicateDefinition: 'This field definition appears more than once.',
+    duplicatePosition: 'This position is already in use.',
+    invalidPosition: 'Position must be a non-negative whole number.',
+    requiredHidden: 'A required field must be visible.',
     statuses: { draft: 'Draft', active: 'Active', archived: 'Archived' },
     versionStatuses: {
       draft: 'Draft',
@@ -250,10 +291,16 @@ const enUS = {
     fieldKeyBuiltin: 'Custom field keys cannot use a built-in field key.',
     fieldDescriptionTooLong: 'The description can contain at most 2,000 characters.',
     fieldSemanticIncompatible: 'Choose a semantic type compatible with the data type.',
-    fieldHistoricalFrozen: 'This field is used by a published or retired recipe version; only its label and description can change.',
+    fieldHistoricalFrozen:
+      'This field is used by a published or retired recipe version; only its label ' +
+      'and description can change.',
     fieldArchived: 'Archived fields cannot be edited.',
     fieldDeleteBlocked: 'This field is in use. Archive it instead.',
     fieldConfigInvalid: 'Review the validation rules and options for this field.',
+    recipeKeyInvalid: 'Use a lowerCamelCase recipe key with 2–64 characters.',
+    recipeDescriptionTooLong: 'The recipe description can contain at most 2,000 characters.',
+    recipeArchived: 'Archived recipes are read-only.',
+    recipeDraftInvalid: 'Review the draft fields before publishing.',
   },
   nav: {
     home: 'Home',

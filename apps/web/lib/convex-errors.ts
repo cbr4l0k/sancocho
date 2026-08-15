@@ -13,12 +13,16 @@ export type ConvexErrorPresentation =
   | 'fieldArchived'
   | 'fieldDeleteBlocked'
   | 'fieldConfigInvalid'
+  | 'recipeKeyInvalid'
+  | 'recipeDescriptionTooLong'
+  | 'recipeArchived'
+  | 'recipeDraftInvalid'
   | 'generic';
 
 /**
  * Coupled to the code-owned invalidInput messages in
- * apps/convex/convex/fields/model.ts. Keep unknown messages generic: rendered
- * server text is never a client contract.
+ * apps/convex/convex/fields/model.ts and recipes/model.ts. Keep unknown messages generic:
+ * rendered server text is never a client contract.
  */
 const fieldInvalidInputPresentation: Readonly<Record<string, ConvexErrorPresentation>> = {
   'Field key must be 2–64 lowerCamelCase characters': 'fieldKeyInvalid',
@@ -26,7 +30,8 @@ const fieldInvalidInputPresentation: Readonly<Record<string, ConvexErrorPresenta
   'Custom field keys cannot shadow built-in field keys': 'fieldKeyBuiltin',
   'Field description must not exceed 2000 characters': 'fieldDescriptionTooLong',
   'Semantic type is incompatible with the field configuration': 'fieldSemanticIncompatible',
-  'Fields referenced by published or retired recipe versions may only update label or description': 'fieldHistoricalFrozen',
+  'Fields referenced by published or retired recipe versions may only update label or description':
+    'fieldHistoricalFrozen',
   'Archived fields cannot be updated': 'fieldArchived',
   'Referenced field definitions cannot be deleted; archive the field instead': 'fieldDeleteBlocked',
   'Field length bounds must be finite numbers': 'fieldConfigInvalid',
@@ -43,6 +48,21 @@ const fieldInvalidInputPresentation: Readonly<Record<string, ConvexErrorPresenta
   'Maximum selections must not be less than minimum selections': 'fieldConfigInvalid',
   'Minimum selections must not exceed the number of options': 'fieldConfigInvalid',
   'Maximum selections must not exceed the number of options': 'fieldConfigInvalid',
+  'Recipe key must be 2–64 lowerCamelCase characters': 'recipeKeyInvalid',
+  'Recipe description must not exceed 2000 characters': 'recipeDescriptionTooLong',
+  'Archived recipes cannot be updated': 'recipeArchived',
+  'Archived recipes cannot get new drafts': 'recipeArchived',
+  'Archived recipes cannot be published': 'recipeArchived',
+  'Cannot publish a version with no fields': 'recipeDraftInvalid',
+  'Recipe field positions must be unique non-negative integers': 'recipeDraftInvalid',
+  'Recipe version cannot contain duplicate field definitions': 'recipeDraftInvalid',
+  'Recipe fields must reference active fields in the same organization or built-ins':
+    'recipeDraftInvalid',
+  'Required recipe fields must be visible': 'recipeDraftInvalid',
+  'Recipe field config kind must match the current field definition': 'recipeDraftInvalid',
+  'Recipe field config may only narrow definition bounds': 'recipeDraftInvalid',
+  'Recipe field snapshot options must still exist in the current field definition':
+    'recipeDraftInvalid',
 };
 
 /**
@@ -77,6 +97,10 @@ export type ConvexErrorMessageKey =
   | 'errors.fieldArchived'
   | 'errors.fieldDeleteBlocked'
   | 'errors.fieldConfigInvalid'
+  | 'errors.recipeKeyInvalid'
+  | 'errors.recipeDescriptionTooLong'
+  | 'errors.recipeArchived'
+  | 'errors.recipeDraftInvalid'
   | 'errors.generic';
 
 export function errorMessageKey(presentation: ConvexErrorPresentation): ConvexErrorMessageKey {
@@ -91,6 +115,10 @@ export function errorMessageKey(presentation: ConvexErrorPresentation): ConvexEr
     case 'fieldArchived': return 'errors.fieldArchived';
     case 'fieldDeleteBlocked': return 'errors.fieldDeleteBlocked';
     case 'fieldConfigInvalid': return 'errors.fieldConfigInvalid';
+    case 'recipeKeyInvalid': return 'errors.recipeKeyInvalid';
+    case 'recipeDescriptionTooLong': return 'errors.recipeDescriptionTooLong';
+    case 'recipeArchived': return 'errors.recipeArchived';
+    case 'recipeDraftInvalid': return 'errors.recipeDraftInvalid';
     default: return 'errors.generic';
   }
 }

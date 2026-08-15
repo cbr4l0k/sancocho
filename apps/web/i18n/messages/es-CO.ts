@@ -79,15 +79,25 @@ const esCO = {
     close: 'Cerrar',
     createTitle: 'Crear definición de campo',
     editTitle: 'Editar definición de campo',
-    immutableNotice: 'Si este campo se usa en una versión de receta publicada o retirada, solo pueden cambiar su etiqueta y descripción.',
-    snapshotNotice: 'La configuración del campo queda registrada al publicar una versión de receta. Editar este campo después no cambia las versiones publicadas.',
-    optionIdentityNotice: 'El ID de una opción es su identidad almacenada. Cambiarlo crea una opción distinta; usa solo la etiqueta para renombrarla.',
+    immutableNotice:
+      'Si este campo se usa en una versión de receta publicada o retirada, ' +
+      'solo pueden cambiar su etiqueta y descripción.',
+    snapshotNotice:
+      'La configuración del campo queda registrada al publicar una versión de receta. ' +
+      'Editar este campo después no cambia las versiones publicadas.',
+    optionIdentityNotice:
+      'El ID de una opción es su identidad almacenada. Cambiarlo crea una opción distinta; ' +
+      'usa solo la etiqueta para renombrarla.',
     archiveTitle: '¿Archivar este campo?',
-    archiveWarning: 'Archivar es irreversible. Este campo no podrá agregarse a nuevos borradores de receta y las versiones que lo usan no podrán clonarse hasta retirarlo del borrador.',
+    archiveWarning:
+      'Archivar es irreversible. Este campo no podrá agregarse a nuevos borradores de receta ' +
+      'y las versiones que lo usan no podrán clonarse hasta retirarlo del borrador.',
     archiveConfirm: 'Archivar campo',
     cancelArchive: 'Mantener activo',
     deleteTitle: '¿Eliminar este campo?',
-    deleteWarning: 'Solo se puede eliminar un campo sin uso y sin valores de eventos almacenados. Si todavía está en uso, archívalo en su lugar.',
+    deleteWarning:
+      'Solo se puede eliminar un campo sin uso y sin valores de eventos almacenados. ' +
+      'Si todavía está en uso, archívalo en su lugar.',
     deleteConfirm: 'Eliminar campo',
     emptyTitle: 'Aún no hay campos personalizados',
     emptyBody: 'Crea una definición de campo reutilizable para tus recetas.',
@@ -179,6 +189,38 @@ const esCO = {
   },
   recipes: {
     title: 'Recetas',
+    eyebrow: 'Configuración de eventos',
+    lead: 'Configuraciones versionadas que mantienen cada servicio interpretable con el tiempo.',
+    create: 'Crear receta', createTitle: 'Crear receta de evento',
+    createLead: 'La clave identifica esta receta de forma permanente y no se puede cambiar después.',
+    name: 'Nombre', key: 'Clave',
+    keyHelp: 'Usa entre 2 y 64 caracteres lowerCamelCase y empieza con una letra minúscula.',
+    description: 'Descripción', save: 'Guardar receta', edit: 'Editar metadatos',
+    archive: 'Archivar receta', archiveTitle: '¿Archivar esta receta?',
+    archiveWarning:
+      'Al archivarla se retira su versión publicada. Ya no podrá originar servicios nuevos, ' +
+      'pero los servicios existentes seguirán siendo interpretables.',
+    archiveConfirm: 'Archivar receta', currentVersion: 'Versión actual',
+    noPublishedVersion: 'No hay versión publicada', emptyTitle: 'Aún no hay recetas',
+    emptyBody: 'Crea una receta de evento para empezar a componer configuraciones versionadas de servicio.',
+    versionsTitle: 'Línea de tiempo de versiones', created: 'Creada', current: 'Actual',
+    noVersions: 'Esta receta todavía no tiene versiones.', createFirstDraft: 'Crear el primer borrador',
+    newVersionFrom: 'Nueva versión desde v{version}', publishDraft: 'Publicar borrador',
+    draftEditor: 'Abrir editor del borrador',
+    draftEditorNote: 'El editor de campos del borrador llegará en el siguiente paso.',
+    archivedNotice: 'Esta receta está archivada y es de solo lectura. Su versión publicada se retiró al archivarla.',
+    immutableNotice:
+      'Las versiones publicadas y retiradas son capturas bloqueadas. ' +
+      'Para cambiar una receta publicada, inicia una versión nueva desde ella.',
+    contentsTitle: 'Contenido de la versión', locked: 'Captura bloqueada', position: 'Posición',
+    field: 'Campo', requiredField: 'Obligatorio', visibleField: 'Visible',
+    rules: 'Reglas de la captura',
+    definitionUnresolved: 'No se pudo resolver la definición; se muestra la captura almacenada.',
+    no: 'No', yes: 'Sí', emptyDraft: 'Agrega al menos un campo antes de publicar este borrador.',
+    duplicateDefinition: 'Esta definición de campo aparece más de una vez.',
+    duplicatePosition: 'Esta posición ya está en uso.',
+    invalidPosition: 'La posición debe ser un número entero no negativo.',
+    requiredHidden: 'Un campo obligatorio debe ser visible.',
     statuses: { draft: 'Borrador', active: 'Activa', archived: 'Archivada' },
     versionStatuses: {
       draft: 'Borrador',
@@ -220,7 +262,8 @@ const esCO = {
   },
   stats: {
     itemsSelected:
-      '{count, plural, =0 {No hay elementos seleccionados} one {# elemento seleccionado} other {# elementos seleccionados}}',
+      '{count, plural, =0 {No hay elementos seleccionados} ' +
+      'one {# elemento seleccionado} other {# elementos seleccionados}}',
     welcome: 'Hola, {name}. Todo está listo para empezar.',
   },
   chat: {
@@ -250,10 +293,16 @@ const esCO = {
     fieldKeyBuiltin: 'Las claves de campos personalizados no pueden usar una clave incorporada.',
     fieldDescriptionTooLong: 'La descripción puede tener máximo 2.000 caracteres.',
     fieldSemanticIncompatible: 'Elige un tipo semántico compatible con el tipo de dato.',
-    fieldHistoricalFrozen: 'Este campo se usa en una versión publicada o retirada; solo pueden cambiar su etiqueta y descripción.',
+    fieldHistoricalFrozen:
+      'Este campo se usa en una versión publicada o retirada; solo pueden cambiar su etiqueta ' +
+      'y descripción.',
     fieldArchived: 'Los campos archivados no se pueden editar.',
     fieldDeleteBlocked: 'Este campo está en uso. Archívalo en su lugar.',
     fieldConfigInvalid: 'Revisa las reglas de validación y las opciones del campo.',
+    recipeKeyInvalid: 'Usa una clave de receta lowerCamelCase de 2 a 64 caracteres.',
+    recipeDescriptionTooLong: 'La descripción de la receta puede tener máximo 2.000 caracteres.',
+    recipeArchived: 'Las recetas archivadas son de solo lectura.',
+    recipeDraftInvalid: 'Revisa los campos del borrador antes de publicarlo.',
   },
   nav: {
     home: 'Inicio',

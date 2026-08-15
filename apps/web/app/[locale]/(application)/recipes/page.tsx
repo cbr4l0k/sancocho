@@ -1,2 +1,5 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function RecipesPage() { return <ComingSoon surface="recipes" />; }
+import { RecipesSurface } from '@/components/recipes/recipes-surface';
+
+export default function RecipesPage({ params }: { params: { locale: string } }) {
+  return <RecipesSurface locale={params.locale} />;
+}
