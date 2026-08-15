@@ -1,11 +1,11 @@
 @import 'tailwindcss';
 
 /*
- * Sancocho — "Puerto nocturno" (night port).
+ * Sancocho — calm operations console.
  *
  * Dark is canonical: `:root` holds the dark palette, so any surface that fails
  * to resolve a theme still lands on the designed ground. The light palette is a
- * separate design — warm dispatch paper, not an inverted screen — and applies to
+ * separate clean neutral design and applies to
  * viewers whose OS asks for light. `data-theme` on <html> overrides either way,
  * which is all a future theme toggle needs.
  */
@@ -15,7 +15,10 @@
     @slot;
   }
   @media not (prefers-color-scheme: light) {
-    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+    &:where(
+      :root:not([data-theme='light']),
+      :root:not([data-theme='light']) *
+    ) {
       @slot;
     }
   }
@@ -24,122 +27,107 @@
 :root {
   color-scheme: dark;
 
-  /* Ground — petroleum blue-black, five steps of elevation. */
-  --sc-ground-0: #06090b;
-  --sc-ground-1: #0b1013;
-  --sc-ground-2: #111a1e;
-  --sc-ground-3: #17242a;
-  --sc-well: #040708;
+  --sc-ground-0: #0a0a0a;
+  --sc-ground-1: #141414;
+  --sc-ground-2: #1c1c1c;
+  --sc-ground-3: #242424;
+  --sc-well: #060606;
 
   /* Rules. `line` is the default hairline; `line-strong` marks structure. */
-  --sc-line: #1a262c;
-  --sc-line-strong: #2b3d46;
+  --sc-line: #262626;
+  --sc-line-strong: #343434;
 
   /* Ink. */
-  --sc-ink: #e7eef0;
-  --sc-ink-2: #9db0b8;
-  --sc-ink-3: #7a8c93;
+  --sc-ink: #f5f5f5;
+  --sc-ink-2: #a3a3a3;
+  --sc-ink-3: #737373;
 
-  /* Accent — high-visibility safety orange. The only large-area colour. */
-  --sc-accent: #ff6a13;
-  --sc-accent-hi: #ff8340;
-  --sc-accent-ink: #160800;
+  --sc-accent: #f9c50f;
+  --sc-accent-hi: #ffd94a;
+  --sc-accent-ink: #1a1400;
 
   /* Focus is cyan and belongs to no status, so it never reads as state. */
-  --sc-focus: #7cd5f0;
+  --sc-focus: #7cc4ff;
 
   /* Status tones — disposition, never lifecycle phase (that is the shape). */
-  --sc-tone-mute: #7a8c93;
-  --sc-tone-hold: #7c9bb5;
-  --sc-tone-go: #31c177;
-  --sc-tone-live: #ff6a13;
-  --sc-tone-done: #3fa3ae;
-  --sc-tone-stop: #f0555b;
-  --sc-tone-shelf: #5a6a72;
+  --sc-tone-mute: #8f8f8f;
+  --sc-tone-hold: #7aa7e8;
+  --sc-tone-go: #4ade80;
+  --sc-tone-live: #2dd4bf;
+  --sc-tone-done: #5b9e78;
+  --sc-tone-stop: #f87171;
+  --sc-tone-shelf: #5f5f5f;
+  --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.4);
 
-  /* Atmosphere: two low-intensity pools plus a dispatch-board rule grid. */
-  --sc-atmosphere:
-    radial-gradient(120ch 70ch at 8% -10%, color-mix(in oklab, var(--sc-focus) 11%, transparent), transparent 65%),
-    radial-gradient(90ch 60ch at 95% 108%, color-mix(in oklab, var(--sc-accent) 9%, transparent), transparent 60%);
-  --sc-grid-ink: color-mix(in oklab, var(--sc-ink) 5%, transparent);
-  --sc-shadow-panel: 0 1px 0 0 color-mix(in oklab, var(--sc-ink) 5%, transparent) inset, 0 18px 40px -28px #000;
+  --sc-radius-panel: 20px;
+  --sc-radius-input: 12px;
+  --sc-radius-pill: 999px;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
 
-    /* Ground — dispatch paper. Panels sit *above* the page, not below it. */
-    --sc-ground-0: #eae4d8;
-    --sc-ground-1: #f6f2ea;
-    --sc-ground-2: #fffcf6;
-    --sc-ground-3: #e2daca;
-    --sc-well: #ded5c3;
+    --sc-ground-0: #fafafa;
+    --sc-ground-1: #ffffff;
+    --sc-ground-2: #f5f5f5;
+    --sc-ground-3: #ebebeb;
+    --sc-well: #f0f0f0;
 
-    --sc-line: #d2c8b4;
-    --sc-line-strong: #afa48c;
+    --sc-line: #e5e5e5;
+    --sc-line-strong: #d4d4d4;
 
-    --sc-ink: #12171a;
-    --sc-ink-2: #4a565c;
-    --sc-ink-3: #6e7a80;
+    --sc-ink: #171717;
+    --sc-ink-2: #525252;
+    --sc-ink-3: #737373;
 
-    --sc-accent: #c24a0b;
-    --sc-accent-hi: #a83e07;
-    --sc-accent-ink: #fff7ef;
+    --sc-accent: #f9c50f;
+    --sc-accent-hi: #ffd94a;
+    --sc-accent-ink: #1a1400;
 
-    --sc-focus: #0e6e8c;
+    --sc-focus: #0b74d1;
 
-    --sc-tone-mute: #6e7a80;
-    --sc-tone-hold: #465f74;
-    --sc-tone-go: #1c7a4c;
-    --sc-tone-live: #c24a0b;
-    --sc-tone-done: #1b6c77;
-    --sc-tone-stop: #b12a30;
-    --sc-tone-shelf: #8b9299;
-
-    --sc-atmosphere:
-      radial-gradient(130ch 80ch at 12% -15%, color-mix(in oklab, var(--sc-ink) 5%, transparent), transparent 60%),
-      radial-gradient(90ch 60ch at 98% 110%, color-mix(in oklab, var(--sc-accent) 8%, transparent), transparent 60%);
-    --sc-grid-ink: color-mix(in oklab, var(--sc-ink) 6%, transparent);
-    --sc-shadow-panel: 0 1px 0 0 #fffdf8 inset, 0 12px 28px -24px color-mix(in oklab, var(--sc-ink) 60%, transparent);
+    --sc-tone-mute: #6b6b6b;
+    --sc-tone-hold: #2f6fc4;
+    --sc-tone-go: #15803d;
+    --sc-tone-live: #0d9488;
+    --sc-tone-done: #3f7d5f;
+    --sc-tone-stop: #dc2626;
+    --sc-tone-shelf: #787878;
+    --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.1);
   }
 }
 
 [data-theme='light'] {
   color-scheme: light;
 
-  --sc-ground-0: #eae4d8;
-  --sc-ground-1: #f6f2ea;
-  --sc-ground-2: #fffcf6;
-  --sc-ground-3: #e2daca;
-  --sc-well: #ded5c3;
+  --sc-ground-0: #fafafa;
+  --sc-ground-1: #ffffff;
+  --sc-ground-2: #f5f5f5;
+  --sc-ground-3: #ebebeb;
+  --sc-well: #f0f0f0;
 
-  --sc-line: #d2c8b4;
-  --sc-line-strong: #afa48c;
+  --sc-line: #e5e5e5;
+  --sc-line-strong: #d4d4d4;
 
-  --sc-ink: #12171a;
-  --sc-ink-2: #4a565c;
-  --sc-ink-3: #6e7a80;
+  --sc-ink: #171717;
+  --sc-ink-2: #525252;
+  --sc-ink-3: #737373;
 
-  --sc-accent: #c24a0b;
-  --sc-accent-hi: #a83e07;
-  --sc-accent-ink: #fff7ef;
+  --sc-accent: #f9c50f;
+  --sc-accent-hi: #ffd94a;
+  --sc-accent-ink: #1a1400;
 
-  --sc-focus: #0e6e8c;
+  --sc-focus: #0b74d1;
 
-  --sc-tone-mute: #6e7a80;
-  --sc-tone-hold: #465f74;
-  --sc-tone-go: #1c7a4c;
-  --sc-tone-live: #c24a0b;
-  --sc-tone-done: #1b6c77;
-  --sc-tone-stop: #b12a30;
-  --sc-tone-shelf: #8b9299;
-
-  --sc-atmosphere:
-    radial-gradient(130ch 80ch at 12% -15%, color-mix(in oklab, var(--sc-ink) 5%, transparent), transparent 60%),
-    radial-gradient(90ch 60ch at 98% 110%, color-mix(in oklab, var(--sc-accent) 8%, transparent), transparent 60%);
-  --sc-grid-ink: color-mix(in oklab, var(--sc-ink) 6%, transparent);
-  --sc-shadow-panel: 0 1px 0 0 #fffdf8 inset, 0 12px 28px -24px color-mix(in oklab, var(--sc-ink) 60%, transparent);
+  --sc-tone-mute: #6b6b6b;
+  --sc-tone-hold: #2f6fc4;
+  --sc-tone-go: #15803d;
+  --sc-tone-live: #0d9488;
+  --sc-tone-done: #3f7d5f;
+  --sc-tone-stop: #dc2626;
+  --sc-tone-shelf: #787878;
+  --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.1);
 }
 
 /*
@@ -171,6 +159,9 @@
   --color-tone-done: var(--sc-tone-done);
   --color-tone-stop: var(--sc-tone-stop);
   --color-tone-shelf: var(--sc-tone-shelf);
+  --radius-panel: var(--sc-radius-panel);
+  --radius-input: var(--sc-radius-input);
+  --radius-pill: var(--sc-radius-pill);
 
   /* Type scale. Sized for the Spanish string, so nothing here needs truncation. */
   --text-micro: 0.6875rem;
@@ -192,15 +183,9 @@
   --text-2xl: 1.875rem;
   --text-2xl--line-height: 2.125rem;
   --text-2xl--letter-spacing: -0.02em;
-  --text-3xl: 2.75rem;
-  --text-3xl--line-height: 1;
-  --text-3xl--letter-spacing: -0.03em;
-
-  --radius-chip: 0.375rem;
-  --radius-control: 0.5rem;
-  --radius-module: 0.75rem;
-  --radius-panel: 1rem;
-  --radius-focal: 1.375rem;
+  --text-display: clamp(2rem, 1.2rem + 2.4vw, 3rem);
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
 }
 
 @layer base {
@@ -212,11 +197,6 @@
 
   body {
     background-color: var(--sc-ground-0);
-    background-image:
-      var(--sc-atmosphere),
-      repeating-linear-gradient(to right, var(--sc-grid-ink) 0 1px, transparent 1px 88px),
-      repeating-linear-gradient(to bottom, var(--sc-grid-ink) 0 1px, transparent 1px 88px);
-    background-attachment: fixed;
     color: var(--sc-ink);
     font-family: var(--font-sans);
     font-size: var(--text-base);

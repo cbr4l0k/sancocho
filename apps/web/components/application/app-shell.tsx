@@ -84,21 +84,28 @@ function SignedOut() {
   const t = useTranslations();
 
   return (
-    <main className="mx-auto flex w-full max-w-[88rem] px-4 py-8 sm:px-6 lg:py-12">
-      <Panel emphasis="focal" className="mx-auto w-full max-w-xl">
+    <main className="mx-auto flex min-h-dvh w-full max-w-[88rem] items-center px-6 py-8">
+      <Panel emphasis="focal" className="mx-auto w-full max-w-[30rem]">
         <PanelHeader>
-          <PanelTitle>{t('auth.signedOut')}</PanelTitle>
+          <PanelTitle className="text-display font-extrabold tracking-[-0.025em]">
+            {t('auth.signedOutTitle')}
+          </PanelTitle>
+          <PanelDescription>{t('auth.signedOut')}</PanelDescription>
         </PanelHeader>
         <PanelBody className="flex-row flex-wrap items-center">
           <Button
             variant="primary"
-            render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />}
+            render={
+              <Link href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />
+            }
           >
             {t('auth.signIn')}
           </Button>
           <Button
             variant="secondary"
-            render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />}
+            render={
+              <Link href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />
+            }
           >
             {t('auth.signUp')}
           </Button>
@@ -137,7 +144,11 @@ function ProvisionedShell({ children }: ApplicationShellProps) {
   return <OrganizationGate>{children}</OrganizationGate>;
 }
 
-function ShellError({ presentation }: { presentation: ConvexErrorPresentation }) {
+function ShellError({
+  presentation,
+}: {
+  presentation: ConvexErrorPresentation;
+}) {
   const t = useTranslations();
 
   return (
@@ -145,7 +156,10 @@ function ShellError({ presentation }: { presentation: ConvexErrorPresentation })
       {presentation === 'notFound' ? (
         <UnavailableState />
       ) : (
-        <EmptyState tone="unavailable" title={t(errorMessageKey(presentation))} />
+        <EmptyState
+          tone="unavailable"
+          title={t(errorMessageKey(presentation))}
+        />
       )}
     </main>
   );
@@ -168,11 +182,15 @@ function OrganizationGate({ children }: ApplicationShellProps) {
 
 function CreateOrganization() {
   const t = useTranslations();
-  const createOrganization = useMutation(api.organizations.mutations.createOrganization);
+  const createOrganization = useMutation(
+    api.organizations.mutations.createOrganization,
+  );
   const { selectCreatedOrganization } = useCurrentOrganization();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [error, setError] = useState<'invalid' | ConvexErrorPresentation | null>(null);
+  const [error, setError] = useState<
+    'invalid' | ConvexErrorPresentation | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -203,12 +221,16 @@ function CreateOrganization() {
           : t(errorMessageKey(error));
 
   return (
-    <main className="mx-auto flex w-full max-w-[88rem] px-4 py-8 sm:px-6 lg:py-12">
-      <Panel emphasis="focal" className="mx-auto w-full max-w-2xl">
+    <main className="mx-auto flex min-h-dvh w-full max-w-[88rem] items-center px-6 py-8">
+      <Panel emphasis="focal" className="mx-auto w-full max-w-[34rem]">
         <PanelHeader>
           <div>
-            <PanelTitle>{t('organizations.createTitle')}</PanelTitle>
-            <PanelDescription>{t('organizations.createDescription')}</PanelDescription>
+            <PanelTitle className="text-display font-extrabold tracking-[-0.025em]">
+              {t('organizations.createTitle')}
+            </PanelTitle>
+            <PanelDescription>
+              {t('organizations.createDescription')}
+            </PanelDescription>
           </div>
         </PanelHeader>
         <PanelBody>
@@ -228,7 +250,9 @@ function CreateOrganization() {
                 value={slug}
                 onChange={(event) => setSlug(event.target.value)}
               />
-              <FieldDescription>{t('organizations.slugDescription')}</FieldDescription>
+              <FieldDescription>
+                {t('organizations.slugDescription')}
+              </FieldDescription>
               {errorText === null ? null : <FieldError>{errorText}</FieldError>}
             </Field>
             <div>
@@ -244,7 +268,8 @@ function CreateOrganization() {
 }
 
 function ShellFrame({ children }: ApplicationShellProps) {
-  const { currentOrganization, organizations, selectOrganization } = useCurrentOrganization();
+  const { currentOrganization, organizations, selectOrganization } =
+    useCurrentOrganization();
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations();
@@ -261,17 +286,24 @@ function ShellFrame({ children }: ApplicationShellProps) {
   ];
 
   return (
-    <div className="min-h-dvh border-t-2 border-accent/70">
-      <header className="border-b border-line bg-ground-1/95">
-        <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-start justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <Link
-              href={`/${segment}`}
-              className="w-fit text-lg font-extrabold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-            >
-              {t('nav.application')}
-            </Link>
-            <nav aria-label={t('nav.label')} className="flex flex-wrap gap-1.5">
+    <div className="min-h-dvh bg-ground-0">
+      <header className="h-16 border-b border-line bg-ground-0">
+        <div className="mx-auto flex h-full w-full max-w-[88rem] items-center gap-4 px-6">
+          <Link
+            href={`/${segment}`}
+            className="flex shrink-0 items-center gap-2 text-lg font-extrabold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            <span
+              aria-hidden="true"
+              className="size-2.5 rounded-full bg-accent"
+            />
+            {t('nav.application')}
+          </Link>
+          <nav
+            aria-label={t('nav.label')}
+            className="min-w-0 flex-1 overflow-x-auto"
+          >
+            <div className="flex w-max min-w-full items-center justify-center gap-0.5 rounded-pill bg-ground-1 p-1">
               {nav.map((item) => {
                 return (
                   <Button
@@ -285,23 +317,36 @@ function ShellFrame({ children }: ApplicationShellProps) {
                   </Button>
                 );
               })}
-            </nav>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <Field className="min-w-44">
-              <FieldLabel>{t('organizations.switcherLabel')}</FieldLabel>
-              <FieldControl
-                render={
-                  <select
-                    value={currentOrganization?.organization._id ?? ''}
-                    onChange={(event) => {
-                      const next = organizations.find(
-                        ({ organization }) => organization._id === event.target.value,
-                      );
-                      if (next !== undefined) selectOrganization(next);
-                    }}
-                  />
-                }
+            </div>
+          </nav>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="relative flex h-[34px] max-w-48 items-center gap-2 rounded-pill bg-ground-1 px-3 text-sm font-semibold text-ink">
+              <span className="truncate">
+                {currentOrganization?.organization.name}
+              </span>
+              <svg
+                aria-hidden="true"
+                className="size-3 shrink-0 text-ink-3"
+                viewBox="0 0 12 12"
+              >
+                <path
+                  d="m3 4.5 3 3 3-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+              </svg>
+              <select
+                aria-label={t('organizations.switcherLabel')}
+                className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+                value={currentOrganization?.organization._id ?? ''}
+                onChange={(event) => {
+                  const next = organizations.find(
+                    ({ organization }) =>
+                      organization._id === event.target.value,
+                  );
+                  if (next !== undefined) selectOrganization(next);
+                }}
               >
                 <option value="" disabled>
                   {t('organizations.chooseOrganization')}
@@ -313,17 +358,32 @@ function ShellFrame({ children }: ApplicationShellProps) {
                     </option>
                   );
                 })}
-              </FieldControl>
-            </Field>
-            <LocaleSwitcher />
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-ink-3">{t('nav.account')}</span>
-              <UserButton />
+              </select>
             </div>
+            <LocaleSwitcher />
+            <Button
+              variant="ghost"
+              size="icon"
+              selected={pathname === `/${segment}/settings`}
+              aria-label={t('nav.settings')}
+              render={<Link href={`/${segment}/settings`} />}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+                <path d="m19.4 13.6 1.1.9-1.8 3.1-1.3-.5a7.7 7.7 0 0 1-1.6.9l-.2 1.4h-3.6l-.2-1.4a7.7 7.7 0 0 1-1.6-.9l-1.3.5-1.8-3.1 1.1-.9a7 7 0 0 1 0-1.8l-1.1-.9L9 7l1.3.5a7.7 7.7 0 0 1 1.6-.9l.2-1.4h3.6l.2 1.4a7.7 7.7 0 0 1 1.6.9l1.3-.5 1.8 3.1-1.1.9a7 7 0 0 1 0 1.8Z" />
+              </svg>
+            </Button>
+            <UserButton />
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[88rem] px-4 py-6 sm:px-6 lg:py-8">
+      <main className="mx-auto w-full max-w-[88rem] px-6 py-8 pb-12">
         {currentOrganization === null ? (
           <Panel emphasis="focal">
             <PanelBody>
@@ -334,16 +394,6 @@ function ShellFrame({ children }: ApplicationShellProps) {
           children
         )}
       </main>
-      <footer className="mx-auto flex w-full max-w-[88rem] px-4 pb-6 sm:px-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          selected={pathname === `/${segment}/settings`}
-          render={<Link href={`/${segment}/settings`} />}
-        >
-          {t('nav.settings')}
-        </Button>
-      </footer>
     </div>
   );
 }

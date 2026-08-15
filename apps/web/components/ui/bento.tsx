@@ -10,11 +10,14 @@ import { cn } from '@/lib/utils';
  * without bespoke widths. Items never set their own margins; the grid owns all
  * gutters, so alignment cannot drift.
  */
-export function Bento({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
+export function Bento({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'div'>) {
   return (
     <div
       data-slot="bento"
-      className={cn('grid grid-cols-1 gap-3 md:grid-cols-12 lg:gap-4', className)}
+      className={cn('grid grid-cols-1 gap-4 md:grid-cols-12', className)}
       {...props}
     />
   );
@@ -51,6 +54,22 @@ export type BentoItemProps = ComponentPropsWithoutRef<'div'> & {
   rows?: BentoRows;
 };
 
-export function BentoItem({ className, span, rows = 1, ...props }: BentoItemProps) {
-  return <div data-slot="bento-item" className={cn('flex min-w-0 flex-col', columnSpan[span], rowSpan[rows], className)} {...props} />;
+export function BentoItem({
+  className,
+  span,
+  rows = 1,
+  ...props
+}: BentoItemProps) {
+  return (
+    <div
+      data-slot="bento-item"
+      className={cn(
+        'flex min-w-0 flex-col',
+        columnSpan[span],
+        rowSpan[rows],
+        className,
+      )}
+      {...props}
+    />
+  );
 }

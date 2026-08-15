@@ -51,19 +51,36 @@ export type EmptyStateProps = {
   className?: string | undefined;
 };
 
-export function EmptyState({ tone = 'empty', title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  tone = 'empty',
+  title,
+  description,
+  action,
+  className,
+}: EmptyStateProps) {
   return (
     <div
       data-slot="empty-state"
       data-tone={tone}
-      className={cn('flex flex-col items-center gap-3 px-6 py-10 text-center', className)}
+      className={cn(
+        'flex flex-col items-center gap-3 px-6 py-12 text-center',
+        className,
+      )}
     >
-      <span aria-hidden="true" className={cn('flex size-9 items-center justify-center rounded-module border border-dashed', glyph[tone])}>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex size-10 items-center justify-center rounded-input bg-ground-2',
+          glyph[tone],
+        )}
+      >
         {glyphMark[tone]}
       </span>
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-ink">{title}</p>
-        {description === undefined ? null : <p className="max-w-[46ch] text-xs text-ink-2">{description}</p>}
+        <p className="text-lg font-bold tracking-[-0.01em] text-ink">{title}</p>
+        {description === undefined ? null : (
+          <p className="max-w-[44ch] text-sm text-ink-2">{description}</p>
+        )}
       </div>
       {action}
     </div>
@@ -74,8 +91,19 @@ export function EmptyState({ tone = 'empty', title, description, action, classNa
  * The one presentation for the backend's single generic failure. Screens render
  * this and stop asking questions.
  */
-export function UnavailableState({ className }: { className?: string | undefined }) {
+export function UnavailableState({
+  className,
+}: {
+  className?: string | undefined;
+}) {
   const t = useTranslations();
 
-  return <EmptyState tone="unavailable" title={t('empty.unavailable')} description={t('errors.notFound')} className={className} />;
+  return (
+    <EmptyState
+      tone="unavailable"
+      title={t('empty.unavailable')}
+      description={t('errors.notFound')}
+      className={className}
+    />
+  );
 }

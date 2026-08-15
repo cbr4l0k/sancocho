@@ -24,7 +24,13 @@ import { cn } from '@/lib/utils';
  * hand-rolls "show the error only after blur".
  */
 export function Field({ className, ...props }: FieldPrimitive.Root.Props) {
-  return <FieldPrimitive.Root data-slot="field" className={cn('flex min-w-0 flex-col gap-1.5', className)} {...props} />;
+  return (
+    <FieldPrimitive.Root
+      data-slot="field"
+      className={cn('flex min-w-0 flex-col gap-1.5', className)}
+      {...props}
+    />
+  );
 }
 
 export type FieldLabelProps = FieldPrimitive.Label.Props & {
@@ -32,13 +38,21 @@ export type FieldLabelProps = FieldPrimitive.Label.Props & {
   required?: boolean;
 };
 
-export function FieldLabel({ className, children, required = false, ...props }: FieldLabelProps) {
+export function FieldLabel({
+  className,
+  children,
+  required = false,
+  ...props
+}: FieldLabelProps) {
   const t = useTranslations('common');
 
   return (
     <FieldPrimitive.Label
       data-slot="field-label"
-      className={cn('flex items-center gap-1 text-xs font-medium text-ink', className)}
+      className={cn(
+        'flex items-center gap-1 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2',
+        className,
+      )}
       {...props}
     >
       {children}
@@ -54,16 +68,28 @@ export function FieldLabel({ className, children, required = false, ...props }: 
   );
 }
 
-export function FieldDescription({ className, ...props }: FieldPrimitive.Description.Props) {
-  return <FieldPrimitive.Description data-slot="field-description" className={cn('text-xs text-ink-3', className)} {...props} />;
+export function FieldDescription({
+  className,
+  ...props
+}: FieldPrimitive.Description.Props) {
+  return (
+    <FieldPrimitive.Description
+      data-slot="field-description"
+      className={cn('text-xs text-ink-3', className)}
+      {...props}
+    />
+  );
 }
 
-export function FieldControl({ className, ...props }: FieldPrimitive.Control.Props) {
+export function FieldControl({
+  className,
+  ...props
+}: FieldPrimitive.Control.Props) {
   return (
     <FieldPrimitive.Control
       data-slot="field-control"
       className={cn(
-        'h-8 w-full min-w-0 rounded-control border border-line bg-well px-2.5 text-sm text-ink',
+        'h-[38px] w-full min-w-0 rounded-input border border-line bg-ground-2 px-3 text-sm text-ink',
         'placeholder:text-ink-3',
         'transition-colors duration-150 hover:border-line-strong',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
@@ -76,31 +102,73 @@ export function FieldControl({ className, ...props }: FieldPrimitive.Control.Pro
   );
 }
 
-export function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
-  return <FieldPrimitive.Error data-slot="field-error" className={cn('text-xs text-tone-stop', className)} {...props} />;
+export function FieldError({
+  className,
+  ...props
+}: FieldPrimitive.Error.Props) {
+  return (
+    <FieldPrimitive.Error
+      data-slot="field-error"
+      className={cn('text-xs text-tone-stop', className)}
+      {...props}
+    />
+  );
 }
 
 /**
  * Groups related fields inside a form panel. Two columns from `sm` up; a field
  * that owns a whole idea (notes, a location picker) passes `span="full"`.
  */
-export function FieldGroup({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
-  return <div data-slot="field-group" className={cn('grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2', className)} {...props} />;
+export function FieldGroup({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'div'>) {
+  return (
+    <div
+      data-slot="field-group"
+      className={cn(
+        'grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
-export function FieldSpanFull({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
-  return <div data-slot="field-span-full" className={cn('min-w-0 sm:col-span-2', className)} {...props} />;
+export function FieldSpanFull({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'div'>) {
+  return (
+    <div
+      data-slot="field-span-full"
+      className={cn('min-w-0 sm:col-span-2', className)}
+      {...props}
+    />
+  );
 }
 
 /**
  * A read-only value rendered in the same rhythm as an editable field, so a
  * detail view and its edit form do not reflow when you switch between them.
  */
-export function FieldReadout({ label, value, mono = false }: { label: ReactNode; value: ReactNode; mono?: boolean }) {
+export function FieldReadout({
+  label,
+  value,
+  mono = false,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  mono?: boolean;
+}) {
   return (
     <div data-slot="field-readout" className="flex min-w-0 flex-col gap-1">
-      <span className="text-micro uppercase text-ink-3">{label}</span>
-      <span className={cn('text-sm text-ink', mono && 'font-mono text-xs')}>{value}</span>
+      <span className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
+        {label}
+      </span>
+      <span className={cn('text-sm text-ink', mono && 'font-mono text-xs')}>
+        {value}
+      </span>
     </div>
   );
 }

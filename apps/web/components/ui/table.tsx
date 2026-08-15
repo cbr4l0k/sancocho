@@ -20,10 +20,17 @@ import { cn } from '@/lib/utils';
  * Horizontal overflow is contained here rather than on the page, so a wide
  * table scrolls inside its panel instead of moving the whole layout.
  */
-export function Table({ className, ...props }: ComponentPropsWithoutRef<'table'>) {
+export function Table({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'table'>) {
   return (
     <div data-slot="table-scroll" className="min-w-0 overflow-x-auto">
-      <table data-slot="table" className={cn('w-full border-collapse text-left text-sm', className)} {...props} />
+      <table
+        data-slot="table"
+        className={cn('w-full border-collapse text-left text-sm', className)}
+        {...props}
+      />
     </div>
   );
 }
@@ -33,19 +40,35 @@ export function Table({ className, ...props }: ComponentPropsWithoutRef<'table'>
  * header survives a sticky scroll. "Número de vuelo" over "Flight number" is a
  * two-line header, and that is fine.
  */
-export function TableHead({ className, ...props }: ComponentPropsWithoutRef<'thead'>) {
-  return <thead data-slot="table-head" className={cn('bg-ground-3', className)} {...props} />;
+export function TableHead({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'thead'>) {
+  return (
+    <thead data-slot="table-head" className={cn('', className)} {...props} />
+  );
 }
 
-export function TableBody({ className, ...props }: ComponentPropsWithoutRef<'tbody'>) {
-  return <tbody data-slot="table-body" className={cn('', className)} {...props} />;
+export function TableBody({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'tbody'>) {
+  return (
+    <tbody data-slot="table-body" className={cn('', className)} {...props} />
+  );
 }
 
-export function TableRow({ className, ...props }: ComponentPropsWithoutRef<'tr'>) {
+export function TableRow({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'tr'>) {
   return (
     <tr
       data-slot="table-row"
-      className={cn('border-t border-line transition-colors duration-100 hover:bg-ground-2', className)}
+      className={cn(
+        'border-b border-line transition-colors duration-150 hover:bg-ground-2',
+        className,
+      )}
       {...props}
     />
   );
@@ -60,16 +83,30 @@ export function TableRow({ className, ...props }: ComponentPropsWithoutRef<'tr'>
  */
 type Align = 'start' | 'end';
 
-const alignClass: Record<Align, string> = { start: 'text-left', end: 'text-right' };
+const alignClass: Record<Align, string> = {
+  start: 'text-left',
+  end: 'text-right',
+};
 
-export type TableHeaderCellProps = Omit<ComponentPropsWithoutRef<'th'>, 'align'> & { align?: Align | undefined };
+export type TableHeaderCellProps = Omit<
+  ComponentPropsWithoutRef<'th'>,
+  'align'
+> & { align?: Align | undefined };
 
-export function TableHeaderCell({ className, align = 'start', ...props }: TableHeaderCellProps) {
+export function TableHeaderCell({
+  className,
+  align = 'start',
+  ...props
+}: TableHeaderCellProps) {
   return (
     <th
       scope="col"
       data-slot="table-header-cell"
-      className={cn('px-3 py-2 align-bottom text-micro uppercase text-ink-3', alignClass[align], className)}
+      className={cn(
+        'px-5 py-3 align-bottom text-micro font-semibold uppercase tracking-[0.09em] text-ink-3',
+        alignClass[align],
+        className,
+      )}
       {...props}
     />
   );
@@ -81,30 +118,61 @@ export type TableCellProps = Omit<ComponentPropsWithoutRef<'td'>, 'align'> & {
   mono?: boolean | undefined;
 };
 
-export function TableCell({ className, align = 'start', mono = false, ...props }: TableCellProps) {
+export function TableCell({
+  className,
+  align = 'start',
+  mono = false,
+  ...props
+}: TableCellProps) {
   return (
     <td
       data-slot="table-cell"
-      className={cn('px-3 py-2 align-top text-ink-2', alignClass[align], mono && 'font-mono text-xs text-ink', className)}
+      className={cn(
+        'h-12 px-5 py-3 align-middle text-ink-2',
+        alignClass[align],
+        mono && 'font-mono text-xs tabular-nums text-ink',
+        className,
+      )}
       {...props}
     />
   );
 }
 
 /** The first cell of a row: the thing the row is about. */
-export function TableRowHeaderCell({ className, ...props }: ComponentPropsWithoutRef<'th'>) {
-  return <th scope="row" data-slot="table-row-header-cell" className={cn('px-3 py-2 text-left align-top font-medium text-ink', className)} {...props} />;
+export function TableRowHeaderCell({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<'th'>) {
+  return (
+    <th
+      scope="row"
+      data-slot="table-row-header-cell"
+      className={cn(
+        'h-12 px-5 py-3 text-left align-middle font-medium text-ink',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 /** First-page placeholder. Column count comes from the header, so it lines up. */
-export function TableSkeletonRows({ rows = 5, columns }: { rows?: number | undefined; columns: number }) {
+export function TableSkeletonRows({
+  rows = 5,
+  columns,
+}: {
+  rows?: number | undefined;
+  columns: number;
+}) {
   return (
     <tbody data-slot="table-skeleton" aria-busy="true">
       {Array.from({ length: rows }, (_, rowIndex) => (
-        <tr key={rowIndex} className="border-t border-line">
+        <tr key={rowIndex} className="border-b border-line">
           {Array.from({ length: columns }, (_, columnIndex) => (
-            <td key={columnIndex} className="px-3 py-2.5">
-              <Skeleton className={cn('h-3.5', columnIndex === 0 ? 'w-4/5' : 'w-2/3')} />
+            <td key={columnIndex} className="h-12 px-5 py-3">
+              <Skeleton
+                className={cn('h-3.5', columnIndex === 0 ? 'w-4/5' : 'w-2/3')}
+              />
             </td>
           ))}
         </tr>
@@ -131,7 +199,13 @@ export type TableLoadMoreProps = {
  * live: Convex re-pushes updates for pages already fetched, which a page-swap
  * control would throw away on every navigation.
  */
-export function TableLoadMore({ status, loadedCount, pageSize = 25, onLoadMore, className }: TableLoadMoreProps) {
+export function TableLoadMore({
+  status,
+  loadedCount,
+  pageSize = 25,
+  onLoadMore,
+  className,
+}: TableLoadMoreProps) {
   const t = useTranslations('table');
 
   if (status === 'LoadingFirstPage') return null;
@@ -139,7 +213,10 @@ export function TableLoadMore({ status, loadedCount, pageSize = 25, onLoadMore, 
   return (
     <div
       data-slot="table-load-more"
-      className={cn('mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line px-4 py-2.5', className)}
+      className={cn(
+        'mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 sm:px-6',
+        className,
+      )}
     >
       <p className="text-xs text-ink-3" aria-live="polite">
         {t('loaded', { count: loadedCount })}
@@ -147,7 +224,12 @@ export function TableLoadMore({ status, loadedCount, pageSize = 25, onLoadMore, 
       {status === 'Exhausted' ? (
         <p className="text-micro uppercase text-ink-3">{t('endOfList')}</p>
       ) : (
-        <Button variant="ghost" size="sm" disabled={status === 'LoadingMore'} onClick={() => onLoadMore(pageSize)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={status === 'LoadingMore'}
+          onClick={() => onLoadMore(pageSize)}
+        >
           {status === 'LoadingMore' ? t('loadingMore') : t('loadMore')}
         </Button>
       )}

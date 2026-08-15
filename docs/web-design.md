@@ -11,23 +11,23 @@ demonstration page at `/[locale]`. It deliberately builds **no product screens**
 
 ## 1. The idea
 
-**A dispatch board, not a dashboard.**
+**A calm operations console, not a dashboard.**
 
 Sancocho coordinates ground transport for events: people read it at 05:00 in an
-operations room, at density, under time pressure. The interface is styled after
-transport wayfinding and industrial signage rather than after SaaS marketing —
-a dark petroleum ground, one high-visibility safety-orange accent used sparingly,
-statuses encoded by **shape first and colour second**, and numbers set in a
-monospaced face so columns align without effort.
+operations room, at density, under time pressure. The interface is clean, dark,
+and modern: a neutral near-black ground, generously rounded cards and pill
+controls, strong type hierarchy, generous breathing room, and colour used
+sparingly. Statuses are encoded by **shape first and colour second**, and
+numbers use tabular figures so columns align without effort. This direction is
+deliberately less textured than the previous one.
 
-The direction is named **"Puerto nocturno"** (night port). The dark theme is the
-canonical one. The light theme is a separate design — warm dispatch paper with
-the same orange — not an inverted screen.
+Dark is canonical. Light is a separate clean neutral palette, not an inverted
+screen.
 
 ### What this rules out
 
 - Decoration that competes with data. There is exactly one filled accent control
-  per view, and status colour appears only inside chips.
+  per view, and status colour appears only inside chips and markers.
 - Attention-seeking motion. Two animations exist in the whole system (§9).
 - Fixed-width labels and single-line truncation, which Spanish breaks (§3).
 
@@ -97,17 +97,18 @@ raw size.
 
 | Token | Size | Line height | Use |
 | --- | --- | --- | --- |
-| `text-micro` | 11px / 600 / +0.09em, uppercase | 16px | Chips, table headers, eyebrows, field readout labels |
+| `text-micro` | 11px / 600 / +0.09em | 16px | Chips, table headers, eyebrows, field readout labels |
 | `text-xs` | 12px | 18px | Metadata, descriptions, footers, mono cells |
 | `text-sm` | 13px | 20px | Table body, controls, dense body copy |
 | `text-base` | 14px | 23px | Default body |
 | `text-lg` | 17px / 700 | 24px | Panel titles |
-| `text-xl` | 22px / 800 | 28px | Page title |
-| `text-2xl` | 30px | 34px | Secondary metrics |
-| `text-3xl` | 44px, mono | 1 | The one focal number on a screen |
+| `text-xl` | 22px / -0.015em | 28px | Larger heading |
+| `text-2xl` | 30px / -0.02em | 34px | Secondary metrics |
+| `text-display` | `clamp(2rem, 1.2rem + 2.4vw, 3rem)` / -0.025em | 1.05 | Page and focal-panel title |
 
-Weights in use: 400 body, 500 controls and emphasis, 700 panel titles, 800 page
-title. Nothing lighter than 400 — thin weights lose the accents at these sizes.
+Weights in use: 400 body, 500 controls and emphasis, 600 micro labels, 700 panel
+titles, 800 display titles. Nothing lighter than 400 — thin weights lose the
+accents at these sizes.
 
 `font-variant-numeric: tabular-nums` is set on `html`, so every numeric column
 aligns whether or not it is mono.
@@ -147,48 +148,47 @@ future theme toggle sets that attribute and needs no other change.
 
 | Token | Utility | Dark | Light | Role |
 | --- | --- | --- | --- | --- |
-| `--sc-ground-0` | `bg-ground-0` | `#06090b` | `#eae4d8` | Page ground |
-| `--sc-ground-1` | `bg-ground-1` | `#0b1013` | `#f6f2ea` | Panel surface |
-| `--sc-ground-2` | `bg-ground-2` | `#111a1e` | `#fffcf6` | Raised / hover / nested panel |
-| `--sc-ground-3` | `bg-ground-3` | `#17242a` | `#e2daca` | Table headers, control tracks, skeletons |
-| `--sc-well` | `bg-well` | `#040708` | `#ded5c3` | Sunken: text inputs |
-| `--sc-line` | `border-line` | `#1a262c` | `#d2c8b4` | Default hairline |
-| `--sc-line-strong` | `border-line-strong` | `#2b3d46` | `#afa48c` | Structural edges, control borders |
-| `--sc-ink` | `text-ink` | `#e7eef0` | `#12171a` | Primary text |
-| `--sc-ink-2` | `text-ink-2` | `#9db0b8` | `#4a565c` | Secondary text, table body |
-| `--sc-ink-3` | `text-ink-3` | `#7a8c93` | `#6e7a80` | Labels, metadata, placeholders |
-| `--sc-accent` | `bg-accent` / `text-accent` | `#ff6a13` | `#c24a0b` | The single accent: primary action, live state |
-| `--sc-accent-hi` | `bg-accent-hi` | `#ff8340` | `#a83e07` | Accent hover |
-| `--sc-accent-ink` | `text-accent-ink` | `#160800` | `#fff7ef` | Text on accent |
-| `--sc-focus` | `outline-focus` | `#7cd5f0` | `#0e6e8c` | Focus ring only |
+| `--sc-ground-0` | `bg-ground-0` | `#0a0a0a` | `#fafafa` | Page ground |
+| `--sc-ground-1` | `bg-ground-1` | `#141414` | `#ffffff` | Panel surface |
+| `--sc-ground-2` | `bg-ground-2` | `#1c1c1c` | `#f5f5f5` | Raised, hover, nested panel |
+| `--sc-ground-3` | `bg-ground-3` | `#242424` | `#ebebeb` | Table headers, control tracks, skeletons |
+| `--sc-well` | `bg-well` | `#060606` | `#f0f0f0` | Sunken text inputs |
+| `--sc-line` | `border-line` | `#262626` | `#e5e5e5` | Default hairline |
+| `--sc-line-strong` | `border-line-strong` | `#343434` | `#d4d4d4` | Structural edges, focal-panel border |
+| `--sc-ink` | `text-ink` | `#f5f5f5` | `#171717` | Primary text |
+| `--sc-ink-2` | `text-ink-2` | `#a3a3a3` | `#525252` | Secondary text, table body |
+| `--sc-ink-3` | `text-ink-3` | `#737373` | `#737373` | Labels, metadata, placeholders |
+| `--sc-accent` | `bg-accent` / `text-accent` | `#f9c50f` | `#f9c50f` | Single accent and primary action |
+| `--sc-accent-hi` | `bg-accent-hi` / `text-accent-hi` | `#ffd94a` | `#ffd94a` | Accent hover |
+| `--sc-accent-ink` | `text-accent-ink` | `#1a1400` | `#1a1400` | Text on an accent fill |
+| `--sc-focus` | `outline-focus` | `#7cc4ff` | `#0b74d1` | Focus ring only |
+| `--sc-tone-mute` | `text-tone-mute` | `#8f8f8f` | `#6b6b6b` | Neutral status tone |
+| `--sc-tone-hold` | `text-tone-hold` | `#7aa7e8` | `#2f6fc4` | Waiting status tone |
+| `--sc-tone-go` | `text-tone-go` | `#4ade80` | `#15803d` | Good-standing status tone |
+| `--sc-tone-live` | `text-tone-live` | `#2dd4bf` | `#0d9488` | Active status tone |
+| `--sc-tone-done` | `text-tone-done` | `#5b9e78` | `#3f7d5f` | Closed-well status tone |
+| `--sc-tone-stop` | `text-tone-stop` | `#f87171` | `#dc2626` | Stopped status tone |
+| `--sc-tone-shelf` | `text-tone-shelf` | `#5f5f5f` | `#787878` | Filed-away status tone |
+| `--sc-shadow-panel` | `shadow-[var(--sc-shadow-panel)]` | `0 1px 2px 0 rgb(0 0 0 / 0.4)` | `0 1px 2px 0 rgb(0 0 0 / 0.1)` | Panel shadow |
+| `--sc-radius-panel` | `rounded-panel` | `20px` | `20px` | Panels |
+| `--sc-radius-input` | `rounded-input` | `12px` | `12px` | Inputs and inset panels |
+| `--sc-radius-pill` | `rounded-pill` | `999px` | `999px` | Controls and chips |
 
-Note the light theme inverts the *elevation logic*, not just the values: on dark
-a panel is lighter than the page, on paper a panel is lighter than the page too,
-so panels always read as lifted. The light ground is warm (`#eae4d8`), not white
-— printed manifest, not a browser default.
+The page ground is a flat neutral fill. There is no decorative overlay, radial
+pool, panel inset highlight, or accent stripe on focal panels.
 
-**Focus is cyan and belongs to no status.** Focus can therefore never be
-mistaken for state, and state can never be mistaken for focus.
+**Accent rule: text on `--sc-accent` or `--sc-accent-hi` is always
+`--sc-accent-ink` (`#1a1400`), never white.** Yellow belongs to the accent
+alone; no status tone may be yellow. Focus is cool blue and belongs to no
+status, so it cannot be mistaken for state and state cannot be mistaken for
+focus.
 
 ### Discipline
 
-Colour is rationed, and this is the rule that keeps the palette from going
-timid: **large areas are ground and ink only**. The accent appears on at most one
-filled control per view plus the focal panel's index rule. Status tones appear
-only inside chips and markers, which are small. If a screen ever looks colourful,
-something has been coloured that should not have been.
-
-### Atmosphere
-
-The page ground is not a flat fill. `body` layers, over `--sc-ground-0`:
-
-1. two wide, low-intensity radial pools (cool at the top-left, accent at the
-   bottom-right) that give the ground depth;
-2. an 88px repeating rule grid at ~5% ink — a dispatch board, not a texture.
-
-Both are `background-attachment: fixed`, so scrolling a long list does not drag
-the atmosphere with it. Panels sit opaquely on top of it; the atmosphere is
-never behind text.
+Colour is rationed: **large areas are ground and ink only**. The accent appears
+on at most one filled control per view. Status tones appear only inside chips
+and markers, which are small. If a screen ever looks colourful, something has
+been coloured that should not have been.
 
 ---
 
@@ -209,12 +209,12 @@ Two independent channels:
 | Shape | Meaning | Tone | Meaning |
 | --- | --- | --- | --- |
 | `ring` hollow circle | Provisional, nobody has committed | `mute` grey | Neutral |
-| `bar` upright tick | Scheduled, awaiting confirmation | `hold` steel blue | Waiting |
+| `bar` upright tick | Scheduled, awaiting confirmation | `hold` blue | Waiting |
 | `diamond` | Committed | `go` green | In good standing |
-| `dot` solid circle | Live and normal | `live` accent orange | Needs attention now |
-| `pulse` dot with halo | Under way right now | `done` teal | Closed well |
+| `dot` solid circle | Live and normal | `live` teal | Needs attention now |
+| `pulse` dot with halo | Under way right now | `done` green | Closed well |
 | `square` | Terminal | `stop` red | Stopped / voided |
-| `cross` | Voided deliberately | `shelf` deep grey | Filed away |
+| `cross` | Voided deliberately | `shelf` grey | Filed away |
 
 ### The maps
 
@@ -397,19 +397,17 @@ the English are equally uninformative.
 ## 9. Density, spacing, radii and motion
 
 **Spacing** is Tailwind's 4px scale. In practice the system uses
-`1 · 1.5 · 2 · 2.5 · 3 · 4 · 5` (4–20px) inside components, and `3`/`4`
-(12/16px) for grid gutters. Panel padding is `px-4 py-3` in headers and
-`px-4 py-4` in bodies, widening to `px-5` from `sm`.
+`1 · 1.5 · 2 · 2.5 · 3 · 4 · 5` (4–20px) inside components. Bento gap is
+16px. Panel content padding is 20px, increasing to 24px from `sm`; headers use
+the same horizontal and top rhythm.
 
-**Radii** are tokens, and size means elevation:
+**Radii** are tokens:
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `rounded-chip` | 6px | Chips, skeletons |
-| `rounded-control` | 8px | Buttons, inputs |
-| `rounded-module` | 12px | Nested/inset panels, glyph frames |
-| `rounded-panel` | 16px | Standard panels |
-| `rounded-focal` | 22px | The focal panel |
+| `rounded-panel` | 20px | Focal and module panels |
+| `rounded-input` | 12px | Inputs and inset panels |
+| `rounded-pill` | 999px | Controls and chips |
 
 **Motion** — the whole system, exhaustively:
 
@@ -431,15 +429,16 @@ effectively zero.
 Twelve divides by 2, 3, 4 and 6, which is what lets a mixed row of large and
 small modules align without bespoke widths.
 
-- **The grid owns every gutter.** `BentoItem`s never set their own margins, so
+- **Bento owns every gutter.** `BentoItem`s never set their own margins, so
   alignment cannot drift.
 - **Column spans are declared, not styled**: `<BentoItem span={8}>`. The span →
   class map is a literal record, because Tailwind only sees literal class names.
 - **Row spans cap at 3.** A taller module belongs on its own row.
-- **One focal panel per screen.** `Panel emphasis="focal"` gets the larger
-  radius, a lifted gradient ground and an accent index rule down its left edge.
-  A screen with two focal panels has no focus. Everything else is
-  `emphasis="module"`; `emphasis="inset"` is for a panel nested inside another.
+- **One focal panel per screen.** `Panel emphasis="focal"` receives the stronger
+  border; it does not receive a different fill, inset highlight, accent stripe,
+  or larger radius. A screen with two focal panels has no focus. Everything else
+  is `emphasis="module"`; `emphasis="inset"` is for a panel nested inside
+  another.
 - **Rows stretch.** Panels in a row share a height (`className="h-full"`), and
   footers pin to the bottom (`mt-auto` on `TableLoadMore`). Uneven card bottoms
   are what makes a bento look accidental.
@@ -496,7 +495,6 @@ small, accessible, token-driven, and independently reusable.
 
 ## 13. Deferred
 
-- **Application shell** — sidebar, top bar, breadcrumbs, org/project switcher.
 - **Theme toggle** — the tokens and the `data-theme` override are in place; the
   control and its persistence are not.
 - **Dialog, menu, select, combobox, toast, tabs** — vendor from shadcn and
@@ -511,12 +509,16 @@ small, accessible, token-driven, and independently reusable.
 
 ## 14. Application shell and routes
 
-The authenticated console is a single application frame: a compact masthead
-holds the product mark, the primary navigation, organization switcher, language
-switcher, and Clerk account menu. Its main area is the mounting point for every
-product screen. A stage-G-or-later screen is a route child that composes its own
-content from the existing primitives; it must not recreate navigation, auth
-checks, organization selection, language controls, or error handling.
+The authenticated console is a single application frame. Its 64px top bar has
+the wordmark with its accent dot, a centred pill group for primary navigation,
+and a right cluster: organization-switcher pill, two-segment ES/EN language
+pill, settings icon button, and Clerk `UserButton`. The selected navigation item
+carries an accent dot. There is no footer.
+
+Its main area is the mounting point for every product screen. A stage-G-or-later
+screen is a route child that composes its own content from the existing
+primitives; it must not recreate navigation, auth checks, organization
+selection, language controls, or error handling.
 
 The default route is the chat surface (`/{locale}`), with an honest placeholder
 until chat is delivered. Primary surface routes are `/{locale}/recipes`,
