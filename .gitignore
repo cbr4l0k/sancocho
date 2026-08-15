@@ -7,4 +7,11 @@ coverage/
 # immediately after checkout. Local deployment metadata and environment files are not.
 apps/convex/.env.local
 apps/convex/convex/.env.local
+apps/web/.env*.local
 apps/convex/convex/_generated/.cache/
+
+# Next.js build output. `apps/web/next-env.d.ts` is deliberately NOT ignored:
+# `bun run typecheck` must pass on a fresh checkout without a build first, the
+# same reason the Convex generated API is committed.
+apps/web/.next/
+apps/web/out/
