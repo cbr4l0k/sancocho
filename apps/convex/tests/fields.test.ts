@@ -16,6 +16,7 @@ const archiveFieldDefinition = api.fields.mutations.archiveFieldDefinition;
 const deleteFieldDefinition = api.fields.mutations.deleteFieldDefinition;
 const listFieldDefinitions = api.fields.queries.listFieldDefinitions;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
+const getFieldDefinitionsByIds = api.fields.queries.getFieldDefinitionsByIds;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
 const createRecipe = api.recipes.mutations.createRecipe;
 const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
@@ -513,6 +514,116 @@ test('listBuiltinFieldDefinitions walks the catalogue by cursor without repeatin
   // Every built-in appears exactly once across the two pages, and nothing else does.
   expect([...first.page, ...second.page].map((field) => field._id).sort()).toEqual([...builtins].sort());
   expect([...first.page, ...second.page].every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
+});
+
+test('getFieldDefinitionsByIds resolves organization definitions and built-ins', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids' });
+  const builtin = await t.mutation(createBuiltinFieldDefinition, {
+    key: 'eventName',
+    label: 'Event name',
+    config: textConfig,
+    semanticType: 'eventName',
+  });
+  const ours = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'pickupNote', label: 'Pickup note', config: textConfig });
+
+  const fields = await owner.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [ours, builtin] });
+
+  expect(fields.map((field) => field._id)).toEqual([ours, builtin]);
+});
+
+test('getFieldDefinitionsByIds returns archived definitions for historical versions', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids-archived' });
+  const archived = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'historicalNote',
+    label: 'Historical note',
+    config: textConfig,
+  });
+  await owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: archived });
+
+  const fields = await owner.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [archived] });
+
+  expect(fields).toMatchObject([{ _id: archived, status: 'archived' }]);
+});
+
+test('getFieldDefinitionsByIds silently omits another tenant\'s definition', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const orgA = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids-a' });
+  const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'fields-by-ids-b' });
+  const foreign = await owner.client.mutation(createFieldDefinition, {
+    organizationId: orgB,
+    key: 'foreignNote',
+    label: 'Foreign note',
+    config: textConfig,
+  });
+
+  await expect(owner.client.query(getFieldDefinitionsByIds, { organizationId: orgA, fieldDefinitionIds: [foreign] })).resolves.toEqual([]);
+});
+
+test('getFieldDefinitionsByIds silently omits a non-existent definition with the same result shape', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids-missing' });
+  const missing = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('fieldDefinitions', {
+      scope: 'organization',
+      organizationId,
+      key: 'temporaryField',
+      label: 'Temporary',
+      status: 'active',
+      config: textConfig,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+
+  await expect(owner.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [missing] })).resolves.toEqual([]);
+});
+
+test('getFieldDefinitionsByIds bounds and de-duplicates caller-supplied ids', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids-bounds' });
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'uniqueNote',
+    label: 'Unique note',
+    config: textConfig,
+  });
+
+  await expect(
+    owner.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: Array.from({ length: 201 }, () => fieldDefinitionId) }),
+  ).rejects.toMatchObject({ data: 'Field definition lookup cannot exceed 200 ids' });
+  const fields = await owner.client.query(getFieldDefinitionsByIds, {
+    organizationId,
+    fieldDefinitionIds: [fieldDefinitionId, fieldDefinitionId, fieldDefinitionId],
+  });
+  expect(fields.map((field) => field._id)).toEqual([fieldDefinitionId]);
+});
+
+test('getFieldDefinitionsByIds requires membership and authentication', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const outsider = await provision(t, 'outsider');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids-access' });
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'privateNote',
+    label: 'Private note',
+    config: textConfig,
+  });
+
+  await expect(outsider.client.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [fieldDefinitionId] })).rejects.toMatchObject({
+    data: NOT_FOUND_OR_INACCESSIBLE,
+  });
+  await expect(t.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: [fieldDefinitionId] })).rejects.toMatchObject({
+    data: UNAUTHENTICATED,
+  });
 });
 
 test('field lifecycle writes attributed audit rows naming what changed', async () => {

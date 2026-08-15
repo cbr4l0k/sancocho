@@ -2,12 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  statusToken,
-  type StatusSelection,
-  type StatusShape,
-  type StatusTone,
-} from '@/lib/status';
+import { statusToken, type StatusSelection, type StatusShape, type StatusTone } from '@/lib/status';
 import { cn } from '@/lib/utils';
 
 /**
@@ -57,11 +52,7 @@ export type StatusChipProps = StatusSelection & {
   className?: string | undefined;
 };
 
-export function StatusChip({
-  emphasis = 'quiet',
-  className,
-  ...selection
-}: StatusChipProps) {
+export function StatusChip({ emphasis = 'quiet', className, ...selection }: StatusChipProps) {
   const t = useTranslations();
   const token = statusToken(selection);
 
@@ -77,32 +68,21 @@ export function StatusChip({
         className,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn('relative block shrink-0', shapeMarker[token.shape])}
-      />
+      <span aria-hidden="true" className={cn('relative block shrink-0', shapeMarker[token.shape])} />
       {t(token.labelKey)}
     </span>
   );
 }
 
 /** The marker on its own, for legends and dense list gutters. */
-export function StatusMarker({
-  className,
-  ...selection
-}: StatusSelection & { className?: string | undefined }) {
+export function StatusMarker({ className, ...selection }: StatusSelection & { className?: string | undefined }) {
   const token = statusToken(selection);
 
   return (
     <span
       aria-hidden="true"
       data-slot="status-marker"
-      className={cn(
-        'relative block shrink-0',
-        toneVariable[token.tone],
-        shapeMarker[token.shape],
-        className,
-      )}
+      className={cn('relative block shrink-0', toneVariable[token.tone], shapeMarker[token.shape], className)}
     />
   );
 }

@@ -28,7 +28,13 @@ function persistOrganizationId(organizationId: OrganizationId): void {
   document.cookie = `${organizationCookieName}=${encodeURIComponent(organizationId)}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
-export function CurrentOrganizationProvider({ organizations, children }: { organizations: readonly OrganizationMembership[]; children: ReactNode }) {
+export function CurrentOrganizationProvider({
+  organizations,
+  children,
+}: {
+  organizations: readonly OrganizationMembership[];
+  children: ReactNode;
+}) {
   const [persistedId, setPersistedId] = useState<string | null>(() =>
     typeof document === 'undefined' ? null : readPersistedOrganizationId(),
   );

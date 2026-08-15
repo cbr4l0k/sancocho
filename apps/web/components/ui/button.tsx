@@ -27,8 +27,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         /** The single accent-filled control on a view. Never two. */
-        primary:
-          'border-transparent bg-accent text-accent-ink hover:bg-accent-hi',
+        primary: 'border-transparent bg-accent text-accent-ink hover:bg-accent-hi',
         /** The workhorse. Reads as a control, not as an invitation. */
         secondary: 'border-line bg-ground-2 text-ink hover:bg-ground-3',
         /** Toolbars and table rows, where a border per action would be noise. */
@@ -37,8 +36,7 @@ const buttonVariants = cva(
          * Destructive actions stay outlined until hover: they should be findable
          * and never inviting. Confirmation still happens in a dialog.
          */
-        danger:
-          'border-tone-stop/45 bg-transparent text-tone-stop hover:bg-tone-stop/12 hover:border-tone-stop',
+        danger: 'border-tone-stop/45 bg-transparent text-tone-stop hover:bg-tone-stop/12 hover:border-tone-stop',
         /** Inline navigation inside running text. */
         link: 'h-auto border-transparent px-0 text-accent underline decoration-accent/40 underline-offset-4 hover:decoration-accent',
       },
@@ -58,30 +56,21 @@ const buttonVariants = cva(
       {
         variant: 'secondary',
         selected: true,
-        className:
-          'border-line bg-ground-2 text-ink before:size-1.5 before:rounded-full before:bg-accent',
+        className: 'border-line bg-ground-2 text-ink before:size-1.5 before:rounded-full before:bg-accent',
       },
       {
         variant: 'ghost',
         selected: true,
-        className:
-          'bg-ground-2 text-ink before:size-1.5 before:rounded-full before:bg-accent hover:bg-ground-2',
+        className: 'bg-ground-2 text-ink before:size-1.5 before:rounded-full before:bg-accent hover:bg-ground-2',
       },
     ],
     defaultVariants: { variant: 'secondary', size: 'md', selected: false },
   },
 );
 
-export type ButtonProps = ButtonPrimitive.Props &
-  VariantProps<typeof buttonVariants>;
+export type ButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants>;
 
-export function Button({
-  className,
-  variant,
-  size,
-  selected,
-  ...props
-}: ButtonProps) {
+export function Button({ className, variant, size, selected, ...props }: ButtonProps) {
   return (
     <ButtonPrimitive
       data-slot="button"
