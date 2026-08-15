@@ -6,13 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "bun test i18n",
+    "i18n:check": "bun scripts/check-i18n.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.6",
     "@sancocho/convex": "workspace:*",
     "convex": "^1.42.3",
     "next": "^16.3.1",
+    "next-intl": "^4.13.6",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

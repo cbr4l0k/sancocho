@@ -48,3 +48,17 @@ connection.
 - The generated Convex API is imported as `api` from `@sancocho/convex/api`. The
   workspace package export points directly to Convex's committed generated API,
   so the web app does not hand-write backend function signatures.
+- **Internationalization** uses `next-intl` because it is App Router-native,
+  supports path-segment locale routing, provides ICU interpolation/plurals, and
+  type-checks message keys. Canonical locales are `es-CO` (default) and `en-US`;
+  URL segments are deliberately shorter (`/es` and `/en`). The mapping lives only
+  in `i18n/locales.ts`, so a future regional locale can gain a readable segment
+  without rewriting URLs. Locale resolution is explicit choice, the canonical
+  locale cookie, `Accept-Language`, then Spanish (`es-CO`)—never English as a
+  last resort.
+- Translation catalogues cover UI chrome and code-owned vocabulary only.
+  Tenant-authored recipe names, field labels/descriptions, select option labels,
+  project names, and location names are stored and rendered exactly as entered.
+  Built-in field labels are localized in the frontend by stable key; an unknown
+  key intentionally falls back to its stored label.
+- Run `bun run i18n:check` from the repository root to verify catalogue parity.

@@ -8,7 +8,8 @@
   "scripts": {
     "codegen": "bun run --cwd apps/convex codegen",
     "typecheck": "bun run --cwd apps/convex typecheck && bun run --cwd packages/shared typecheck && bun run --cwd apps/web typecheck",
-    "lint": "bun run --cwd apps/web lint",
-    "test": "bun run --cwd apps/convex test"
+    "lint": "bun run --cwd apps/web lint && bun run i18n:check",
+    "test": "bun run --cwd apps/convex test && bun run --cwd apps/web test",
+    "i18n:check": "bun run --cwd apps/web i18n:check"
   }
 }

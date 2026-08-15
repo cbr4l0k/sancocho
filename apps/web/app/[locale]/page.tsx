@@ -1,17 +1,23 @@
 'use client';
 
 import { Authenticated, AuthLoading, Unauthenticated, useQuery } from 'convex/react';
+import { useTranslations } from 'next-intl';
 
 import { api } from '@sancocho/convex/api';
 
+import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
+
 export default function HomePage() {
+  const t = useTranslations('auth');
+
   return (
     <main>
+      <LocaleSwitcher />
       <AuthLoading>
-        <p>Connecting to Sancocho…</p>
+        <p>{t('connecting')}</p>
       </AuthLoading>
       <Unauthenticated>
-        <p>Not signed in. The Sancocho connection is ready when you are.</p>
+        <p>{t('signedOut')}</p>
       </Unauthenticated>
       <Authenticated>
         <ConnectionStatus />
@@ -21,15 +27,11 @@ export default function HomePage() {
 }
 
 function ConnectionStatus() {
+  const t = useTranslations('auth');
   const currentUser = useQuery(api.auth.queries.getCurrentUser);
 
-  if (currentUser === undefined) {
-    return <p>Connecting to Convex…</p>;
-  }
+  if (currentUser === undefined) return <p>{t('connecting')}</p>;
+  if (currentUser === null) return <p>{t('profilePending')}</p>;
 
-  if (currentUser === null) {
-    return <p>Connected to Convex. Your Sancocho user profile is not set up yet.</p>;
-  }
-
-  return <p>Connected to Convex.</p>;
+  return <p>{t('connected')}</p>;
 }
