@@ -226,7 +226,7 @@ export const backfillRecipeVersionPublishedAt = internalMutation({
 function requireFieldId(ids: ReadonlyMap<string, Id<'fieldDefinitions'>>, key: BuiltinKey): Id<'fieldDefinitions'> {
   const id = ids.get(key);
   if (id === undefined) {
-    return invalidInput(`Seed built-in field is missing: ${key}`);
+    return invalidInput('seedBuiltinFieldMissing', `Seed built-in field is missing: ${key}`);
   }
   return id;
 }
@@ -351,7 +351,7 @@ export const grantDemoMembership = internalMutation({
       .withIndex('by_slug', (q) => q.eq('slug', demonstrationOrganization.slug))
       .unique();
     if (organization === null) {
-      return invalidInput('The demonstration organization has not been seeded on this deployment');
+      return invalidInput('seedDemonstrationOrganizationMissing', 'The demonstration organization has not been seeded on this deployment');
     }
     const userId = await ensureAuthenticatedUser(withSeedIdentity(ctx, args.owner));
     await addMember(withSeedIdentity(ctx, defaultSeedOwner), {

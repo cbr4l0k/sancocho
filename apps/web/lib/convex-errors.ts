@@ -1,93 +1,18 @@
+import type { ErrorCode } from '@sancocho/convex/errors';
 import { ConvexError } from 'convex/values';
 
-export type ConvexErrorPresentation =
-  | 'notFound'
-  | 'unauthenticated'
-  | 'conflict'
-  | 'fieldKeyInvalid'
-  | 'fieldKeyTaken'
-  | 'fieldKeyBuiltin'
-  | 'fieldDescriptionTooLong'
-  | 'fieldSemanticIncompatible'
-  | 'fieldHistoricalFrozen'
-  | 'fieldArchived'
-  | 'fieldDeleteBlocked'
-  | 'fieldConfigInvalid'
-  | 'recipeKeyInvalid'
-  | 'recipeDescriptionTooLong'
-  | 'recipeArchived'
-  | 'recipeDraftInvalid'
-  | 'generic';
-
-/**
- * Coupled to the code-owned invalidInput messages in
- * apps/convex/convex/fields/model.ts and recipes/model.ts. Keep unknown messages generic:
- * rendered server text is never a client contract.
- */
-const fieldInvalidInputPresentation: Readonly<Record<string, ConvexErrorPresentation>> = {
-  'Field key must be 2–64 lowerCamelCase characters': 'fieldKeyInvalid',
-  'A field with this key already exists': 'fieldKeyTaken',
-  'Custom field keys cannot shadow built-in field keys': 'fieldKeyBuiltin',
-  'Field description must not exceed 2000 characters': 'fieldDescriptionTooLong',
-  'Semantic type is incompatible with the field configuration': 'fieldSemanticIncompatible',
-  'Fields referenced by published or retired recipe versions may only update label or description':
-    'fieldHistoricalFrozen',
-  'Archived fields cannot be updated': 'fieldArchived',
-  'Referenced field definitions cannot be deleted; archive the field instead': 'fieldDeleteBlocked',
-  'Field length bounds must be finite numbers': 'fieldConfigInvalid',
-  'Field maximum length must not be less than its minimum length': 'fieldConfigInvalid',
-  'Field maximum length must not exceed 10000 characters': 'fieldConfigInvalid',
-  'Field maximum length must not exceed 100000 characters': 'fieldConfigInvalid',
-  'Field numeric bounds must be finite numbers': 'fieldConfigInvalid',
-  'Field maximum must not be less than its minimum': 'fieldConfigInvalid',
-  'Field date bounds must be YYYY-MM-DD calendar dates': 'fieldConfigInvalid',
-  'Field time bounds must be HH:mm wall-clock times': 'fieldConfigInvalid',
-  'Select fields must define at least one option': 'fieldConfigInvalid',
-  'Select option ids must be unique and non-empty': 'fieldConfigInvalid',
-  'Selection bounds must be finite numbers': 'fieldConfigInvalid',
-  'Maximum selections must not be less than minimum selections': 'fieldConfigInvalid',
-  'Minimum selections must not exceed the number of options': 'fieldConfigInvalid',
-  'Maximum selections must not exceed the number of options': 'fieldConfigInvalid',
-  'Recipe key must be 2–64 lowerCamelCase characters': 'recipeKeyInvalid',
-  'Recipe description must not exceed 2000 characters': 'recipeDescriptionTooLong',
-  'Archived recipes cannot be updated': 'recipeArchived',
-  'Archived recipes cannot get new drafts': 'recipeArchived',
-  'Archived recipes cannot be published': 'recipeArchived',
-  'Cannot publish a version with no fields': 'recipeDraftInvalid',
-  'Recipe field positions must be unique non-negative integers': 'recipeDraftInvalid',
-  'Recipe version cannot contain duplicate field definitions': 'recipeDraftInvalid',
-  'Recipe fields must reference active fields in the same organization or built-ins':
-    'recipeDraftInvalid',
-  'Required recipe fields must be visible': 'recipeDraftInvalid',
-  'Recipe field config kind must match the current field definition': 'recipeDraftInvalid',
-  'Recipe field config may only narrow definition bounds': 'recipeDraftInvalid',
-  'Recipe field snapshot options must still exist in the current field definition':
-    'recipeDraftInvalid',
-};
-
-/**
- * The one client-side interpretation of Convex's stable error contract.
- * It reads structured `ConvexError.data`, never a rendered stack/message.
- */
-export function presentConvexError(error: unknown): ConvexErrorPresentation {
-  if (!(error instanceof ConvexError)) return 'generic';
-
-  switch (error.data) {
-    case 'Not found or inaccessible':
-      return 'notFound';
-    case 'Unauthenticated':
-      return 'unauthenticated';
-    case 'Conflict':
-      return 'conflict';
-    default:
-      return typeof error.data === 'string'
-        ? fieldInvalidInputPresentation[error.data] ?? 'generic'
-        : 'generic';
-  }
-}
-
 export type ConvexErrorMessageKey =
+  | 'errors.generic'
   | 'errors.notFound'
+  | 'errors.unauthenticated'
+  | 'errors.conflict'
+  | 'errors.entityNameInvalid'
+  | 'errors.organizationSlugInvalid'
+  | 'errors.projectDescriptionTooLong'
+  | 'errors.projectArchived'
+  | 'errors.projectArchiveRequired'
+  | 'errors.projectDatesInvalid'
+  | 'errors.relationshipSelfReference'
   | 'errors.fieldKeyInvalid'
   | 'errors.fieldKeyTaken'
   | 'errors.fieldKeyBuiltin'
@@ -96,29 +21,129 @@ export type ConvexErrorMessageKey =
   | 'errors.fieldHistoricalFrozen'
   | 'errors.fieldArchived'
   | 'errors.fieldDeleteBlocked'
+  | 'errors.fieldLookupTooLarge'
   | 'errors.fieldConfigInvalid'
+  | 'errors.fieldValueInvalid'
   | 'errors.recipeKeyInvalid'
   | 'errors.recipeDescriptionTooLong'
   | 'errors.recipeArchived'
+  | 'errors.recipePublishedVersionRequired'
+  | 'errors.recipeVersionNotDraft'
   | 'errors.recipeDraftInvalid'
-  | 'errors.generic';
+  | 'errors.eventRecipeUnavailable'
+  | 'errors.eventFieldsInvalid'
+  | 'errors.eventDatesInvalid'
+  | 'errors.eventProjectReadOnly'
+  | 'errors.eventProjectUnavailable'
+  | 'errors.eventReadOnly'
+  | 'errors.eventTerminal'
+  | 'errors.eventStatusTransitionInvalid'
+  | 'errors.locationArchived'
+  | 'errors.locationArchiveRequired'
+  | 'errors.locationDeleteBlocked'
+  | 'errors.locationAddressTooLong'
+  | 'errors.locationCoordinatesInvalid'
+  | 'errors.auditInvalid';
+
+/** Kept as an alias so existing presentation call sites remain unchanged. */
+export type ConvexErrorPresentation = ConvexErrorMessageKey;
+
+/**
+ * The client-owned interpretation of every stable backend error code. `Record` makes
+ * additions to ErrorCode a web type error until they receive a presentation.
+ */
+const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
+  notFoundOrInaccessible: 'errors.notFound',
+  unauthenticated: 'errors.unauthenticated',
+  conflict: 'errors.conflict',
+  entityNameInvalid: 'errors.entityNameInvalid',
+  organizationSlugInvalid: 'errors.organizationSlugInvalid',
+  projectDescriptionTooLong: 'errors.projectDescriptionTooLong',
+  projectArchived: 'errors.projectArchived',
+  projectArchiveRequired: 'errors.projectArchiveRequired',
+  projectStartInvalid: 'errors.projectDatesInvalid',
+  projectEndInvalid: 'errors.projectDatesInvalid',
+  projectDateRangeInvalid: 'errors.projectDatesInvalid',
+  relationshipSelfReference: 'errors.relationshipSelfReference',
+  fieldNameInvalid: 'errors.entityNameInvalid',
+  fieldKeyInvalid: 'errors.fieldKeyInvalid',
+  fieldKeyTaken: 'errors.fieldKeyTaken',
+  fieldKeyShadowsBuiltin: 'errors.fieldKeyBuiltin',
+  fieldDescriptionTooLong: 'errors.fieldDescriptionTooLong',
+  fieldSemanticIncompatible: 'errors.fieldSemanticIncompatible',
+  fieldArchived: 'errors.fieldArchived',
+  fieldHistoricalFrozen: 'errors.fieldHistoricalFrozen',
+  fieldDeleteBlocked: 'errors.fieldDeleteBlocked',
+  fieldLookupTooLarge: 'errors.fieldLookupTooLarge',
+  fieldConfigInvalid: 'errors.fieldConfigInvalid',
+  fieldSelectOptionsInvalid: 'errors.fieldConfigInvalid',
+  fieldValueInvalid: 'errors.fieldValueInvalid',
+  fieldValueKindMismatch: 'errors.fieldValueInvalid',
+  fieldValueOptionInvalid: 'errors.fieldValueInvalid',
+  fieldValueLengthInvalid: 'errors.fieldValueInvalid',
+  fieldValueRangeInvalid: 'errors.fieldValueInvalid',
+  recipeKeyInvalid: 'errors.recipeKeyInvalid',
+  recipeDescriptionTooLong: 'errors.recipeDescriptionTooLong',
+  recipeArchived: 'errors.recipeArchived',
+  recipePublishedVersionRequired: 'errors.recipePublishedVersionRequired',
+  recipeVersionNotDraft: 'errors.recipeVersionNotDraft',
+  recipeVersionEmpty: 'errors.recipeDraftInvalid',
+  recipeFieldRequiredHidden: 'errors.recipeDraftInvalid',
+  recipeFieldConfigMismatch: 'errors.recipeDraftInvalid',
+  recipeFieldConfigNotNarrower: 'errors.recipeDraftInvalid',
+  recipeFieldSnapshotOptionInvalid: 'errors.recipeDraftInvalid',
+  recipeFieldDuplicateDefinition: 'errors.recipeDraftInvalid',
+  recipeFieldDefinitionUnavailable: 'errors.recipeDraftInvalid',
+  recipeFieldLimitExceeded: 'errors.recipeDraftInvalid',
+  recipeFieldOrderInvalid: 'errors.recipeDraftInvalid',
+  recipeFieldPositionInvalid: 'errors.recipeDraftInvalid',
+  eventRecipeUnavailable: 'errors.eventRecipeUnavailable',
+  eventFieldUnknown: 'errors.eventFieldsInvalid',
+  eventFieldDuplicate: 'errors.eventFieldsInvalid',
+  eventFieldRequired: 'errors.eventFieldsInvalid',
+  eventStartInvalid: 'errors.eventDatesInvalid',
+  eventEndInvalid: 'errors.eventDatesInvalid',
+  eventDateRangeInvalid: 'errors.eventDatesInvalid',
+  eventProjectReadOnly: 'errors.eventProjectReadOnly',
+  eventProjectUnavailable: 'errors.eventProjectUnavailable',
+  eventReadOnly: 'errors.eventReadOnly',
+  eventTerminal: 'errors.eventTerminal',
+  eventStatusTransitionInvalid: 'errors.eventStatusTransitionInvalid',
+  locationArchived: 'errors.locationArchived',
+  locationArchiveRequired: 'errors.locationArchiveRequired',
+  locationDeleteBlocked: 'errors.locationDeleteBlocked',
+  locationAddressTooLong: 'errors.locationAddressTooLong',
+  locationCoordinatesIncomplete: 'errors.locationCoordinatesInvalid',
+  locationCoordinatesInvalid: 'errors.locationCoordinatesInvalid',
+  seedDisabled: 'errors.generic',
+  seedBuiltinFieldMissing: 'errors.generic',
+  seedDemonstrationOrganizationMissing: 'errors.generic',
+  auditEntityIdTooLong: 'errors.auditInvalid',
+  auditMetadataInvalid: 'errors.auditInvalid',
+};
+
+function isErrorCode(code: string): code is ErrorCode {
+  return Object.hasOwn(errorCodeMessageKeys, code);
+}
+
+/**
+ * Reads only the structured payload. Unknown throws and malformed payloads remain
+ * generic so the UI stays safe during network or unexpected runtime failures.
+ */
+export function presentConvexError(error: unknown): ConvexErrorPresentation {
+  if (!(error instanceof ConvexError)) return 'errors.generic';
+
+  const data: unknown = error.data;
+  if (typeof data !== 'object' || data === null || !('code' in data)) return 'errors.generic';
+
+  const code = data.code;
+  if (typeof code !== 'string' || !isErrorCode(code)) {
+    return 'errors.generic';
+  }
+
+  return errorCodeMessageKeys[code];
+}
 
 export function errorMessageKey(presentation: ConvexErrorPresentation): ConvexErrorMessageKey {
-  switch (presentation) {
-    case 'notFound': return 'errors.notFound';
-    case 'fieldKeyInvalid': return 'errors.fieldKeyInvalid';
-    case 'fieldKeyTaken': return 'errors.fieldKeyTaken';
-    case 'fieldKeyBuiltin': return 'errors.fieldKeyBuiltin';
-    case 'fieldDescriptionTooLong': return 'errors.fieldDescriptionTooLong';
-    case 'fieldSemanticIncompatible': return 'errors.fieldSemanticIncompatible';
-    case 'fieldHistoricalFrozen': return 'errors.fieldHistoricalFrozen';
-    case 'fieldArchived': return 'errors.fieldArchived';
-    case 'fieldDeleteBlocked': return 'errors.fieldDeleteBlocked';
-    case 'fieldConfigInvalid': return 'errors.fieldConfigInvalid';
-    case 'recipeKeyInvalid': return 'errors.recipeKeyInvalid';
-    case 'recipeDescriptionTooLong': return 'errors.recipeDescriptionTooLong';
-    case 'recipeArchived': return 'errors.recipeArchived';
-    case 'recipeDraftInvalid': return 'errors.recipeDraftInvalid';
-    default: return 'errors.generic';
-  }
+  return presentation;
 }

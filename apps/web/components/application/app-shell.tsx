@@ -90,7 +90,7 @@ function ProvisionedShell({ children }: ApplicationShellProps) {
     requested.current = true;
     void ensureUser().catch((caught: unknown) => {
       const presentation = presentConvexError(caught);
-      if (presentation === 'unauthenticated') {
+      if (presentation === 'errors.unauthenticated') {
         router.replace(`/${segmentForCanonicalLocale(locale)}/sign-in`);
         return;
       }
@@ -111,7 +111,7 @@ function ShellError({ presentation }: { presentation: ConvexErrorPresentation })
 
   return (
     <main className="mx-auto flex w-full max-w-[88rem] px-4 py-8 sm:px-6 lg:py-12">
-      {presentation === 'notFound' ? (
+      {presentation === 'errors.notFound' ? (
         <UnavailableState />
       ) : (
         <EmptyState tone="unavailable" title={t(errorMessageKey(presentation))} />
@@ -161,7 +161,7 @@ function CreateOrganization() {
   const errorText =
     error === 'invalid'
       ? t('organizations.slugInvalid')
-      : error === 'conflict'
+      : error === 'errors.conflict'
         ? t('organizations.slugTaken')
         : error === null
           ? null

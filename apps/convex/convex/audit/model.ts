@@ -71,7 +71,7 @@ export async function listEntityAuditEvents(
   // caller string (I5). Membership is proven first, so the bound cannot be used
   // to probe organizations the caller cannot read.
   if (args.entityId.length > maxAuditEntityIdLength) {
-    return invalidInput(`Audit entity id must not exceed ${maxAuditEntityIdLength} characters`);
+    return invalidInput('auditEntityIdTooLong', `Audit entity id must not exceed ${maxAuditEntityIdLength} characters`);
   }
   return ctx.db
     .query('auditEvents')
@@ -106,13 +106,13 @@ function sanitizeAuditMetadata(metadata: AuditMetadata): Record<string, AuditMet
   const sanitized: Record<string, AuditMetadataValue> = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (!auditMetadataKeySet.has(key)) {
-      invalidInput(`Audit metadata key is not permitted: ${key}`);
+      invalidInput('auditMetadataInvalid', `Audit metadata key is not permitted: ${key}`);
     }
     // An explicitly-undefined key is simply absent; Convex stores no such column.
     if (value === undefined) continue;
     if (typeof value === 'string' && value.length > maxAuditMetadataStringLength) {
       if (!auditMetadataSummaryKeySet.has(key)) {
-        invalidInput(`Audit metadata string values must not exceed ${maxAuditMetadataStringLength} characters`);
+        invalidInput('auditMetadataInvalid', `Audit metadata string values must not exceed ${maxAuditMetadataStringLength} characters`);
       }
       sanitized[key] = truncateAuditSummary(value);
       continue;

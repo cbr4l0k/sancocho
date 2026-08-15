@@ -14,8 +14,8 @@ const archiveProject = api.projects.mutations.archiveProject;
 const getProject = api.projects.queries.getProject;
 const listProjects = api.projects.queries.listProjects;
 
-const NOT_FOUND_OR_INACCESSIBLE = 'Not found or inaccessible';
-const UNAUTHENTICATED = 'Unauthenticated';
+const NOT_FOUND_OR_INACCESSIBLE = 'notFoundOrInaccessible';
+const UNAUTHENTICATED = 'unauthenticated';
 const issuer = 'https://example.clerk.accounts.dev';
 const firstPage = { numItems: 10, cursor: null };
 
@@ -34,14 +34,14 @@ test('project descriptions are bounded like every other free-text column', async
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'projects-description' });
   const tooLong = 'x'.repeat(2001);
-  const bound = 'Project description must not exceed 2000 characters';
+  const bound = 'projectDescriptionTooLong';
 
   // Unbounded, this was the one column a tenant could fill with megabytes:
   // `listProjects` pages whole documents and projects are never deleted, so
   // enough oversized rows make a tenant's project list permanently unreadable.
-  await expect(owner.client.mutation(createProject, { organizationId, name: 'Verbose', description: tooLong })).rejects.toMatchObject({ data: bound });
+  await expect(owner.client.mutation(createProject, { organizationId, name: 'Verbose', description: tooLong })).rejects.toMatchObject({ data: { code: bound } });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Bounded', description: 'x'.repeat(2000) });
-  await expect(owner.client.mutation(updateProject, { projectId, description: tooLong })).rejects.toMatchObject({ data: bound });
+  await expect(owner.client.mutation(updateProject, { projectId, description: tooLong })).rejects.toMatchObject({ data: { code: bound } });
   await t.run(async (ctx) => {
     expect((await ctx.db.get(projectId))?.description).toBe('x'.repeat(2000));
   });
@@ -64,9 +64,9 @@ test('cross-organization and fabricated project ids return the generic error', a
   });
 
   for (const projectId of [foreignProjectId, missingProjectId]) {
-    await expect(member.client.query(getProject, { projectId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(member.client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(member.client.mutation(archiveProject, { projectId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(member.client.query(getProject, { projectId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(member.client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(member.client.mutation(archiveProject, { projectId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 });
 
@@ -83,9 +83,9 @@ test('project operations are indistinguishable for unauthenticated probes (I9)',
 
   // Unauthenticated: identical error for real and fabricated ids.
   for (const projectId of [realProjectId, fakeProjectId]) {
-    await expect(t.query(getProject, { projectId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(archiveProject, { projectId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.query(getProject, { projectId })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(archiveProject, { projectId })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   }
 
   // The two organization-scoped entry points are closed to the same probe: a
@@ -97,8 +97,8 @@ test('project operations are indistinguishable for unauthenticated probes (I9)',
     return id;
   });
   for (const orgId of [organizationId, fakeOrganizationId]) {
-    await expect(t.mutation(createProject, { organizationId: orgId, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.query(listProjects, { organizationId: orgId, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.mutation(createProject, { organizationId: orgId, name: 'Nope' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.query(listProjects, { organizationId: orgId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   }
 });
 
@@ -109,7 +109,7 @@ test('a user with no memberships anywhere cannot read a project', async () => {
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'project-outsider' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Private' });
 
-  await expect(outsider.client.query(getProject, { projectId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(outsider.client.query(getProject, { projectId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
 });
 
 test('listProjects requires membership in the requested organization and never leaks other tenants', async () => {
@@ -125,10 +125,10 @@ test('listProjects requires membership in the requested organization and never l
 
   // No memberships at all, and a member of another organization: same error.
   await expect(outsider.client.query(listProjects, { organizationId: orgA, paginationOpts: firstPage })).rejects.toMatchObject({
-    data: NOT_FOUND_OR_INACCESSIBLE,
+    data: { code: NOT_FOUND_OR_INACCESSIBLE },
   });
   await expect(member.client.query(listProjects, { organizationId: orgB, paginationOpts: firstPage })).rejects.toMatchObject({
-    data: NOT_FOUND_OR_INACCESSIBLE,
+    data: { code: NOT_FOUND_OR_INACCESSIBLE },
   });
 
   const page = await member.client.query(listProjects, { organizationId: orgA, paginationOpts: firstPage });
@@ -153,10 +153,10 @@ test('project authoring is closed to operators and viewers and open from planner
   // author the projects they live in. Testing only a viewer would leave the
   // floor free to slip a rank, which is why both ranks below planner are here.
   for (const { client } of [viewer, operator]) {
-    await expect(client.mutation(createProject, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(client.mutation(createProject, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
     // Archival is its own operation with its own role check, so it gets its own case.
-    await expect(client.mutation(archiveProject, { projectId: archivable })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(client.mutation(archiveProject, { projectId: archivable })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
   // Reading stays open to any member, so the rejections above are a floor on
   // authoring, not on visibility.
@@ -174,14 +174,14 @@ test('project dates must remain ordered at creation and update', async () => {
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'project-dates' });
 
   await expect(owner.client.mutation(createProject, { organizationId, name: 'Invalid', startsAt: 20, endsAt: 10 })).rejects.toMatchObject({
-    data: 'Project end must not precede its start',
+    data: { code: 'projectDateRangeInvalid' },
   });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Valid', startsAt: 20, endsAt: 40 });
   await expect(owner.client.mutation(updateProject, { projectId, endsAt: 10 })).rejects.toMatchObject({
-    data: 'Project end must not precede its start',
+    data: { code: 'projectDateRangeInvalid' },
   });
   await expect(owner.client.mutation(updateProject, { projectId, startsAt: 50 })).rejects.toMatchObject({
-    data: 'Project end must not precede its start',
+    data: { code: 'projectDateRangeInvalid' },
   });
 
   // Equal bounds are a zero-length window, not an ordering violation.
@@ -200,18 +200,18 @@ test('non-finite project dates are rejected at creation and update', async () =>
 
   for (const startsAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
     await expect(owner.client.mutation(createProject, { organizationId, name: 'Bad start', startsAt })).rejects.toMatchObject({
-      data: 'Project start must be a finite timestamp',
+      data: { code: 'projectStartInvalid' },
     });
     await expect(owner.client.mutation(updateProject, { projectId, startsAt })).rejects.toMatchObject({
-      data: 'Project start must be a finite timestamp',
+      data: { code: 'projectStartInvalid' },
     });
   }
   for (const endsAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
     await expect(owner.client.mutation(createProject, { organizationId, name: 'Bad end', startsAt: 10, endsAt })).rejects.toMatchObject({
-      data: 'Project end must be a finite timestamp',
+      data: { code: 'projectEndInvalid' },
     });
     await expect(owner.client.mutation(updateProject, { projectId, endsAt })).rejects.toMatchObject({
-      data: 'Project end must be a finite timestamp',
+      data: { code: 'projectEndInvalid' },
     });
   }
 
@@ -228,7 +228,7 @@ test('archiving is only reachable through archiveProject, and draft/active/compl
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Lifecycle' });
 
   await expect(owner.client.mutation(updateProject, { projectId, status: 'archived' })).rejects.toMatchObject({
-    data: 'Use archiveProject to archive a project',
+    data: { code: 'projectArchiveRequired' },
   });
   await expect(owner.client.mutation(updateProject, { projectId, status: 'active' })).resolves.toBeNull();
   await expect(owner.client.mutation(updateProject, { projectId, status: 'completed' })).resolves.toBeNull();
@@ -239,7 +239,7 @@ test('archiving is only reachable through archiveProject, and draft/active/compl
   await owner.client.mutation(archiveProject, { projectId });
   for (const status of ['draft', 'active', 'completed'] as const) {
     await expect(owner.client.mutation(updateProject, { projectId, status })).rejects.toMatchObject({
-      data: 'Archived projects cannot be updated',
+      data: { code: 'projectArchived' },
     });
   }
 });
@@ -271,7 +271,7 @@ test('archival preserves the project but makes it read-only', async () => {
 
   await owner.client.mutation(archiveProject, { projectId });
   await expect(owner.client.mutation(updateProject, { projectId, name: 'Nope' })).rejects.toMatchObject({
-    data: 'Archived projects cannot be updated',
+    data: { code: 'projectArchived' },
   });
   const project = await owner.client.query(getProject, { projectId });
   expect(project).toMatchObject({ _id: projectId, status: 'archived', name: 'Archive me' });

@@ -16,7 +16,7 @@ export const maxEntityNameLength = 200;
 export function validateEntityName(name: string, label: string): string {
   const trimmed = name.trim();
   if (trimmed.length === 0 || trimmed.length > maxEntityNameLength) {
-    return invalidInput(`Invalid ${label} name`);
+    return invalidInput('entityNameInvalid', `Invalid ${label} name`);
   }
   return trimmed;
 }

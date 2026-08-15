@@ -14,9 +14,9 @@ const removeMember = api.organizations.mutations.removeMember;
 const getOrganization = api.organizations.queries.getOrganization;
 const listMembers = api.organizations.queries.listMembers;
 
-const NOT_FOUND_OR_INACCESSIBLE = 'Not found or inaccessible';
-const CONFLICT = 'Conflict';
-const UNAUTHENTICATED = 'Unauthenticated';
+const NOT_FOUND_OR_INACCESSIBLE = 'notFoundOrInaccessible';
+const CONFLICT = 'conflict';
+const UNAUTHENTICATED = 'unauthenticated';
 const issuer = 'https://example.clerk.accounts.dev';
 const firstPage = { numItems: 10, cursor: null };
 
@@ -48,7 +48,7 @@ test('createOrganization creates the organization, owner membership, and audits 
   });
 
   await expect(owner.client.mutation(createOrganization, { name: 'Other', slug: 'acme' })).rejects.toMatchObject({
-    data: CONFLICT,
+    data: { code: CONFLICT },
   });
 });
 
@@ -66,12 +66,12 @@ test('cross-organization access and fabricated organization IDs return the same 
   });
 
   for (const organizationId of [orgB, missingOrganizationId]) {
-    await expect(member.client.query(getOrganization, { organizationId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(member.client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(member.client.mutation(addMember, { organizationId, userId: owner.userId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(member.client.query(getOrganization, { organizationId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(member.client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(member.client.mutation(addMember, { organizationId, userId: owner.userId, role: 'viewer' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
     await expect(
       member.client.query(listMembers, { organizationId, paginationOpts: firstPage }),
-    ).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    ).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 });
 
@@ -91,8 +91,8 @@ test('organization administration is closed below admin, and an admin rename is 
   // it does not administer the tenant itself. Both ranks below admin are here so
   // the floor cannot slip a rank unnoticed.
   for (const { client } of [viewer, planner]) {
-    await expect(client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(client.mutation(addMember, { organizationId, userId: target.userId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(client.mutation(updateOrganization, { organizationId, name: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(client.mutation(addMember, { organizationId, userId: target.userId, role: 'viewer' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 
   // The success path: the trimmed name is what is stored, and the rename leaves
@@ -100,7 +100,7 @@ test('organization administration is closed below admin, and an admin rename is 
   await expect(admin.client.mutation(updateOrganization, { organizationId, name: '  Acme Logistics  ' })).resolves.toBeNull();
   // Slugs are deliberately immutable, and an omitted name is an accepted no-op.
   await expect(admin.client.mutation(updateOrganization, { organizationId })).resolves.toBeNull();
-  await expect(admin.client.mutation(updateOrganization, { organizationId, name: '   ' })).rejects.toMatchObject({ data: 'Invalid organization name' });
+  await expect(admin.client.mutation(updateOrganization, { organizationId, name: '   ' })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
 
   await t.run(async (ctx) => {
     expect(await ctx.db.get(organizationId)).toMatchObject({ name: 'Acme Logistics', slug: 'roles-org' });
@@ -139,8 +139,8 @@ test('membership administration is closed below admin, and an admin administers 
     { client: planner.client, ownMembershipId: plannerMembershipId },
   ]) {
     for (const membershipId of [ownMembershipId, targetMembershipId, adminMembershipId]) {
-      await expect(client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-      await expect(client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+      await expect(client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+      await expect(client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
     }
   }
   // Every refusal was total: no rank moved and no membership disappeared.
@@ -170,7 +170,7 @@ test('organization slugs must be 3–63 lowercase dash-separated segments', asyn
 
   for (const slug of ['ab', 'a'.repeat(64), 'Acme', 'has space', '-leading', 'trailing-', 'double--dash', 'under_score', 'acme!', '']) {
     await expect(owner.client.mutation(createOrganization, { name: 'Rejected', slug })).rejects.toMatchObject({
-      data: 'Invalid organization slug',
+      data: { code: 'organizationSlugInvalid' },
     });
   }
   // Both length bounds are inclusive, and digits are legal inside a segment.
@@ -193,13 +193,13 @@ test('every public organization function is opaque to unauthenticated callers', 
   // Identical error for a real and a fabricated id on every entry point: without
   // an identity nothing is reached, so nothing is disclosed.
   for (const id of [organizationId, missingOrganizationId]) {
-    await expect(t.query(getOrganization, { organizationId: id })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.query(listMembers, { organizationId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(updateOrganization, { organizationId: id, name: 'Nope' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(addMember, { organizationId: id, userId: member.userId, role: 'viewer' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.query(getOrganization, { organizationId: id })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.query(listMembers, { organizationId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(updateOrganization, { organizationId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(addMember, { organizationId: id, userId: member.userId, role: 'viewer' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   }
-  await expect(t.query(api.organizations.queries.listMyOrganizations, {})).rejects.toMatchObject({ data: UNAUTHENTICATED });
-  await expect(t.mutation(createOrganization, { name: 'Nope', slug: 'org-unauth-new' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+  await expect(t.query(api.organizations.queries.listMyOrganizations, {})).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+  await expect(t.mutation(createOrganization, { name: 'Nope', slug: 'org-unauth-new' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
 });
 
 test('duplicate memberships are rejected without disclosing the existing membership', async () => {
@@ -209,7 +209,7 @@ test('duplicate memberships are rejected without disclosing the existing members
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'duplicates-org' });
   await owner.client.mutation(addMember, { organizationId, userId: member.userId, role: 'viewer' });
 
-  await expect(owner.client.mutation(addMember, { organizationId, userId: member.userId, role: 'admin' })).rejects.toMatchObject({ data: CONFLICT });
+  await expect(owner.client.mutation(addMember, { organizationId, userId: member.userId, role: 'admin' })).rejects.toMatchObject({ data: { code: CONFLICT } });
 });
 
 test('the final owner cannot be demoted or removed, while a second owner can', async () => {
@@ -226,8 +226,8 @@ test('the final owner cannot be demoted or removed, while a second owner can', a
     return membership._id;
   });
 
-  await expect(firstOwner.client.mutation(changeMemberRole, { membershipId: firstMembershipId, role: 'admin' })).rejects.toMatchObject({ data: CONFLICT });
-  await expect(firstOwner.client.mutation(removeMember, { membershipId: firstMembershipId })).rejects.toMatchObject({ data: CONFLICT });
+  await expect(firstOwner.client.mutation(changeMemberRole, { membershipId: firstMembershipId, role: 'admin' })).rejects.toMatchObject({ data: { code: CONFLICT } });
+  await expect(firstOwner.client.mutation(removeMember, { membershipId: firstMembershipId })).rejects.toMatchObject({ data: { code: CONFLICT } });
 
   const secondMembershipId = await firstOwner.client.mutation(addMember, { organizationId, userId: secondOwner.userId, role: 'owner' });
   await firstOwner.client.mutation(changeMemberRole, { membershipId: secondMembershipId, role: 'admin' });
@@ -268,15 +268,15 @@ test('membership mutations are indistinguishable for unauthenticated probes (I9)
 
   // Unauthenticated: identical error for real and fabricated ids.
   for (const membershipId of [realMembershipId, fakeMembershipId]) {
-    await expect(t.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: UNAUTHENTICATED });
-    await expect(t.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: UNAUTHENTICATED });
+    await expect(t.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
+    await expect(t.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: { code: UNAUTHENTICATED } });
   }
 
   // Authenticated non-member: identical generic error for real and fabricated ids.
   const outsider = await provision(t, 'outsider');
   for (const membershipId of [realMembershipId, fakeMembershipId]) {
-    await expect(outsider.client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-    await expect(outsider.client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+    await expect(outsider.client.mutation(changeMemberRole, { membershipId, role: 'admin' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(outsider.client.mutation(removeMember, { membershipId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 
   // A target user id that no longer resolves is refused with the same generic
@@ -289,7 +289,7 @@ test('membership mutations are indistinguishable for unauthenticated probes (I9)
     await ctx.db.delete(id);
     return id;
   });
-  await expect(owner.client.mutation(addMember, { organizationId, userId: fakeUserId, role: 'viewer' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(owner.client.mutation(addMember, { organizationId, userId: fakeUserId, role: 'viewer' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   const roster = await owner.client.query(listMembers, { organizationId, paginationOpts: firstPage });
   expect(roster.page.map((entry) => entry.membership.role).sort()).toEqual(['owner', 'viewer']);
 });
@@ -351,12 +351,12 @@ test('only an owner can grant the owner role', async () => {
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'grant-owner-org' });
   await owner.client.mutation(addMember, { organizationId, userId: admin.userId, role: 'admin' });
 
-  await expect(admin.client.mutation(addMember, { organizationId, userId: target.userId, role: 'owner' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(admin.client.mutation(addMember, { organizationId, userId: target.userId, role: 'owner' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   const targetMembershipId = await owner.client.mutation(addMember, { organizationId, userId: target.userId, role: 'viewer' });
 
   // The changeMemberRole path enforces the same policy: admins can neither
   // promote to owner nor touch an existing owner's membership.
-  await expect(admin.client.mutation(changeMemberRole, { membershipId: targetMembershipId, role: 'owner' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(admin.client.mutation(changeMemberRole, { membershipId: targetMembershipId, role: 'owner' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   const ownerMembershipId = await t.run(async (ctx) => {
     const membership = await ctx.db
       .query('organizationMemberships')
@@ -365,8 +365,8 @@ test('only an owner can grant the owner role', async () => {
     if (membership === null) throw new Error('Expected owner membership');
     return membership._id;
   });
-  await expect(admin.client.mutation(changeMemberRole, { membershipId: ownerMembershipId, role: 'admin' })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
-  await expect(admin.client.mutation(removeMember, { membershipId: ownerMembershipId })).rejects.toMatchObject({ data: NOT_FOUND_OR_INACCESSIBLE });
+  await expect(admin.client.mutation(changeMemberRole, { membershipId: ownerMembershipId, role: 'admin' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  await expect(admin.client.mutation(removeMember, { membershipId: ownerMembershipId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
 
   await expect(owner.client.mutation(changeMemberRole, { membershipId: targetMembershipId, role: 'owner' })).resolves.toBeNull();
 });

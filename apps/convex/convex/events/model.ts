@@ -91,7 +91,7 @@ export async function createEventFromRecipe(
   // created from a superseded (retired) or unfinished (draft) rule set, while
   // existing events keep validating against whichever version they were born from.
   if (version.status !== 'published' || recipe.status === 'archived') {
-    return invalidInput('Events require a published version of an active recipe');
+    return invalidInput('eventRecipeUnavailable', 'Events require a published version of an active recipe');
   }
   const name = validateEntityName(args.name, 'event');
   validateEventDates(args.startsAt, args.endsAt);
@@ -192,14 +192,14 @@ export async function validateEventAgainstRecipe<Value extends EventFieldValue |
     const recipeField = byDefinition.get(item.fieldDefinitionId);
     // A definition this version does not compose — including one belonging to
     // another tenant — is refused here, once, for every write path.
-    if (recipeField === undefined) return invalidInput('Event value references an unknown recipe field');
-    if (resolved.has(item.fieldDefinitionId)) return invalidInput('Event values must not repeat field definitions');
+    if (recipeField === undefined) return invalidInput('eventFieldUnknown', 'Event value references an unknown recipe field');
+    if (resolved.has(item.fieldDefinitionId)) return invalidInput('eventFieldDuplicate', 'Event values must not repeat field definitions');
     resolved.set(item.fieldDefinitionId, { recipeField, value: item.value });
 
     const value: EventFieldValue | null = item.value;
     if (value === null) {
       // Clearing is the only meaning of null, and a required field cannot be empty.
-      if (recipeField.required) return invalidInput('Required event fields cannot be cleared');
+      if (recipeField.required) return invalidInput('eventFieldRequired', 'Required event fields cannot be cleared');
       continue;
     }
     // An unchanged value is not a write, so it is not re-judged (see above).
@@ -210,7 +210,7 @@ export async function validateEventAgainstRecipe<Value extends EventFieldValue |
     if (value.kind === 'location') await assertUsableLocation(ctx, value.locationId, version.organizationId);
   }
   if (requireAll && recipeFieldRows.some((field) => field.required && !resolved.has(field.fieldDefinitionId))) {
-    return invalidInput('Required event fields must have a value');
+    return invalidInput('eventFieldRequired', 'Required event fields must have a value');
   }
   return resolved;
 }
@@ -519,9 +519,9 @@ function withRecipeDefaults(
 function validateEventDates(startsAt: number, endsAt: number | undefined): void {
   // Convex accepts NaN/Infinity in v.number(); an unorderable bound silently
   // passes the comparison below, so it must never be stored.
-  if (!isFiniteNumber(startsAt)) return invalidInput('Event start must be a finite timestamp');
-  if (endsAt !== undefined && !isFiniteNumber(endsAt)) return invalidInput('Event end must be a finite timestamp');
-  if (endsAt !== undefined && endsAt < startsAt) return invalidInput('Event end must not precede its start');
+  if (!isFiniteNumber(startsAt)) return invalidInput('eventStartInvalid', 'Event start must be a finite timestamp');
+  if (endsAt !== undefined && !isFiniteNumber(endsAt)) return invalidInput('eventEndInvalid', 'Event end must be a finite timestamp');
+  if (endsAt !== undefined && endsAt < startsAt) return invalidInput('eventDateRangeInvalid', 'Event end must not precede its start');
 }
 
 /**
@@ -538,7 +538,7 @@ function validateEventDates(startsAt: number, endsAt: number | undefined): void 
  * so there is exactly one definition of "writable event" in the codebase.
  */
 export function assertProjectAcceptsEventWrites(project: Doc<'projects'>): void {
-  if (project.status === 'archived') return invalidInput('Archived projects are read-only for their events');
+  if (project.status === 'archived') return invalidInput('eventProjectReadOnly', 'Archived projects are read-only for their events');
 }
 
 /**
@@ -550,7 +550,7 @@ export function assertProjectAcceptsEventWrites(project: Doc<'projects'>): void 
  */
 function assertProjectAcceptsNewEvents(project: Doc<'projects'>): void {
   if (project.status === 'archived' || project.status === 'completed') {
-    return invalidInput('Only draft and active projects can receive new events');
+    return invalidInput('eventProjectUnavailable', 'Only draft and active projects can receive new events');
   }
 }
 
@@ -558,12 +558,12 @@ function assertProjectAcceptsNewEvents(project: Doc<'projects'>): void {
 export function assertEventWritable(event: Doc<'events'>, project: Doc<'projects'>): void {
   assertProjectAcceptsEventWrites(project);
   if (event.status === 'completed' || event.status === 'cancelled') {
-    return invalidInput('Completed and cancelled events are read-only');
+    return invalidInput('eventReadOnly', 'Completed and cancelled events are read-only');
   }
 }
 
 function assertEventTransition(current: EventStatus, next: EventStatus): void {
-  if (current === 'completed' || current === 'cancelled') return invalidInput('Completed and cancelled events are terminal');
+  if (current === 'completed' || current === 'cancelled') return invalidInput('eventTerminal', 'Completed and cancelled events are terminal');
   // Cancellation is reachable from every non-terminal state; the forward path is
   // strictly one step at a time, so skipping and reversing are both refused —
   // and so is re-declaring the current status, since no state succeeds itself.
@@ -574,5 +574,5 @@ function assertEventTransition(current: EventStatus, next: EventStatus): void {
     confirmed: 'active',
     active: 'completed',
   };
-  if (nextStatus[current] !== next) return invalidInput('Event status transition is not permitted');
+  if (nextStatus[current] !== next) return invalidInput('eventStatusTransitionInvalid', 'Event status transition is not permitted');
 }

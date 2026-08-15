@@ -135,21 +135,21 @@ export function validateFieldValueAgainstConfig(config: FieldConfig, value: Fiel
       if (config.kind !== 'number') return kindMismatch();
       // Convex accepts NaN/Infinity in v.number(); an unorderable value would
       // silently pass every bound comparison below.
-      if (!isFiniteNumber(value.value)) return invalidInput('Field value must be a finite number');
-      if (config.integer === true && !Number.isInteger(value.value)) return invalidInput('Field value must be an integer');
+      if (!isFiniteNumber(value.value)) return invalidInput('fieldValueInvalid', 'Field value must be a finite number');
+      if (config.integer === true && !Number.isInteger(value.value)) return invalidInput('fieldValueInvalid', 'Field value must be an integer');
       return assertNumericBounds(value.value, config.min, config.max);
     case 'datetime':
       if (config.kind !== 'datetime') return kindMismatch();
-      if (!isFiniteNumber(value.value)) return invalidInput('Field value must be a finite number');
+      if (!isFiniteNumber(value.value)) return invalidInput('fieldValueInvalid', 'Field value must be a finite number');
       return assertNumericBounds(value.value, config.min, config.max);
     case 'date':
       if (config.kind !== 'date') return kindMismatch();
-      if (!isValidDateString(value.value)) return invalidInput('Field value must be a YYYY-MM-DD calendar date');
+      if (!isValidDateString(value.value)) return invalidInput('fieldValueInvalid', 'Field value must be a YYYY-MM-DD calendar date');
       // Zero-padded ISO dates order correctly under lexicographic comparison.
       return assertOrderedBounds(value.value, config.min, config.max);
     case 'time':
       if (config.kind !== 'time') return kindMismatch();
-      if (!isValidTimeString(value.value)) return invalidInput('Field value must be an HH:mm wall-clock time');
+      if (!isValidTimeString(value.value)) return invalidInput('fieldValueInvalid', 'Field value must be an HH:mm wall-clock time');
       // Zero-padded HH:mm orders correctly under lexicographic comparison.
       return assertOrderedBounds(value.value, config.min, config.max);
     case 'select':
@@ -160,13 +160,13 @@ export function validateFieldValueAgainstConfig(config: FieldConfig, value: Fiel
       if (config.kind !== 'multiSelect') return kindMismatch();
       const selected = new Set(value.optionIds);
       // A repeated id would inflate the selection count against the bounds.
-      if (selected.size !== value.optionIds.length) return invalidInput('Field value must not repeat select options');
+      if (selected.size !== value.optionIds.length) return invalidInput('fieldValueOptionInvalid', 'Field value must not repeat select options');
       if (value.optionIds.some((optionId) => !config.options.some((option) => option.id === optionId))) return unknownOption();
       if (config.minSelections !== undefined && value.optionIds.length < config.minSelections) {
-        return invalidInput('Field value selects fewer options than the field configuration allows');
+        return invalidInput('fieldValueRangeInvalid', 'Field value selects fewer options than the field configuration allows');
       }
       if (config.maxSelections !== undefined && value.optionIds.length > config.maxSelections) {
-        return invalidInput('Field value selects more options than the field configuration allows');
+        return invalidInput('fieldValueRangeInvalid', 'Field value selects more options than the field configuration allows');
       }
       return;
     }
@@ -174,18 +174,18 @@ export function validateFieldValueAgainstConfig(config: FieldConfig, value: Fiel
 }
 
 function kindMismatch(): never {
-  return invalidInput('Field value kind must match its field configuration');
+  return invalidInput('fieldValueKindMismatch', 'Field value kind must match its field configuration');
 }
 
 function unknownOption(): never {
-  return invalidInput('Field value must reference an option defined by the field configuration');
+  return invalidInput('fieldValueOptionInvalid', 'Field value must reference an option defined by the field configuration');
 }
 
 function assertLength(value: string, minLength: number | undefined, maxLength: number | undefined, absoluteMaximum: number): void {
-  if (minLength !== undefined && value.length < minLength) return invalidInput('Field value is shorter than the configured minimum length');
-  if (maxLength !== undefined && value.length > maxLength) return invalidInput('Field value is longer than the configured maximum length');
+  if (minLength !== undefined && value.length < minLength) return invalidInput('fieldValueLengthInvalid', 'Field value is shorter than the configured minimum length');
+  if (maxLength !== undefined && value.length > maxLength) return invalidInput('fieldValueLengthInvalid', 'Field value is longer than the configured maximum length');
   // The configured bound is optional; this one is not (see the caps above).
-  if (value.length > absoluteMaximum) return invalidInput(`Field value must not exceed ${absoluteMaximum} characters`);
+  if (value.length > absoluteMaximum) return invalidInput('fieldValueLengthInvalid', `Field value must not exceed ${absoluteMaximum} characters`);
 }
 
 function assertNumericBounds(value: number, min: number | undefined, max: number | undefined): void {
@@ -199,9 +199,9 @@ function assertOrderedBounds(value: string, min: string | undefined, max: string
 }
 
 function belowMinimum(): never {
-  return invalidInput('Field value is below the configured minimum');
+  return invalidInput('fieldValueRangeInvalid', 'Field value is below the configured minimum');
 }
 
 function aboveMaximum(): never {
-  return invalidInput('Field value is above the configured maximum');
+  return invalidInput('fieldValueRangeInvalid', 'Field value is above the configured maximum');
 }

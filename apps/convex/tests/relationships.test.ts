@@ -24,8 +24,8 @@ const listOutgoingRelationships = api.relationships.queries.listOutgoingRelation
 const listIncomingRelationships = api.relationships.queries.listIncomingRelationships;
 
 const issuer = 'https://example.clerk.accounts.dev';
-const inaccessible = 'Not found or inaccessible';
-const unauthenticated = 'Unauthenticated';
+const inaccessible = 'notFoundOrInaccessible';
+const unauthenticated = 'unauthenticated';
 const firstPage = { numItems: 10, cursor: null };
 type SchemaTest = ReturnType<typeof convexTest<(typeof schema)['tables']>>;
 type RelationshipType = Doc<'eventRelationships'>['type'];
@@ -128,14 +128,14 @@ test('rejects cross-org, fabricated, self, duplicate links while preserving dist
 
   // Both orderings: the foreign Event resolves in a different position each way,
   // and the tenancy check must not depend on which side reaches it first.
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: foreignEvent, type: 'dependsOn' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: foreignEvent, targetEventId: source, type: 'dependsOn' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: missing, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: missing, type: 'dependsOn' })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: source, type: 'dependsOn' })).rejects.toMatchObject({ data: 'An Event cannot relate to itself' });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: foreignEvent, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: foreignEvent, targetEventId: source, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: missing, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: missing, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: source, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: 'relationshipSelfReference' } });
 
   await owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'dependsOn' });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: 'Conflict' });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: 'conflict' } });
   await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'follows' })).resolves.toBeDefined();
   await expect(owner.client.mutation(createRelationship, { sourceEventId: target, targetEventId: source, type: 'dependsOn' })).resolves.toBeDefined();
 });
@@ -148,13 +148,13 @@ test('all public functions authenticate first and enforce planner authoring whil
   const missingEvent = await missingEventId(t, organizationId, projectId, recipeId, recipeVersionId);
   const missingRelationship = await missingRelationshipId(t, organizationId, source, target);
   for (const eventId of [source, missingEvent]) {
-    await expect(t.mutation(createRelationship, { sourceEventId: eventId, targetEventId: target, type: 'follows' })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.query(listOutgoingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.query(listIncomingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(createRelationship, { sourceEventId: eventId, targetEventId: target, type: 'follows' })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.query(listOutgoingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.query(listIncomingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
-  await expect(t.mutation(createRelationship, { sourceEventId: source, targetEventId: missingEvent, type: 'follows' })).rejects.toMatchObject({ data: unauthenticated });
+  await expect(t.mutation(createRelationship, { sourceEventId: source, targetEventId: missingEvent, type: 'follows' })).rejects.toMatchObject({ data: { code: unauthenticated } });
   for (const id of [relationshipId, missingRelationship]) {
-    await expect(t.mutation(removeRelationship, { relationshipId: id })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.mutation(removeRelationship, { relationshipId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
 
   // A provisioned stranger is not a weaker case than an anonymous one: the read
@@ -162,8 +162,8 @@ test('all public functions authenticate first and enforce planner authoring whil
   // fabricated one alike (I1/I9).
   const stranger = await provision(t, 'relationships-stranger');
   for (const eventId of [source, target, missingEvent]) {
-    await expect(stranger.client.query(listOutgoingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
-    await expect(stranger.client.query(listIncomingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+    await expect(stranger.client.query(listOutgoingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(stranger.client.query(listIncomingRelationships, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
 
   const viewer = await provision(t, 'relationships-viewer');
@@ -180,11 +180,11 @@ test('all public functions authenticate first and enforce planner authoring whil
   expect(viewerIncoming.page.map((row) => [row._id, row.type, row.counterpartEvent._id])).toEqual([[relationshipId, 'relatedTo', source]]);
   // A member with the read floor still cannot name an Event that does not exist:
   // fabricated and foreign stay indistinguishable on the read path (I9).
-  await expect(viewer.client.query(listOutgoingRelationships, { eventId: missingEvent, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
-  await expect(viewer.client.query(listIncomingRelationships, { eventId: missingEvent, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+  await expect(viewer.client.query(listOutgoingRelationships, { eventId: missingEvent, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(viewer.client.query(listIncomingRelationships, { eventId: missingEvent, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
   for (const member of [viewer, operator]) {
-    await expect(member.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'follows' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(member.client.mutation(removeRelationship, { relationshipId })).rejects.toMatchObject({ data: inaccessible });
+    await expect(member.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'follows' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(removeRelationship, { relationshipId })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   await expect(planner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: target, type: 'follows' })).resolves.toBeDefined();
   // Above the floor works too, explicitly for removal: planner is a floor, not a
@@ -221,8 +221,8 @@ test('directional queries paginate and removal audits then deletes the link', as
   const afterRemoval = await owner.client.query(listIncomingRelationships, { eventId: firstTarget, paginationOpts: firstPage });
   expect(afterRemoval.page.map((row) => row._id)).not.toContain(firstId);
   const missing = await missingRelationshipId(t, organizationId, source, firstTarget);
-  await expect(owner.client.mutation(removeRelationship, { relationshipId: missing })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(removeRelationship, { relationshipId: firstId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(owner.client.mutation(removeRelationship, { relationshipId: missing })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(removeRelationship, { relationshipId: firstId })).rejects.toMatchObject({ data: { code: inaccessible } });
   const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Foreign removal', slug: 'relationships-foreign-removal' });
   const foreignRelationshipId = await t.run((ctx) =>
     ctx.db.insert('eventRelationships', {
@@ -238,8 +238,8 @@ test('directional queries paginate and removal audits then deletes the link', as
   // with the Events it joins. Authorization follows the Event graph, so it is
   // refused even for a planner of the Events' own organization (I4) — and the
   // owner, who *is* a member of the foreign organization, fares no better.
-  await expect(member.client.mutation(removeRelationship, { relationshipId: foreignRelationshipId })).rejects.toMatchObject({ data: inaccessible });
-  await expect(owner.client.mutation(removeRelationship, { relationshipId: foreignRelationshipId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(member.client.mutation(removeRelationship, { relationshipId: foreignRelationshipId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.client.mutation(removeRelationship, { relationshipId: foreignRelationshipId })).rejects.toMatchObject({ data: { code: inaccessible } });
   // On the read side the same row is skipped rather than fatal: one bad row must
   // not make the whole directional list unreadable, and the healthy links still
   // come back.
@@ -278,10 +278,10 @@ test('F1 regression: the archival freeze reaches relationship writes through eve
   for (const status of ['planned', 'confirmed', 'active', 'completed'] as const) {
     await owner.client.mutation(changeEventStatus, { eventId: completed, status });
   }
-  const terminal = 'Completed and cancelled events are read-only';
+  const terminal = 'eventReadOnly';
   for (const [eventId, relationshipId] of [[cancelled, cancelledLink], [completed, completedLink]] as const) {
-    await expect(owner.client.mutation(createRelationship, { sourceEventId: eventId, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: terminal });
-    await expect(owner.client.mutation(removeRelationship, { relationshipId })).rejects.toMatchObject({ data: terminal });
+    await expect(owner.client.mutation(createRelationship, { sourceEventId: eventId, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: terminal } });
+    await expect(owner.client.mutation(removeRelationship, { relationshipId })).rejects.toMatchObject({ data: { code: terminal } });
   }
   // A terminal Event remains a legal TARGET: recording that live work follows the
   // arrival that already happened writes nothing to the arrival.
@@ -292,10 +292,10 @@ test('F1 regression: the archival freeze reaches relationship writes through eve
   const frozenEvent = await createEvent(archivedProjectId);
   const frozenLink = await owner.client.mutation(createRelationship, { sourceEventId: frozenEvent, targetEventId: target, type: 'relatedTo' });
   await owner.client.mutation(archiveProject, { projectId: archivedProjectId });
-  const frozen = 'Archived projects are read-only for their events';
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: frozenEvent, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: frozen });
-  await expect(owner.client.mutation(removeRelationship, { relationshipId: frozenLink })).rejects.toMatchObject({ data: frozen });
-  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: frozenEvent, type: 'dependsOn' })).rejects.toMatchObject({ data: frozen });
+  const frozen = 'eventProjectReadOnly';
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: frozenEvent, targetEventId: target, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: frozen } });
+  await expect(owner.client.mutation(removeRelationship, { relationshipId: frozenLink })).rejects.toMatchObject({ data: { code: frozen } });
+  await expect(owner.client.mutation(createRelationship, { sourceEventId: source, targetEventId: frozenEvent, type: 'dependsOn' })).rejects.toMatchObject({ data: { code: frozen } });
 
   // Frozen means unwritable, not unreadable, and healthy Events are untouched.
   await expect(owner.client.query(listOutgoingRelationships, { eventId: frozenEvent, paginationOpts: firstPage })).resolves.toMatchObject({ isDone: true });

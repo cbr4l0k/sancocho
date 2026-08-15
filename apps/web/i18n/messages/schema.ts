@@ -209,6 +209,15 @@ export type MessageSchema = {
   errors: {
     generic: string;
     notFound: string;
+    unauthenticated: string;
+    conflict: string;
+    entityNameInvalid: string;
+    organizationSlugInvalid: string;
+    projectDescriptionTooLong: string;
+    projectArchived: string;
+    projectArchiveRequired: string;
+    projectDatesInvalid: string;
+    relationshipSelfReference: string;
     fieldKeyInvalid: string;
     fieldKeyTaken: string;
     fieldKeyBuiltin: string;
@@ -217,11 +226,29 @@ export type MessageSchema = {
     fieldHistoricalFrozen: string;
     fieldArchived: string;
     fieldDeleteBlocked: string;
+    fieldLookupTooLarge: string;
     fieldConfigInvalid: string;
+    fieldValueInvalid: string;
     recipeKeyInvalid: string;
     recipeDescriptionTooLong: string;
     recipeArchived: string;
+    recipePublishedVersionRequired: string;
+    recipeVersionNotDraft: string;
     recipeDraftInvalid: string;
+    eventRecipeUnavailable: string;
+    eventFieldsInvalid: string;
+    eventDatesInvalid: string;
+    eventProjectReadOnly: string;
+    eventProjectUnavailable: string;
+    eventReadOnly: string;
+    eventTerminal: string;
+    eventStatusTransitionInvalid: string;
+    locationArchived: string;
+    locationArchiveRequired: string;
+    locationDeleteBlocked: string;
+    locationAddressTooLong: string;
+    locationCoordinatesInvalid: string;
+    auditInvalid: string;
   };
   nav: {
     home: string;

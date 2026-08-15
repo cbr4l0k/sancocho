@@ -33,8 +33,8 @@ const getEvent = api.events.queries.getEvent;
 const listProjectEvents = api.events.queries.listProjectEvents;
 
 const issuer = 'https://example.clerk.accounts.dev';
-const inaccessible = 'Not found or inaccessible';
-const unauthenticated = 'Unauthenticated';
+const inaccessible = 'notFoundOrInaccessible';
+const unauthenticated = 'unauthenticated';
 const firstPage = { numItems: 10, cursor: null };
 
 /** The stored typed-value union, reused for the submission tables below. */
@@ -117,12 +117,12 @@ test('creation is gated on version status, recipe and project lifecycle, and ten
   const draftVersionId = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
   await expect(
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
-  ).rejects.toMatchObject({ data: 'Events require a published version of an active recipe' });
+  ).rejects.toMatchObject({ data: { code: 'eventRecipeUnavailable' } });
 
   // Publishing the clone retires v1; a retired version stays readable and keeps
   // validating its own events, but is no longer a source of new ones.
   await owner.client.mutation(publishRecipeVersion, { recipeVersionId: draftVersionId });
-  await expect(createEvent(values)).rejects.toMatchObject({ data: 'Events require a published version of an active recipe' });
+  await expect(createEvent(values)).rejects.toMatchObject({ data: { code: 'eventRecipeUnavailable' } });
   await expect(
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
   ).resolves.toBeDefined();
@@ -131,7 +131,7 @@ test('creation is gated on version status, recipe and project lifecycle, and ten
   await owner.client.mutation(archiveRecipe, { recipeId });
   await expect(
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
-  ).rejects.toMatchObject({ data: 'Events require a published version of an active recipe' });
+  ).rejects.toMatchObject({ data: { code: 'eventRecipeUnavailable' } });
 
   // A recipe version belonging to another tenant is opaque even to a member of
   // both organizations: the project and the version must agree (I1/I9).
@@ -148,7 +148,7 @@ test('creation is gated on version status, recipe and project lifecycle, and ten
   await owner.client.mutation(publishRecipeVersion, { recipeVersionId: foreignVersionId });
   await expect(
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: foreignVersionId, name: 'Arrival', startsAt: 1000, values: [] }),
-  ).rejects.toMatchObject({ data: inaccessible });
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // Project lifecycle: a completed project takes no new events, an archived one
   // takes none either (and freezes the ones it has — see the F2 regression test).
@@ -159,7 +159,7 @@ test('creation is gated on version status, recipe and project lifecycle, and ten
   for (const closedProjectId of [completedProjectId, archivedProjectId]) {
     await expect(
       owner.client.mutation(createEventFromRecipe, { projectId: closedProjectId, recipeVersionId: versionId, name: 'Arrival', startsAt: 1000, values }),
-    ).rejects.toMatchObject({ data: 'Only draft and active projects can receive new events' });
+    ).rejects.toMatchObject({ data: { code: 'eventProjectUnavailable' } });
   }
 
   await t.run(async (ctx) => {
@@ -193,38 +193,38 @@ test('every public event function is opaque to unauthenticated, fabricated, fore
 
   // Unauthenticated: identical error for real and fabricated ids, on all six.
   for (const id of [eventId, missingEventId]) {
-    await expect(t.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(updateEventCoreFields, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(updateEventFields, { eventId: id, values: [] })).rejects.toMatchObject({ data: unauthenticated });
-    await expect(t.mutation(changeEventStatus, { eventId: id, status: 'planned' })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(updateEventCoreFields, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(updateEventFields, { eventId: id, values: [] })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.mutation(changeEventStatus, { eventId: id, status: 'planned' })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
   for (const id of [projectId, missingProjectId]) {
-    await expect(t.query(listProjectEvents, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: unauthenticated });
+    await expect(t.query(listProjectEvents, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(
       t.mutation(createEventFromRecipe, { projectId: id, recipeVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
-    ).rejects.toMatchObject({ data: unauthenticated });
+    ).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
 
   // A user with no membership anywhere gets the same generic error for a real
   // event as for one that never existed (I9).
   for (const id of [eventId, missingEventId]) {
-    await expect(outsider.client.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: inaccessible });
-    await expect(outsider.client.mutation(updateEventCoreFields, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(outsider.client.mutation(updateEventFields, { eventId: id, values: [] })).rejects.toMatchObject({ data: inaccessible });
-    await expect(outsider.client.mutation(changeEventStatus, { eventId: id, status: 'planned' })).rejects.toMatchObject({ data: inaccessible });
+    await expect(outsider.client.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(outsider.client.mutation(updateEventCoreFields, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(outsider.client.mutation(updateEventFields, { eventId: id, values: [] })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(outsider.client.mutation(changeEventStatus, { eventId: id, status: 'planned' })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   for (const id of [projectId, missingProjectId]) {
-    await expect(outsider.client.query(listProjectEvents, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+    await expect(outsider.client.query(listProjectEvents, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(
       outsider.client.mutation(createEventFromRecipe, { projectId: id, recipeVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
-    ).rejects.toMatchObject({ data: inaccessible });
+    ).rejects.toMatchObject({ data: { code: inaccessible } });
   }
 
   // A member of another organization is exactly as blind as a stranger.
   const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Other', slug: 'events-foreign-probe' });
   await owner.client.mutation(addMember, { organizationId: foreignOrganizationId, userId: outsider.userId, role: 'owner' });
-  await expect(outsider.client.query(getEvent, { eventId })).rejects.toMatchObject({ data: inaccessible });
-  await expect(outsider.client.query(listProjectEvents, { projectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+  await expect(outsider.client.query(getEvent, { eventId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.client.query(listProjectEvents, { projectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('event authoring is planner+, running an event is open to operators, and reading is open to any member', async () => {
@@ -242,9 +242,9 @@ test('event authoring is planner+, running an event is open to operators, and re
   for (const { client } of [viewer, operator]) {
     await expect(
       client.mutation(createEventFromRecipe, { projectId, recipeVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
-    ).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: inaccessible });
-    await expect(client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: requiredCode.fieldDefinitionId, value: { kind: 'text', value: 'ZZ' } }] })).rejects.toMatchObject({ data: inaccessible });
+    ).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: requiredCode.fieldDefinitionId, value: { kind: 'text', value: 'ZZ' } }] })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
 
   // Reading stays open to any member, so the rejections above are a floor on
@@ -259,7 +259,7 @@ test('event authoring is planner+, running an event is open to operators, and re
 
   // Running an event is one rank lower on purpose: an operator advances status
   // without being able to change what the event says it is. A viewer still cannot.
-  await expect(viewer.client.mutation(changeEventStatus, { eventId, status: 'planned' })).rejects.toMatchObject({ data: inaccessible });
+  await expect(viewer.client.mutation(changeEventStatus, { eventId, status: 'planned' })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(operator.client.mutation(changeEventStatus, { eventId, status: 'planned' })).resolves.toBeNull();
   await expect(operator.client.mutation(changeEventStatus, { eventId, status: 'confirmed' })).resolves.toBeNull();
 
@@ -282,12 +282,12 @@ test('the value gate rejects every malformed, out-of-bounds, and cross-tenant su
     return id;
   });
 
-  const unknownField = 'Event value references an unknown recipe field';
-  const kindMismatch = 'Field value kind must match its field configuration';
-  const unknownOption = 'Field value must reference an option defined by the field configuration';
-  const notFinite = 'Field value must be a finite number';
-  const belowMinimum = 'Field value is below the configured minimum';
-  const aboveMaximum = 'Field value is above the configured maximum';
+  const unknownField = 'eventFieldUnknown';
+  const kindMismatch = 'fieldValueKindMismatch';
+  const unknownOption = 'fieldValueOptionInvalid';
+  const notFinite = 'fieldValueInvalid';
+  const belowMinimum = 'fieldValueRangeInvalid';
+  const aboveMaximum = 'fieldValueRangeInvalid';
 
   const rejections: { value: SubmittedValue; error: string }[] = [
     // Unknown fields: never composed, fabricated, and another tenant's — one error.
@@ -300,28 +300,28 @@ test('the value gate rejects every malformed, out-of-bounds, and cross-tenant su
     // select / multiSelect.
     { value: { fieldDefinitionId: definitions.tier, value: { kind: 'select', optionId: 'bronze' } }, error: unknownOption },
     { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: ['bronze'] } }, error: unknownOption },
-    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: ['wifi', 'wifi'] } }, error: 'Field value must not repeat select options' },
-    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: [] } }, error: 'Field value selects fewer options than the field configuration allows' },
-    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: ['wifi', 'water', 'snack'] } }, error: 'Field value selects more options than the field configuration allows' },
+    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: ['wifi', 'wifi'] } }, error: 'fieldValueOptionInvalid' },
+    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: [] } }, error: 'fieldValueRangeInvalid' },
+    { value: { fieldDefinitionId: definitions.extras, value: { kind: 'multiSelect', optionIds: ['wifi', 'water', 'snack'] } }, error: 'fieldValueRangeInvalid' },
     // number: finiteness before bounds, integrality before bounds.
     { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: Number.NaN } }, error: notFinite },
     { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: Number.POSITIVE_INFINITY } }, error: notFinite },
-    { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 2.5 } }, error: 'Field value must be an integer' },
+    { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 2.5 } }, error: 'fieldValueInvalid' },
     { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 0 } }, error: belowMinimum },
     { value: { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 11 } }, error: aboveMaximum },
     // text / longText lengths.
-    { value: { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'A' } }, error: 'Field value is shorter than the configured minimum length' },
-    { value: { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'TOOLONG' } }, error: 'Field value is longer than the configured maximum length' },
-    { value: { fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'ab' } }, error: 'Field value is shorter than the configured minimum length' },
-    { value: { fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'x'.repeat(11) } }, error: 'Field value is longer than the configured maximum length' },
+    { value: { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'A' } }, error: 'fieldValueLengthInvalid' },
+    { value: { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'TOOLONG' } }, error: 'fieldValueLengthInvalid' },
+    { value: { fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'ab' } }, error: 'fieldValueLengthInvalid' },
+    { value: { fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'x'.repeat(11) } }, error: 'fieldValueLengthInvalid' },
     // date: format, then calendar validity, then bounds.
-    { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2026-1-1' } }, error: 'Field value must be a YYYY-MM-DD calendar date' },
-    { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2025-02-30' } }, error: 'Field value must be a YYYY-MM-DD calendar date' },
+    { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2026-1-1' } }, error: 'fieldValueInvalid' },
+    { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2025-02-30' } }, error: 'fieldValueInvalid' },
     { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2025-12-31' } }, error: belowMinimum },
     { value: { fieldDefinitionId: definitions.day, value: { kind: 'date', value: '2027-01-01' } }, error: aboveMaximum },
     // time: 24:00 and 12:60 are well-formed strings but not wall-clock times.
-    { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '24:00' } }, error: 'Field value must be an HH:mm wall-clock time' },
-    { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '12:60' } }, error: 'Field value must be an HH:mm wall-clock time' },
+    { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '24:00' } }, error: 'fieldValueInvalid' },
+    { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '12:60' } }, error: 'fieldValueInvalid' },
     { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '05:59' } }, error: belowMinimum },
     { value: { fieldDefinitionId: definitions.pickup, value: { kind: 'time', value: '22:01' } }, error: aboveMaximum },
     // datetime is an absolute timestamp, so it gets the same finiteness rule.
@@ -337,12 +337,12 @@ test('the value gate rejects every malformed, out-of-bounds, and cross-tenant su
     // Cases about the required field itself stand alone; everything else rides
     // alongside a valid required value so the missing-required rule never fires first.
     const values = value.fieldDefinitionId === definitions.code ? [value] : [requiredCode, value];
-    await expect(createEvent(values)).rejects.toMatchObject({ data: error });
+    await expect(createEvent(values)).rejects.toMatchObject({ data: { code: error } });
   }
 
   // Missing required value and a repeated field definition.
-  await expect(createEvent([])).rejects.toMatchObject({ data: 'Required event fields must have a value' });
-  await expect(createEvent([requiredCode, requiredCode])).rejects.toMatchObject({ data: 'Event values must not repeat field definitions' });
+  await expect(createEvent([])).rejects.toMatchObject({ data: { code: 'eventFieldRequired' } });
+  await expect(createEvent([requiredCode, requiredCode])).rejects.toMatchObject({ data: { code: 'eventFieldDuplicate' } });
 
   // The whole matrix accepted at its boundaries, in one event.
   const eventId = await createEvent([
@@ -405,14 +405,14 @@ test('core event fields are validated on the merged pair, trimmed, and clearable
     });
 
   for (const startsAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-    await expect(create({ startsAt })).rejects.toMatchObject({ data: 'Event start must be a finite timestamp' });
+    await expect(create({ startsAt })).rejects.toMatchObject({ data: { code: 'eventStartInvalid' } });
   }
   for (const endsAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-    await expect(create({ endsAt })).rejects.toMatchObject({ data: 'Event end must be a finite timestamp' });
+    await expect(create({ endsAt })).rejects.toMatchObject({ data: { code: 'eventEndInvalid' } });
   }
-  await expect(create({ startsAt: 2000, endsAt: 1000 })).rejects.toMatchObject({ data: 'Event end must not precede its start' });
-  await expect(create({ name: '   ' })).rejects.toMatchObject({ data: 'Invalid event name' });
-  await expect(create({ name: 'x'.repeat(201) })).rejects.toMatchObject({ data: 'Invalid event name' });
+  await expect(create({ startsAt: 2000, endsAt: 1000 })).rejects.toMatchObject({ data: { code: 'eventDateRangeInvalid' } });
+  await expect(create({ name: '   ' })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
+  await expect(create({ name: 'x'.repeat(201) })).rejects.toMatchObject({ data: { code: 'entityNameInvalid' } });
 
   // The trimmed name is what is stored, not the raw argument.
   const eventId = await create({ name: '  Arrival  ', startsAt: 1000, endsAt: 2000 });
@@ -421,9 +421,9 @@ test('core event fields are validated on the merged pair, trimmed, and clearable
 
   // Ordering is judged on the merged pair: moving only the start past the stored
   // end is the same violation as submitting an inverted pair.
-  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: 3000 })).rejects.toMatchObject({ data: 'Event end must not precede its start' });
-  await expect(owner.client.mutation(updateEventCoreFields, { eventId, endsAt: 500 })).rejects.toMatchObject({ data: 'Event end must not precede its start' });
-  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: Number.NaN })).rejects.toMatchObject({ data: 'Event start must be a finite timestamp' });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: 3000 })).rejects.toMatchObject({ data: { code: 'eventDateRangeInvalid' } });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, endsAt: 500 })).rejects.toMatchObject({ data: { code: 'eventDateRangeInvalid' } });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: Number.NaN })).rejects.toMatchObject({ data: { code: 'eventStartInvalid' } });
   expect(await storedEvent()).toMatchObject({ startsAt: 1000, endsAt: 2000 });
 
   await expect(owner.client.mutation(updateEventCoreFields, { eventId, name: '  Departure  ', startsAt: 1500, endsAt: 2500 })).resolves.toBeNull();
@@ -474,7 +474,7 @@ test('historical integrity: an event keeps validating against its own version af
   // maximum of 10, and 8 (rejected by v2) was accepted above.
   await expect(
     owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 11 } }] }),
-  ).rejects.toMatchObject({ data: 'Field value is above the configured maximum' });
+  ).rejects.toMatchObject({ data: { code: 'fieldValueRangeInvalid' } });
 
   // The event is still fully readable under the retired version.
   const event = await owner.client.query(getEvent, { eventId });
@@ -482,10 +482,10 @@ test('historical integrity: an event keeps validating against its own version af
   expect(event.values.find((value) => value.key === 'seats')?.value).toEqual({ kind: 'number', value: 8 });
 
   // New events must use v2, and v2's narrower rule binds them.
-  await expect(createEvent([requiredCode])).rejects.toMatchObject({ data: 'Events require a published version of an active recipe' });
+  await expect(createEvent([requiredCode])).rejects.toMatchObject({ data: { code: 'eventRecipeUnavailable' } });
   const fromV2 = (values: SubmittedValue[]) =>
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: v2, name: 'Under v2', startsAt: 1000, values });
-  await expect(fromV2([requiredCode, legalUnderV1])).rejects.toMatchObject({ data: 'Field value is above the configured maximum' });
+  await expect(fromV2([requiredCode, legalUnderV1])).rejects.toMatchObject({ data: { code: 'fieldValueRangeInvalid' } });
   await expect(fromV2([requiredCode, { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 3 } }])).resolves.toBeDefined();
 });
 
@@ -518,10 +518,10 @@ test('field values upsert in place, clear, and re-set without ever duplicating a
     { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'DD' } },
     { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'EE' } },
   ];
-  await expect(owner.client.mutation(updateEventFields, { eventId, values: duplicate })).rejects.toMatchObject({ data: 'Event values must not repeat field definitions' });
+  await expect(owner.client.mutation(updateEventFields, { eventId, values: duplicate })).rejects.toMatchObject({ data: { code: 'eventFieldDuplicate' } });
   await expect(
     owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: definitions.code, value: null }] }),
-  ).rejects.toMatchObject({ data: 'Required event fields cannot be cleared' });
+  ).rejects.toMatchObject({ data: { code: 'eventFieldRequired' } });
 
   // An unknown field is refused on the update path by the same single gate.
   const strayDefinition = await owner.client.mutation(createFieldDefinition, {
@@ -532,7 +532,7 @@ test('field values upsert in place, clear, and re-set without ever duplicating a
   });
   await expect(
     owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: strayDefinition, value: { kind: 'text', value: 'AB' } }] }),
-  ).rejects.toMatchObject({ data: 'Event value references an unknown recipe field' });
+  ).rejects.toMatchObject({ data: { code: 'eventFieldUnknown' } });
 
   // A rejected submission wrote nothing: the required value survives intact.
   expect((await rowsFor(definitions.code))[0]?.value).toEqual({ kind: 'text', value: 'CC' });
@@ -574,8 +574,8 @@ test('S1 regression: resubmitting an unchanged value is not re-judged, even afte
   // fresh event created against it.
   const otherLocationId = await owner.client.mutation(createLocation, { organizationId, name: 'Annex', type: 'venue' });
   await owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: definitions.venue, value: { kind: 'location', locationId: otherLocationId } }] });
-  await expect(owner.client.mutation(updateEventFields, { eventId, values: [venue] })).rejects.toMatchObject({ data: inaccessible });
-  await expect(createEvent([requiredCode, venue])).rejects.toMatchObject({ data: inaccessible });
+  await expect(owner.client.mutation(updateEventFields, { eventId, values: [venue] })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(createEvent([requiredCode, venue])).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('S3 regression: stored string values are capped absolutely, whatever the snapshot omits', async () => {
@@ -594,54 +594,54 @@ test('S3 regression: stored string values are capped absolutely, whatever the sn
     owner.client.mutation(createEventFromRecipe, { projectId, recipeVersionId: versionId, name: 'Capped', startsAt: 1000, values });
 
   await expect(create([{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_001) } }])).rejects.toMatchObject({
-    data: 'Field value must not exceed 10000 characters',
+    data: { code: 'fieldValueLengthInvalid' },
   });
   await expect(create([{ fieldDefinitionId: short, value: { kind: 'text', value: 'x'.repeat(2001) } }])).rejects.toMatchObject({
-    data: 'Field value must not exceed 2000 characters',
+    data: { code: 'fieldValueLengthInvalid' },
   });
   // The bound is inclusive, and it applies on the update door too.
   const eventId = await create([{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_000) } }]);
   await expect(
     owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_001) } }] }),
-  ).rejects.toMatchObject({ data: 'Field value must not exceed 10000 characters' });
+  ).rejects.toMatchObject({ data: { code: 'fieldValueLengthInvalid' } });
 
   // The other half of the same rule: a config can promise less than the ceiling,
   // never more, so no snapshot can advertise a bound the value gate would refuse.
   await expect(
     owner.client.mutation(createFieldDefinition, { organizationId, key: 'tooWide', label: 'Too wide', config: { kind: 'longText', maxLength: 10_001 } }),
-  ).rejects.toMatchObject({ data: 'Field length bounds must not exceed 10000 characters' });
+  ).rejects.toMatchObject({ data: { code: 'fieldConfigInvalid' } });
   await expect(
     owner.client.mutation(createFieldDefinition, { organizationId, key: 'tooWideText', label: 'Too wide text', config: { kind: 'text', maxLength: 2001 } }),
-  ).rejects.toMatchObject({ data: 'Field length bounds must not exceed 2000 characters' });
+  ).rejects.toMatchObject({ data: { code: 'fieldConfigInvalid' } });
   // Untouched by the caps: the ordinary bounded fixture still accepts its values.
   await expect(createEvent([requiredCode])).resolves.toBeDefined();
 });
 
 test('the status matrix advances one step at a time, cancels from anywhere, and is terminal at both ends', async () => {
   const { owner, definitions, requiredCode, createEvent } = await fixture();
-  const notPermitted = 'Event status transition is not permitted';
-  const terminal = 'Completed and cancelled events are terminal';
+  const notPermitted = 'eventStatusTransitionInvalid';
+  const terminal = 'eventTerminal';
 
   const forward = await createEvent();
   for (const status of ['planned', 'confirmed', 'active', 'completed'] as const) {
     await expect(owner.client.mutation(changeEventStatus, { eventId: forward, status })).resolves.toBeNull();
   }
-  await expect(owner.client.mutation(changeEventStatus, { eventId: forward, status: 'cancelled' })).rejects.toMatchObject({ data: terminal });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: forward, status: 'cancelled' })).rejects.toMatchObject({ data: { code: terminal } });
   // Completed is read-only through both authoring doors, not only the status one.
-  await expect(owner.client.mutation(updateEventCoreFields, { eventId: forward, name: 'Late edit' })).rejects.toMatchObject({ data: 'Completed and cancelled events are read-only' });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId: forward, name: 'Late edit' })).rejects.toMatchObject({ data: { code: 'eventReadOnly' } });
   await expect(
     owner.client.mutation(updateEventFields, { eventId: forward, values: [{ fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'late' } }] }),
-  ).rejects.toMatchObject({ data: 'Completed and cancelled events are read-only' });
+  ).rejects.toMatchObject({ data: { code: 'eventReadOnly' } });
 
   // Skipping ahead, moving backwards, and re-declaring the current status are all
   // refused by the same matrix (the same-status case has no separate branch).
   const strict = await createEvent();
-  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'confirmed' })).rejects.toMatchObject({ data: notPermitted });
-  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'draft' })).rejects.toMatchObject({ data: notPermitted });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'confirmed' })).rejects.toMatchObject({ data: { code: notPermitted } });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'draft' })).rejects.toMatchObject({ data: { code: notPermitted } });
   await owner.client.mutation(changeEventStatus, { eventId: strict, status: 'planned' });
-  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'planned' })).rejects.toMatchObject({ data: notPermitted });
-  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'draft' })).rejects.toMatchObject({ data: notPermitted });
-  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'completed' })).rejects.toMatchObject({ data: notPermitted });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'planned' })).rejects.toMatchObject({ data: { code: notPermitted } });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'draft' })).rejects.toMatchObject({ data: { code: notPermitted } });
+  await expect(owner.client.mutation(changeEventStatus, { eventId: strict, status: 'completed' })).rejects.toMatchObject({ data: { code: notPermitted } });
 
   // Cancellation is reachable from every non-terminal state.
   for (const path of [[], ['planned'], ['planned', 'confirmed'], ['planned', 'confirmed', 'active']] as const) {
@@ -649,9 +649,9 @@ test('the status matrix advances one step at a time, cancels from anywhere, and 
     for (const status of path) await owner.client.mutation(changeEventStatus, { eventId, status });
     await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'cancelled' })).resolves.toBeNull();
     // Cancelled is terminal in every direction, and read-only for authoring.
-    await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'planned' })).rejects.toMatchObject({ data: terminal });
-    await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'cancelled' })).rejects.toMatchObject({ data: terminal });
-    await expect(owner.client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: 'Completed and cancelled events are read-only' });
+    await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'planned' })).rejects.toMatchObject({ data: { code: terminal } });
+    await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'cancelled' })).rejects.toMatchObject({ data: { code: terminal } });
+    await expect(owner.client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: { code: 'eventReadOnly' } });
   }
 });
 
@@ -724,14 +724,14 @@ test('event queries paginate by start time, stay tenant-scoped, and join live de
   expect(second.page.every((row) => row.organizationId === organizationId)).toBe(true);
 
   // A project in another tenant is opaque even to a member of this one.
-  await expect(member.client.query(listProjectEvents, { projectId: foreignProjectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: inaccessible });
+  await expect(member.client.query(listProjectEvents, { projectId: foreignProjectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // The live join contract: `key` is frozen for any definition an event can
   // reference (renaming it is refused), while `label` follows the definition and
   // archival does not hide stored values.
   const eventId = await createEvent([requiredCode, { fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'joined' } }]);
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: definitions.notes, key: 'renamedNotes' })).rejects.toMatchObject({
-    data: 'Fields referenced by published or retired recipe versions may only update label or description',
+    data: { code: 'fieldHistoricalFrozen' },
   });
   await owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: definitions.notes, label: 'Operator notes' });
   await owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: definitions.notes });
@@ -756,7 +756,7 @@ test('event queries paginate by start time, stay tenant-scoped, and join live de
     startsAt: 1,
     values: [],
   });
-  await expect(member.client.query(getEvent, { eventId: foreignEventId })).rejects.toMatchObject({ data: inaccessible });
+  await expect(member.client.query(getEvent, { eventId: foreignEventId })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('F3 regression: configured defaults are materialized at creation, before the required-field check', async () => {
@@ -796,7 +796,7 @@ test('F3 regression: configured defaults are materialized at creation, before th
   // Materialized defaults go through the same gate as submitted values: once the
   // defaulted location is archived, creation fails rather than storing it blind.
   await owner.client.mutation(archiveLocation, { locationId });
-  await expect(create([])).rejects.toMatchObject({ data: inaccessible });
+  await expect(create([])).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // Defaults are a creation-time concept: updating never re-materializes them, so
   // an optional value cleared after creation stays cleared.
@@ -814,14 +814,14 @@ test('F2 regression: an archived project freezes its events through every write 
   // events are frozen, not refused or cascaded.
   await expect(owner.client.mutation(archiveProject, { projectId })).resolves.toBeNull();
 
-  const frozen = 'Archived projects are read-only for their events';
-  await expect(owner.client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: frozen });
+  const frozen = 'eventProjectReadOnly';
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: { code: frozen } });
   await expect(
     owner.client.mutation(updateEventFields, { eventId, values: [{ fieldDefinitionId: definitions.notes, value: { kind: 'longText', value: 'after' } }] }),
-  ).rejects.toMatchObject({ data: frozen });
+  ).rejects.toMatchObject({ data: { code: frozen } });
   // Including cancellation: an archived project freezes the lifecycle entirely.
-  await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'confirmed' })).rejects.toMatchObject({ data: frozen });
-  await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'cancelled' })).rejects.toMatchObject({ data: frozen });
+  await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'confirmed' })).rejects.toMatchObject({ data: { code: frozen } });
+  await expect(owner.client.mutation(changeEventStatus, { eventId, status: 'cancelled' })).rejects.toMatchObject({ data: { code: frozen } });
 
   // Frozen means read-only, not gone: the event is untouched and still readable.
   const event = await owner.client.query(getEvent, { eventId });

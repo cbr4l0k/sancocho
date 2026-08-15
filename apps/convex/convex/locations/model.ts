@@ -91,7 +91,7 @@ export async function listLocations(
 
 export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations'>, patch: LocationPatch): Promise<void> {
   const { location, access } = await requireLocationAccess(ctx, locationId, 'planner');
-  if (location.status === 'archived') return invalidInput('Archived locations cannot be updated');
+  if (location.status === 'archived') return invalidInput('locationArchived', 'Archived locations cannot be updated');
   // Validated (and therefore trimmed) before the diff, so what is compared
   // against the stored name is exactly what would be stored.
   const name = patch.name === undefined ? undefined : validateEntityName(patch.name, 'location');
@@ -155,7 +155,7 @@ export async function archiveLocation(ctx: MutationCtx, locationId: Id<'location
 
 export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations'>): Promise<void> {
   const { location, access } = await requireLocationAccess(ctx, locationId, 'planner');
-  if (location.status !== 'archived') return invalidInput('Locations must be archived before deletion');
+  if (location.status !== 'archived') return invalidInput('locationArchiveRequired', 'Locations must be archived before deletion');
   // Both tables that can reference a location are checked first-hit through
   // their indexes, mirroring `deleteFieldDefinition`. `eventFieldValues` covers
   // operational data; `recipeFields.defaultLocationId` covers configuration
@@ -166,9 +166,9 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
   // permanently disabling that version (I3). Archival, not deletion, is the
   // lifecycle path for a location that is still referenced anywhere.
   const eventReference = await ctx.db.query('eventFieldValues').withIndex('by_location', (q) => q.eq('locationId', locationId)).first();
-  if (eventReference !== null) return invalidInput('Referenced locations cannot be deleted; retain the archived location instead');
+  if (eventReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
   const defaultReference = await ctx.db.query('recipeFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).first();
-  if (defaultReference !== null) return invalidInput('Referenced locations cannot be deleted; retain the archived location instead');
+  if (defaultReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
   await recordAuditEvent(ctx, {
     organizationId: location.organizationId,
     actorUserId: access.user._id,
@@ -232,14 +232,14 @@ export async function requireLocationAccess(
 
 function validateAddress(address: string | undefined): void {
   if (address !== undefined && address.length > maxAddressLength) {
-    return invalidInput(`Location address must not exceed ${maxAddressLength} characters`);
+    return invalidInput('locationAddressTooLong', `Location address must not exceed ${maxAddressLength} characters`);
   }
 }
 
 function validateCoordinates({ latitude, longitude }: LocationCoordinates): void {
-  if ((latitude === undefined) !== (longitude === undefined)) return invalidInput('Latitude and longitude must be provided together');
-  if (latitude !== undefined && !isFiniteNumber(latitude)) return invalidInput('Latitude must be finite');
-  if (longitude !== undefined && !isFiniteNumber(longitude)) return invalidInput('Longitude must be finite');
-  if (latitude !== undefined && (latitude < -90 || latitude > 90)) return invalidInput('Latitude must be between -90 and 90');
-  if (longitude !== undefined && (longitude < -180 || longitude > 180)) return invalidInput('Longitude must be between -180 and 180');
+  if ((latitude === undefined) !== (longitude === undefined)) return invalidInput('locationCoordinatesIncomplete', 'Latitude and longitude must be provided together');
+  if (latitude !== undefined && !isFiniteNumber(latitude)) return invalidInput('locationCoordinatesInvalid', 'Latitude must be finite');
+  if (longitude !== undefined && !isFiniteNumber(longitude)) return invalidInput('locationCoordinatesInvalid', 'Longitude must be finite');
+  if (latitude !== undefined && (latitude < -90 || latitude > 90)) return invalidInput('locationCoordinatesInvalid', 'Latitude must be between -90 and 90');
+  if (longitude !== undefined && (longitude < -180 || longitude > 180)) return invalidInput('locationCoordinatesInvalid', 'Longitude must be between -180 and 180');
 }

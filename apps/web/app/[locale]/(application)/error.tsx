@@ -14,7 +14,7 @@ export default function ApplicationError({
   return (
     <Panel emphasis="focal">
       <PanelBody>
-        {presentation === 'notFound' ? (
+        {presentation === 'errors.notFound' ? (
           <UnavailableState />
         ) : (
           <EmptyState tone="unavailable" title={t(errorMessageKey(presentation))} />

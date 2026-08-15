@@ -54,7 +54,7 @@ export async function createRecipe(ctx: MutationCtx, args: { organizationId: Id<
 export async function updateRecipeMetadata(ctx: MutationCtx, recipeId: Id<'eventRecipes'>, patch: RecipePatch): Promise<void> {
   const { recipe, access } = await requireRecipeAccess(ctx, recipeId, 'planner');
   // Archived recipes are read-only, mirroring archived field definitions.
-  if (recipe.status === 'archived') return invalidInput('Archived recipes cannot be updated');
+  if (recipe.status === 'archived') return invalidInput('recipeArchived', 'Archived recipes cannot be updated');
   const update: RecipePatch = {};
   const changedFields: string[] = [];
   // Validated (and therefore trimmed) before the diff, so an echoed name that
@@ -87,9 +87,9 @@ export async function createInitialDraftVersion(ctx: MutationCtx, recipeId: Id<'
 
 export async function clonePublishedVersionToDraft(ctx: MutationCtx, recipeId: Id<'eventRecipes'>): Promise<Id<'recipeVersions'>> {
   const { recipe, access } = await requireRecipeAccess(ctx, recipeId, 'planner');
-  if (recipe.status === 'archived') return invalidInput('Archived recipes cannot get new drafts');
+  if (recipe.status === 'archived') return invalidInput('recipeArchived', 'Archived recipes cannot get new drafts');
   const published = await ctx.db.query('recipeVersions').withIndex('by_recipe_status', (q) => q.eq('recipeId', recipeId).eq('status', 'published')).unique();
-  if (published === null) return invalidInput('A published recipe version is required to clone');
+  if (published === null) return invalidInput('recipePublishedVersionRequired', 'A published recipe version is required to clone');
   const versionId = await createDraftVersion(ctx, recipe, access, published.versionNumber);
   const sourceFields = await getVersionFields(ctx, published._id);
   // Rows are copied verbatim from a version that already passed
@@ -114,8 +114,8 @@ export async function clonePublishedVersionToDraft(ctx: MutationCtx, recipeId: I
 
 export async function publishRecipeVersion(ctx: MutationCtx, recipeVersionId: Id<'recipeVersions'>): Promise<void> {
   const { version, recipe, access } = await requireVersionAccess(ctx, recipeVersionId, 'planner');
-  if (version.status !== 'draft') return invalidInput('Only draft recipe versions can be published');
-  if (recipe.status === 'archived') return invalidInput('Archived recipes cannot be published');
+  if (version.status !== 'draft') return invalidInput('recipeVersionNotDraft', 'Only draft recipe versions can be published');
+  if (recipe.status === 'archived') return invalidInput('recipeArchived', 'Archived recipes cannot be published');
   await validateDraftFields(ctx, version);
   await retireCurrentPublishedVersion(ctx, recipe, access);
   await ctx.db.patch(recipeVersionId, { status: 'published', publishedAt: Date.now() });
@@ -149,7 +149,7 @@ export async function getRecipeVersion(ctx: QueryCtx, recipeVersionId: Id<'recip
 }
 
 async function createDraftVersion(ctx: MutationCtx, recipe: Doc<'eventRecipes'>, access: OrganizationMembershipAccess, clonedFromVersion?: number): Promise<Id<'recipeVersions'>> {
-  if (recipe.status === 'archived') return invalidInput('Archived recipes cannot get new drafts');
+  if (recipe.status === 'archived') return invalidInput('recipeArchived', 'Archived recipes cannot get new drafts');
   const draft = await ctx.db.query('recipeVersions').withIndex('by_recipe_status', (q) => q.eq('recipeId', recipe._id).eq('status', 'draft')).unique();
   if (draft !== null) return conflict();
   const latest = await ctx.db.query('recipeVersions').withIndex('by_recipe_version', (q) => q.eq('recipeId', recipe._id)).order('desc').first();
@@ -220,7 +220,7 @@ export function isUsableDefinition(definition: Doc<'fieldDefinitions'> | null, o
  * whole set at publish.
  */
 export function assertRequiredImpliesVisible(required: boolean, visible: boolean): void {
-  if (required && !visible) return invalidInput('Required recipe fields must be visible');
+  if (required && !visible) return invalidInput('recipeFieldRequiredHidden', 'Required recipe fields must be visible');
 }
 
 /**
@@ -239,7 +239,7 @@ export function assertRequiredImpliesVisible(required: boolean, visible: boolean
  * disowns, or dead options no operator can act on.
  */
 export function assertSnapshotCoherentWithDefinition(snapshot: FieldConfig, definition: FieldConfig): void {
-  if (snapshot.kind !== definition.kind) return invalidInput('Recipe field config kind must match the current field definition');
+  if (snapshot.kind !== definition.kind) return invalidInput('recipeFieldConfigMismatch', 'Recipe field config kind must match the current field definition');
   // The same contents rules the definition itself had to satisfy, re-checked on
   // the narrowed snapshot: an incoherent copy would become permanent at publish.
   assertValidFieldConfig(snapshot);
@@ -255,9 +255,9 @@ export function assertSnapshotCoherentWithDefinition(snapshot: FieldConfig, defi
       return;
     case 'select': case 'multiSelect': {
       // Kinds were already proven equal above; this narrows for the compiler.
-      if (definition.kind !== 'select' && definition.kind !== 'multiSelect') return invalidInput('Recipe field config kind must match the current field definition');
+      if (definition.kind !== 'select' && definition.kind !== 'multiSelect') return invalidInput('recipeFieldConfigMismatch', 'Recipe field config kind must match the current field definition');
       const available = new Set(definition.options.map((option) => option.id));
-      if (snapshot.options.some((option) => !available.has(option.id))) return invalidInput('Recipe field snapshot options must still exist in the current field definition');
+      if (snapshot.options.some((option) => !available.has(option.id))) return invalidInput('recipeFieldSnapshotOptionInvalid', 'Recipe field snapshot options must still exist in the current field definition');
       if (snapshot.kind === 'multiSelect' && definition.kind === 'multiSelect' && ((definition.minSelections !== undefined && (snapshot.minSelections === undefined || snapshot.minSelections < definition.minSelections)) || (definition.maxSelections !== undefined && (snapshot.maxSelections === undefined || snapshot.maxSelections > definition.maxSelections)))) return narrowingOnly();
       return;
     }
@@ -266,7 +266,7 @@ export function assertSnapshotCoherentWithDefinition(snapshot: FieldConfig, defi
 }
 
 function narrowingOnly(): never {
-  return invalidInput('Recipe field config may only narrow definition bounds');
+  return invalidInput('recipeFieldConfigNotNarrower', 'Recipe field config may only narrow definition bounds');
 }
 
 /**
@@ -280,20 +280,20 @@ async function validateDraftFields(ctx: MutationCtx, version: Doc<'recipeVersion
   const recipeFields = await getVersionFields(ctx, version._id);
   // A version with no fields would produce Events that carry no recipe data at
   // all, which is a composition mistake rather than a usable configuration.
-  if (recipeFields.length === 0) return invalidInput('Cannot publish a version with no fields');
+  if (recipeFields.length === 0) return invalidInput('recipeVersionEmpty', 'Cannot publish a version with no fields');
   const definitions = new Set<string>();
   const positions = new Set<number>();
   for (const recipeField of recipeFields) {
     // Positions are the stable presentation order, so they must be orderable and
     // unambiguous. Density (0..n-1) is the reorder operation's business (#9).
     if (!Number.isInteger(recipeField.position) || recipeField.position < 0 || positions.has(recipeField.position)) {
-      return invalidInput('Recipe field positions must be unique non-negative integers');
+      return invalidInput('recipeFieldPositionInvalid', 'Recipe field positions must be unique non-negative integers');
     }
     positions.add(recipeField.position);
-    if (definitions.has(recipeField.fieldDefinitionId)) return invalidInput('Recipe version cannot contain duplicate field definitions');
+    if (definitions.has(recipeField.fieldDefinitionId)) return invalidInput('recipeFieldDuplicateDefinition', 'Recipe version cannot contain duplicate field definitions');
     definitions.add(recipeField.fieldDefinitionId);
     const definition = await ctx.db.get(recipeField.fieldDefinitionId);
-    if (!isUsableDefinition(definition, version.organizationId)) return invalidInput('Recipe fields must reference active fields in the same organization or built-ins');
+    if (!isUsableDefinition(definition, version.organizationId)) return invalidInput('recipeFieldDefinitionUnavailable', 'Recipe fields must reference active fields in the same organization or built-ins');
     // The same coherence rule composition applied when the row was written, run
     // again against the definition as it stands now: a definition edited since
     // then can leave a stored snapshot stale, and this is the last moment it can
@@ -320,9 +320,9 @@ export async function validateRecipeFieldDefaultValue(ctx: MutationCtx, value: E
 }
 
 function validateRecipeKey(key: string): void {
-  if (!recipeKeyPattern.test(key) || key.length < 2 || key.length > 64) return invalidInput('Recipe key must be 2–64 lowerCamelCase characters');
+  if (!recipeKeyPattern.test(key) || key.length < 2 || key.length > 64) return invalidInput('recipeKeyInvalid', 'Recipe key must be 2–64 lowerCamelCase characters');
 }
 
 function validateDescription(description: string | undefined): void {
-  if (description !== undefined && description.length > maxRecipeDescriptionLength) return invalidInput(`Recipe description must not exceed ${maxRecipeDescriptionLength} characters`);
+  if (description !== undefined && description.length > maxRecipeDescriptionLength) return invalidInput('recipeDescriptionTooLong', `Recipe description must not exceed ${maxRecipeDescriptionLength} characters`);
 }

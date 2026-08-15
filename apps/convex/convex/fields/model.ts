@@ -116,7 +116,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, 'planner');
   // Archived fields are immutable regardless of which columns are patched.
   if (field.status === 'archived') {
-    return invalidInput('Archived fields cannot be updated');
+    return invalidInput('fieldArchived', 'Archived fields cannot be updated');
   }
 
   // The real diff is computed before any rule is enforced: a read-modify-write
@@ -152,7 +152,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
 
   const changesHistoricalMeaning = historicalMeaningFields.some((column) => changedFields.includes(column));
   if (changesHistoricalMeaning && (await isReferencedByPublishedVersion(ctx, fieldDefinitionId))) {
-    return invalidInput('Fields referenced by published or retired recipe versions may only update label or description');
+    return invalidInput('fieldHistoricalFrozen', 'Fields referenced by published or retired recipe versions may only update label or description');
   }
   if (update.label !== undefined) {
     // Store the trimmed label the validator returns, never the raw argument.
@@ -206,9 +206,9 @@ export async function deleteFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   // operational data, so a field carrying stored Event values survives even if
   // no recipe still lists it (defense in depth ahead of #10).
   const recipeReference = await ctx.db.query('recipeFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
-  if (recipeReference !== null) return invalidInput('Referenced field definitions cannot be deleted; archive the field instead');
+  if (recipeReference !== null) return invalidInput('fieldDeleteBlocked', 'Referenced field definitions cannot be deleted; archive the field instead');
   const valueReference = await ctx.db.query('eventFieldValues').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
-  if (valueReference !== null) return invalidInput('Referenced field definitions cannot be deleted; archive the field instead');
+  if (valueReference !== null) return invalidInput('fieldDeleteBlocked', 'Referenced field definitions cannot be deleted; archive the field instead');
   await recordAuditEvent(ctx, {
     organizationId: field.organizationId,
     actorUserId: access.user._id,
@@ -238,7 +238,7 @@ export async function getFieldDefinitionsByIds(
   // Check the raw request before authorization or lookups: repeated ids must
   // not let a caller exceed the recipe-version-sized work budget.
   if (fieldDefinitionIds.length > maxFieldDefinitionIdsPerLookup) {
-    return invalidInput(`Field definition lookup cannot exceed ${maxFieldDefinitionIdsPerLookup} ids`);
+    return invalidInput('fieldLookupTooLarge', `Field definition lookup cannot exceed ${maxFieldDefinitionIdsPerLookup} ids`);
   }
   await requireOrganizationMembership(ctx, organizationId);
 
@@ -318,19 +318,19 @@ async function assertValidNewField(
  * `by_org_key`; neither scans.
  */
 async function assertKeyAvailable(ctx: MutationCtx, organizationId: Id<'organizations'> | undefined, key: string, currentId?: Id<'fieldDefinitions'>): Promise<void> {
-  if (!fieldKeyPattern.test(key) || key.length < 2 || key.length > 64) return invalidInput('Field key must be 2–64 lowerCamelCase characters');
+  if (!fieldKeyPattern.test(key) || key.length < 2 || key.length > 64) return invalidInput('fieldKeyInvalid', 'Field key must be 2–64 lowerCamelCase characters');
   const existing = await ctx.db.query('fieldDefinitions').withIndex('by_org_key', (q) => q.eq('organizationId', organizationId).eq('key', key)).unique();
-  if (existing !== null && existing._id !== currentId) return invalidInput('A field with this key already exists');
+  if (existing !== null && existing._id !== currentId) return invalidInput('fieldKeyTaken', 'A field with this key already exists');
   // Built-ins live at organizationId === undefined and were already covered by
   // the read above when creating one; only tenant keys need the shadow probe.
   if (organizationId === undefined) return;
   const builtin = await ctx.db.query('fieldDefinitions').withIndex('by_org_key', (q) => q.eq('organizationId', undefined).eq('key', key)).unique();
-  if (builtin !== null) return invalidInput('Custom field keys cannot shadow built-in field keys');
+  if (builtin !== null) return invalidInput('fieldKeyShadowsBuiltin', 'Custom field keys cannot shadow built-in field keys');
 }
 
 function assertValidDescription(description: string | undefined): void {
   if (description !== undefined && description.length > maxFieldDescriptionLength) {
-    return invalidInput(`Field description must not exceed ${maxFieldDescriptionLength} characters`);
+    return invalidInput('fieldDescriptionTooLong', `Field description must not exceed ${maxFieldDescriptionLength} characters`);
   }
 }
 
@@ -338,7 +338,7 @@ function assertSemanticCompatibility(semanticType: SemanticType | undefined, con
   // Optional chaining so a semantic type later removed from the registry is
   // rejected as invalid input rather than throwing a TypeError.
   if (semanticType !== undefined && semanticRegistry[semanticType]?.expectedDataType !== config.kind) {
-    return invalidInput('Semantic type is incompatible with the field configuration');
+    return invalidInput('fieldSemanticIncompatible', 'Semantic type is incompatible with the field configuration');
   }
 }
 
@@ -358,7 +358,7 @@ export function assertValidFieldConfig(config: FieldConfig): void {
     case 'longText': {
       assertFiniteBounds(config.minLength, config.maxLength, 'Field length bounds must be finite numbers');
       if (config.minLength !== undefined && config.maxLength !== undefined && config.maxLength < config.minLength) {
-        return invalidInput('Field maximum length must not be less than its minimum length');
+        return invalidInput('fieldConfigInvalid', 'Field maximum length must not be less than its minimum length');
       }
       // The absolute ceiling is frozen into every snapshot taken from this
       // config: a config may promise less than the value gate allows, never
@@ -366,7 +366,7 @@ export function assertValidFieldConfig(config: FieldConfig): void {
       // minimum above the ceiling would be unsatisfiable.
       const absoluteMaximum = config.kind === 'text' ? maxTextValueLength : maxLongTextValueLength;
       if ((config.maxLength ?? 0) > absoluteMaximum || (config.minLength ?? 0) > absoluteMaximum) {
-        return invalidInput(`Field length bounds must not exceed ${absoluteMaximum} characters`);
+        return invalidInput('fieldConfigInvalid', `Field length bounds must not exceed ${absoluteMaximum} characters`);
       }
       return;
     }
@@ -374,25 +374,25 @@ export function assertValidFieldConfig(config: FieldConfig): void {
     case 'datetime':
       assertFiniteBounds(config.min, config.max, 'Field numeric bounds must be finite numbers');
       if (config.min !== undefined && config.max !== undefined && config.max < config.min) {
-        return invalidInput('Field maximum must not be less than its minimum');
+        return invalidInput('fieldConfigInvalid', 'Field maximum must not be less than its minimum');
       }
       return;
     case 'date':
       if ((config.min !== undefined && !isValidDateString(config.min)) || (config.max !== undefined && !isValidDateString(config.max))) {
-        return invalidInput('Field date bounds must be YYYY-MM-DD calendar dates');
+        return invalidInput('fieldConfigInvalid', 'Field date bounds must be YYYY-MM-DD calendar dates');
       }
       // Zero-padded ISO dates order correctly under lexicographic comparison.
       if (config.min !== undefined && config.max !== undefined && config.max < config.min) {
-        return invalidInput('Field maximum must not be less than its minimum');
+        return invalidInput('fieldConfigInvalid', 'Field maximum must not be less than its minimum');
       }
       return;
     case 'time':
       if ((config.min !== undefined && !isValidTimeString(config.min)) || (config.max !== undefined && !isValidTimeString(config.max))) {
-        return invalidInput('Field time bounds must be HH:mm wall-clock times');
+        return invalidInput('fieldConfigInvalid', 'Field time bounds must be HH:mm wall-clock times');
       }
       // Zero-padded HH:mm orders correctly under lexicographic comparison.
       if (config.min !== undefined && config.max !== undefined && config.max < config.min) {
-        return invalidInput('Field maximum must not be less than its minimum');
+        return invalidInput('fieldConfigInvalid', 'Field maximum must not be less than its minimum');
       }
       return;
     case 'select':
@@ -402,15 +402,15 @@ export function assertValidFieldConfig(config: FieldConfig): void {
       assertUsableOptions(config.options);
       assertFiniteBounds(config.minSelections, config.maxSelections, 'Selection bounds must be finite numbers');
       if (config.minSelections !== undefined && config.maxSelections !== undefined && config.maxSelections < config.minSelections) {
-        return invalidInput('Maximum selections must not be less than minimum selections');
+        return invalidInput('fieldSelectOptionsInvalid', 'Maximum selections must not be less than minimum selections');
       }
       // An unsatisfiable requirement must be rejected at configuration time, not
       // discovered later by every Event that fails validation against it.
       if (config.minSelections !== undefined && config.minSelections > config.options.length) {
-        return invalidInput('Minimum selections must not exceed the number of options');
+        return invalidInput('fieldSelectOptionsInvalid', 'Minimum selections must not exceed the number of options');
       }
       if (config.maxSelections !== undefined && config.maxSelections > config.options.length) {
-        return invalidInput('Maximum selections must not exceed the number of options');
+        return invalidInput('fieldSelectOptionsInvalid', 'Maximum selections must not exceed the number of options');
       }
       return;
   }
@@ -420,19 +420,19 @@ function assertFiniteBounds(min: number | undefined, max: number | undefined, me
   // Convex accepts NaN/Infinity in v.number(); an unorderable bound silently
   // passes every comparison, so it must be refused before it is stored.
   if ((min !== undefined && !isFiniteNumber(min)) || (max !== undefined && !isFiniteNumber(max))) {
-    return invalidInput(message);
+    return invalidInput('fieldConfigInvalid', message);
   }
 }
 
 /** The snapshotted option list IS the allowed value set, so it must be usable and unambiguous. */
 function assertUsableOptions(options: readonly SelectOption[]): void {
   if (options.length === 0) {
-    return invalidInput('Select fields must define at least one option');
+    return invalidInput('fieldSelectOptionsInvalid', 'Select fields must define at least one option');
   }
   const ids = new Set<string>();
   for (const option of options) {
-    if (option.id.length === 0) return invalidInput('Select option ids must be unique and non-empty');
-    if (ids.has(option.id)) return invalidInput('Select option ids must be unique and non-empty');
+    if (option.id.length === 0) return invalidInput('fieldSelectOptionsInvalid', 'Select option ids must be unique and non-empty');
+    if (ids.has(option.id)) return invalidInput('fieldSelectOptionsInvalid', 'Select option ids must be unique and non-empty');
     ids.add(option.id);
   }
 }
