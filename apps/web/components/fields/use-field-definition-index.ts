@@ -1,45 +1,42 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePaginatedQuery } from 'convex/react';
+import { useMemo } from 'react';
+import { useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
 import { api } from '@sancocho/convex/api';
 
 type FieldDefinition = FunctionReturnType<
-  typeof api.fields.queries.listFieldDefinitions
->['page'][number];
+  typeof api.fields.queries.getFieldDefinitionsByIds
+>[number];
+type FieldDefinitionId = FunctionArgs<
+  typeof api.fields.queries.getFieldDefinitionsByIds
+>['fieldDefinitionIds'][number];
+type FieldDefinitionReference = { fieldDefinitionId: FieldDefinitionId };
+type OrganizationId = FunctionArgs<
+  typeof api.fields.queries.getFieldDefinitionsByIds
+>['organizationId'];
 
-const maxIndexPages = 4;
-
-/**
- * A bounded convenience index for read-only recipe composition. It intentionally
- * stops after a few pages: a label lookup must never become an unbounded tenant read.
- */
 export function useFieldDefinitionIndex(
-  organizationId: FunctionArgs<typeof api.fields.queries.listFieldDefinitions>['organizationId'],
-): ReadonlyMap<string, FieldDefinition> {
-  const custom = usePaginatedQuery(
-    api.fields.queries.listFieldDefinitions,
-    { organizationId },
-    { initialNumItems: 50 },
+  organizationId: OrganizationId | undefined,
+  fields: readonly FieldDefinitionReference[],
+): ReadonlyMap<string, FieldDefinition> | undefined {
+  const fieldDefinitionIds = useMemo(
+    // Stable arguments prevent useQuery from refetching when source row order changes.
+    () => [...new Set(fields.map((field) => field.fieldDefinitionId))].sort(),
+    [fields],
   );
-  const builtins = usePaginatedQuery(
-    api.fields.queries.listBuiltinFieldDefinitions,
-    {},
-    { initialNumItems: 50 },
+  const skip = organizationId === undefined || fieldDefinitionIds.length === 0;
+  const definitions = useQuery(
+    api.fields.queries.getFieldDefinitionsByIds,
+    organizationId === undefined || fieldDefinitionIds.length === 0
+      ? 'skip'
+      : { organizationId, fieldDefinitionIds },
   );
 
-  useEffect(() => {
-    if (custom.status === 'CanLoadMore' && custom.results.length < maxIndexPages * 50) {
-      custom.loadMore(50);
-    }
-  }, [custom]);
-  useEffect(() => {
-    if (builtins.status === 'CanLoadMore' && builtins.results.length < maxIndexPages * 50) {
-      builtins.loadMore(50);
-    }
-  }, [builtins]);
-
-  return new Map([...custom.results, ...builtins.results].map((field) => [field._id, field]));
+  return useMemo(() => {
+    if (skip) return new Map<string, FieldDefinition>();
+    if (definitions === undefined) return undefined;
+    return new Map(definitions.map((field) => [field._id, field]));
+  }, [definitions, skip]);
 }

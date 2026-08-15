@@ -44,6 +44,10 @@ const fieldKeyPattern = /^[a-z][a-zA-Z0-9]*$/;
  */
 const maxFieldDescriptionLength = 2000;
 
+// Recipe versions admit at most 200 fields, so resolving their definitions
+// needs no larger caller-controlled lookup batch.
+const maxFieldDefinitionIdsPerLookup = 200;
+
 /**
  * The three columns that carry a field's historical meaning. Changing any of
  * them under a published or retired recipe version would reinterpret Events
@@ -224,6 +228,34 @@ export async function listFieldDefinitions(ctx: QueryCtx, organizationId: Id<'or
 export async function listBuiltinFieldDefinitions(ctx: QueryCtx, paginationOpts: PaginationOptions): Promise<PaginationResult<Doc<'fieldDefinitions'>>> {
   await requireAuthenticatedUser(ctx);
   return ctx.db.query('fieldDefinitions').withIndex('by_org', (q) => q.eq('organizationId', undefined)).paginate(paginationOpts);
+}
+
+export async function getFieldDefinitionsByIds(
+  ctx: QueryCtx,
+  organizationId: Id<'organizations'>,
+  fieldDefinitionIds: Id<'fieldDefinitions'>[],
+): Promise<Doc<'fieldDefinitions'>[]> {
+  // Check the raw request before authorization or lookups: repeated ids must
+  // not let a caller exceed the recipe-version-sized work budget.
+  if (fieldDefinitionIds.length > maxFieldDefinitionIdsPerLookup) {
+    return invalidInput(`Field definition lookup cannot exceed ${maxFieldDefinitionIdsPerLookup} ids`);
+  }
+  await requireOrganizationMembership(ctx, organizationId);
+
+  const uniqueIds = [...new Set(fieldDefinitionIds)];
+  const definitions: Doc<'fieldDefinitions'>[] = [];
+  for (const fieldDefinitionId of uniqueIds) {
+    const definition = await ctx.db.get(fieldDefinitionId);
+    // Archived definitions remain resolvable: historical recipe versions must
+    // stay interpretable after a definition is archived (I3), unlike new-draft
+    // composition where isUsableDefinition deliberately excludes them.
+    if (definition !== null && (definition.organizationId === undefined || definition.organizationId === organizationId)) {
+      definitions.push(definition);
+    }
+  }
+  // Missing and foreign ids intentionally disappear alike, avoiding an I9
+  // cross-tenant existence oracle through errors, statuses, or placeholders.
+  return definitions;
 }
 
 /**

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
+import { Skeleton } from '@/components/ui/skeleton';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
 import { formatDateTime } from '@/i18n/formats';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
@@ -237,10 +238,14 @@ function DraftActions({
 function VersionCard({ version, current }: { version: RecipeVersion; current: boolean }) {
   const t = useTranslations();
   const locale = useCanonicalLocale();
+  const { currentOrganization } = useCurrentOrganization();
   const details = useQuery(api.recipes.queries.getRecipeVersion, {
     recipeVersionId: version._id,
   });
-  const index = useFieldDefinitionIndex(version.organizationId);
+  const index = useFieldDefinitionIndex(
+    currentOrganization === null ? undefined : currentOrganization.organization._id,
+    details?.recipeFields ?? [],
+  );
   const checks = checkRecipeDraft(details?.recipeFields ?? []);
 
   return (
@@ -257,7 +262,9 @@ function VersionCard({ version, current }: { version: RecipeVersion; current: bo
         </span>
       </PanelHeader>
       <PanelBody>
-        {details === undefined ? null : (
+        {details === undefined ? null : index === undefined ? (
+          <VersionContentsSkeleton fields={details.recipeFields} />
+        ) : (
           <VersionContents
             fields={details.recipeFields}
             index={index}
@@ -269,13 +276,26 @@ function VersionCard({ version, current }: { version: RecipeVersion; current: bo
   );
 }
 
+function VersionContentsSkeleton({ fields }: { fields: readonly RecipeField[] }) {
+  return (
+    <div aria-busy="true" className="flex flex-col gap-3">
+      {fields.map((field) => (
+        <div key={field._id} className="rounded-input border border-line bg-ground-2/60 p-3">
+          <Skeleton className="h-4 w-3/5" />
+          <Skeleton className="mt-2 h-3 w-2/5" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function VersionContents({
   fields,
   index,
   problems,
 }: {
   fields: readonly RecipeField[];
-  index: ReturnType<typeof useFieldDefinitionIndex>;
+  index: NonNullable<ReturnType<typeof useFieldDefinitionIndex>>;
   problems: ReadonlyMap<string, readonly DraftFieldProblem[]>;
 }) {
   const t = useTranslations();
