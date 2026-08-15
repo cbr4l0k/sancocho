@@ -1,10 +1,10 @@
 import { convexTest } from 'convex-test';
 import { expect, test } from 'vitest';
 
-import { api } from '../convex/_generated/api';
+import { api, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
-import { modules } from './helpers';
+import { enableSeedMutations, modules } from './helpers';
 
 const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
@@ -19,12 +19,15 @@ const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
 const getRecipe = api.recipes.queries.getRecipe;
 const getRecipeVersion = api.recipes.queries.getRecipeVersion;
 const listRecipes = api.recipes.queries.listRecipes;
+const backfillRecipeVersionPublishedAt = internal.seed.mutations.backfillRecipeVersionPublishedAt;
 
 const issuer = 'https://example.clerk.accounts.dev';
 const unauthenticated = 'Unauthenticated';
 const inaccessible = 'Not found or inaccessible';
 const firstPage = { numItems: 10, cursor: null };
 const textConfig = { kind: 'text' } as const;
+
+enableSeedMutations();
 
 function identity(subject: string) {
   return { issuer, subject, name: subject, email: `${subject}@example.com`, emailVerified: true };
@@ -98,6 +101,117 @@ test('versions are server-assigned, published versions retire, and sequence neve
   const recipe = await owner.client.query(getRecipe, { recipeId });
   expect(recipe.versions.map((version) => [version.versionNumber, version.status])).toEqual([[1, 'retired'], [2, 'published'], [3, 'draft']]);
   expect(v3).toBeDefined();
+});
+
+test('publishing records a server-side publish time, exposes it through recipe queries, and leaves drafts without one', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'eventCode',
+    label: 'Code',
+    config: textConfig,
+  });
+  const published = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await setDraftFields(t, organizationId, published, [{ fieldDefinitionId }]);
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: published });
+  const draft = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
+
+  const recipe = await owner.client.query(getRecipe, { recipeId });
+  const publishedFromRecipe = recipe.versions.find((version) => version._id === published);
+  const draftFromRecipe = recipe.versions.find((version) => version._id === draft);
+  const version = await owner.client.query(getRecipeVersion, { recipeVersionId: published });
+
+  expect(publishedFromRecipe?.publishedAt).toEqual(expect.any(Number));
+  expect(version.version.publishedAt).toBe(publishedFromRecipe?.publishedAt);
+  expect(draftFromRecipe?.publishedAt).toBeUndefined();
+});
+
+test('retiring a published version preserves its original publish time', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId,
+    key: 'eventCode',
+    label: 'Code',
+    config: textConfig,
+  });
+  const v1 = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  await setDraftFields(t, organizationId, v1, [{ fieldDefinitionId }]);
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: v1 });
+  const beforeRetirement = await owner.client.query(getRecipeVersion, { recipeVersionId: v1 });
+  const v2 = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
+  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: v2 });
+  const afterRetirement = await owner.client.query(getRecipeVersion, { recipeVersionId: v1 });
+
+  expect(afterRetirement.version).toMatchObject({ status: 'retired', publishedAt: beforeRetirement.version.publishedAt });
+});
+
+test('published-at backfill uses publication audit times, skips known values, and leaves missing audit history absent', async () => {
+  const { t, owner, organizationId, recipeId } = await recipeFixture();
+  const versions = await t.run(async (ctx) => {
+    const fromAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 1,
+      status: 'published',
+    });
+    const retiredFromAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 2,
+      status: 'retired',
+    });
+    const alreadySet = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 3,
+      status: 'published',
+      publishedAt: 123,
+    });
+    const noAudit = await ctx.db.insert('recipeVersions', {
+      organizationId,
+      recipeId,
+      versionNumber: 4,
+      status: 'retired',
+    });
+    const firstAuditId = await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: fromAudit,
+      metadata: { versionNumber: 1 },
+    });
+    const secondAuditId = await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: retiredFromAudit,
+      metadata: { versionNumber: 2 },
+    });
+    await ctx.db.insert('auditEvents', {
+      organizationId,
+      actorUserId: owner.userId,
+      action: 'recipeVersion.published',
+      entityType: 'recipeVersion',
+      entityId: alreadySet,
+      metadata: { versionNumber: 3 },
+    });
+    const firstAudit = await ctx.db.get(firstAuditId);
+    const secondAudit = await ctx.db.get(secondAuditId);
+    if (firstAudit === null || secondAudit === null) throw new Error('Expected publication audit rows');
+    return { fromAudit, retiredFromAudit, alreadySet, noAudit, firstAudit, secondAudit };
+  });
+
+  await t.mutation(backfillRecipeVersionPublishedAt, {});
+  await t.mutation(backfillRecipeVersionPublishedAt, {});
+
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(versions.fromAudit)).toMatchObject({ publishedAt: versions.firstAudit._creationTime });
+    expect(await ctx.db.get(versions.retiredFromAudit)).toMatchObject({ publishedAt: versions.secondAudit._creationTime });
+    expect(await ctx.db.get(versions.alreadySet)).toMatchObject({ publishedAt: 123 });
+    expect((await ctx.db.get(versions.noAudit))?.publishedAt).toBeUndefined();
+  });
 });
 
 test('I7: a client cannot choose a version number, and the rejection is argument validation', async () => {

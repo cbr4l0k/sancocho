@@ -118,7 +118,7 @@ export async function publishRecipeVersion(ctx: MutationCtx, recipeVersionId: Id
   if (recipe.status === 'archived') return invalidInput('Archived recipes cannot be published');
   await validateDraftFields(ctx, version);
   await retireCurrentPublishedVersion(ctx, recipe, access);
-  await ctx.db.patch(recipeVersionId, { status: 'published' });
+  await ctx.db.patch(recipeVersionId, { status: 'published', publishedAt: Date.now() });
   if (recipe.status === 'draft') await ctx.db.patch(recipe._id, { status: 'active' });
   await recordAuditEvent(ctx, { organizationId: recipe.organizationId, actorUserId: access.user._id, action: 'recipeVersion.published', entityType: 'recipeVersion', entityId: recipeVersionId, metadata: { versionNumber: version.versionNumber } });
 }

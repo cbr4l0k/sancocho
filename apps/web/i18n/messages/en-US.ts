@@ -206,6 +206,7 @@ const enUS = {
     emptyBody: 'Create an event recipe to start assembling versioned service configuration.',
     versionsTitle: 'Version timeline',
     created: 'Created',
+    published: 'Published',
     current: 'Current',
     noVersions: 'This recipe has no versions yet.',
     createFirstDraft: 'Create the first draft',

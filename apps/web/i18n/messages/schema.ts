@@ -141,6 +141,7 @@ export type MessageSchema = {
     emptyBody: string;
     versionsTitle: string;
     created: string;
+    published: string;
     current: string;
     noVersions: string;
     createFirstDraft: string;

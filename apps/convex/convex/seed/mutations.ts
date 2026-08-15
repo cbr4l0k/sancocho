@@ -194,6 +194,35 @@ export const seedBuiltinFieldDefinitions = internalMutation({
   },
 });
 
+/**
+ * Backfills the publish time for pre-column recipe versions from the
+ * transactionally-recorded publication audit event. This is deliberately
+ * guarded by the seed deployment opt-in: it is a deployment-level
+ * administrative operation in the same risk class, and internalMutation alone
+ * does not guard against someone running `convex run --prod`.
+ */
+export const backfillRecipeVersionPublishedAt = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    assertSeedingEnabled();
+    const versions = await ctx.db.query('recipeVersions').collect();
+    for (const version of versions) {
+      if ((version.status !== 'published' && version.status !== 'retired') || version.publishedAt !== undefined) continue;
+      // This is an entity-scoped indexed read, never an audit-table scan.
+      const audits = await ctx.db
+        .query('auditEvents')
+        .withIndex('by_org_entity', (q) =>
+          q.eq('organizationId', version.organizationId).eq('entityType', 'recipeVersion').eq('entityId', version._id),
+        )
+        .collect();
+      const published = audits.find((audit) => audit.action === 'recipeVersion.published');
+      if (published !== undefined) await ctx.db.patch(version._id, { publishedAt: published._creationTime });
+    }
+    return null;
+  },
+});
+
 function requireFieldId(ids: ReadonlyMap<string, Id<'fieldDefinitions'>>, key: BuiltinKey): Id<'fieldDefinitions'> {
   const id = ids.get(key);
   if (id === undefined) {

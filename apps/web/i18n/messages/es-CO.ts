@@ -207,6 +207,7 @@ const esCO = {
     emptyBody: 'Crea una receta de evento para empezar a componer configuraciones versionadas de servicio.',
     versionsTitle: 'Línea de tiempo de versiones',
     created: 'Creada',
+    published: 'Publicada',
     current: 'Actual',
     noVersions: 'Esta receta todavía no tiene versiones.',
     createFirstDraft: 'Crear el primer borrador',
