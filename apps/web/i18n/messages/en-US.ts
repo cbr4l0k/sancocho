@@ -1,0 +1,274 @@
+import type { TranslationShape } from './schema';
+import type esCO from './es-CO';
+
+const enUS = {
+  auth: {
+    connecting: 'Connecting to Sancocho…',
+    signedOut:
+      'You are not signed in. The Sancocho connection is ready when you are.',
+    signedOutTitle: 'Welcome to Sancocho',
+    profilePending:
+      'Connected to Convex. Your Sancocho user profile is not set up yet.',
+    connected: 'Connected to Convex.',
+    signIn: 'Sign in',
+    signUp: 'Create account',
+    signOut: 'Sign out',
+  },
+  organizations: {
+    title: 'Organizations',
+    members:
+      '{count, plural, =0 {No members} one {# member} other {# members}}',
+    switcherLabel: 'Active organization',
+    chooseOrganization: 'Choose an organization',
+    createTitle: 'Create your organization',
+    createDescription: 'Set up the workspace for your operation.',
+    nameLabel: 'Organization name',
+    slugLabel: 'Organization identifier',
+    slugDescription:
+      'Use lowercase letters, 3–63 characters, with letters, numbers, and single dashes.',
+    createAction: 'Create organization',
+    slugInvalid:
+      'Use a valid identifier: lowercase letters, numbers, and single dashes, 3–63 characters long.',
+    slugTaken: 'That identifier is not available. Choose another.',
+    rosterTitle: 'Organization members',
+    rosterDescription:
+      'These are the people who currently have access to this organization.',
+    memberName: 'Name',
+    memberEmail: 'Email',
+    memberRole: 'Role',
+    noOrganizationTitle: 'You do not have an organization yet',
+  },
+  projects: {
+    title: 'Projects',
+    statuses: {
+      draft: 'Draft',
+      active: 'Active',
+      completed: 'Completed',
+      archived: 'Archived',
+    },
+  },
+  fields: {
+    title: 'Fields',
+    dataTypes: {
+      text: 'Text',
+      longText: 'Long text',
+      number: 'Number',
+      boolean: 'Yes/no',
+      date: 'Date',
+      datetime: 'Date and time',
+      time: 'Time',
+      select: 'Select',
+      multiSelect: 'Multi-select',
+      location: 'Location',
+    },
+    statuses: { active: 'Active', archived: 'Archived' },
+    semanticTypes: {
+      eventName: {
+        label: 'Service name',
+        description: 'Identifies the operational service.',
+      },
+      eventDescription: {
+        label: 'Service description',
+        description: 'Provides service operating details.',
+      },
+      eventDate: {
+        label: 'Service date',
+        description: 'Stores the service calendar date.',
+      },
+      eventTime: {
+        label: 'Service time',
+        description: 'Stores the scheduled local time.',
+      },
+      eventLocation: {
+        label: 'Service location',
+        description: 'Associates the service with a location.',
+      },
+      passenger_count: {
+        label: 'Passenger count',
+        description: 'Supports totals and occupancy calculations.',
+      },
+      transport_origin: {
+        label: 'Origin',
+        description: 'Identifies the transport starting point.',
+      },
+      transport_destination: {
+        label: 'Destination',
+        description: 'Identifies the transport arrival point.',
+      },
+      aviation_flightNumber: {
+        label: 'Flight number',
+        description: 'Supports flight tracking.',
+      },
+      luggage_count: {
+        label: 'Luggage count',
+        description: 'Stores the luggage total.',
+      },
+      accessibility_wheelchairCount: {
+        label: 'Wheelchair count',
+        description: 'Identifies accessibility requirements.',
+      },
+      contact_primary: {
+        label: 'Primary contact',
+        description: 'Stores the primary operations contact.',
+      },
+      aviation_terminal: {
+        label: 'Terminal',
+        description: 'Stores the airport terminal.',
+      },
+      general_notes: {
+        label: 'Notes',
+        description: 'Stores operational notes.',
+      },
+    },
+  },
+  recipes: {
+    title: 'Recipes',
+    statuses: { draft: 'Draft', active: 'Active', archived: 'Archived' },
+    versionStatuses: {
+      draft: 'Draft',
+      published: 'Published',
+      retired: 'Retired',
+    },
+  },
+  services: {
+    title: 'Services',
+    statuses: {
+      draft: 'Draft',
+      planned: 'Planned',
+      confirmed: 'Confirmed',
+      active: 'Active',
+      completed: 'Completed',
+      cancelled: 'Cancelled',
+    },
+  },
+  locations: {
+    title: 'Locations',
+    types: {
+      airport: 'Airport',
+      hotel: 'Hotel',
+      venue: 'Venue',
+      office: 'Office',
+      station: 'Station',
+      depot: 'Depot',
+      custom: 'Custom',
+    },
+  },
+  relationships: {
+    title: 'Relationships',
+    types: {
+      dependsOn: 'Depends on',
+      follows: 'Follows',
+      parentOf: 'Parent of',
+      relatedTo: 'Related to',
+    },
+  },
+  stats: {
+    itemsSelected:
+      '{count, plural, =0 {No items selected} one {# item selected} other {# items selected}}',
+    welcome: 'Hello, {name}. Everything is ready to get started.',
+  },
+  chat: {
+    title: 'Operations chat',
+    eyebrow: 'Operations center',
+    description: 'A conversation space for coordinating operational work.',
+  },
+  common: {
+    language: 'Language',
+    languageDescription:
+      'Your choice is stored in a cookie and sets the application route.',
+    spanish: 'Spanish',
+    english: 'English',
+    save: 'Save',
+    cancel: 'Cancel',
+    required: 'Required',
+    retry: 'Retry',
+    clear: 'Clear filter',
+    notAvailable: 'Not available',
+  },
+  errors: {
+    generic: 'Something went wrong. Please try again.',
+    notFound: 'The resource was not found or you do not have access.',
+  },
+  nav: {
+    home: 'Home',
+    chat: 'Chat',
+    projects: 'Projects',
+    services: 'Services',
+    recipes: 'Recipes',
+    locations: 'Locations',
+    fields: 'Fields',
+    statistics: 'Statistics',
+    settings: 'Organization and settings',
+    account: 'Account',
+    label: 'Main navigation',
+    application: 'Sancocho',
+  },
+  shell: {
+    comingSoonTitle: 'Available in a future stage',
+    comingSoonDescription:
+      'This surface already has a route and shares the operations frame.',
+    comingSoonBody:
+      'The operational functionality for this surface will arrive in its planned stage.',
+  },
+  vocab: {
+    roles: {
+      owner: 'Owner',
+      admin: 'Administrator',
+      planner: 'Planner',
+      operator: 'Operator',
+      viewer: 'Viewer',
+    },
+    auditActions: {
+      organization_created: 'Organization created',
+      organization_updated: 'Organization updated',
+      membership_created: 'Membership created',
+      membership_updated: 'Membership updated',
+      membership_removed: 'Membership removed',
+      project_created: 'Project created',
+      project_updated: 'Project updated',
+      project_archived: 'Project archived',
+      fieldDefinition_created: 'Field definition created',
+      fieldDefinition_updated: 'Field definition updated',
+      fieldDefinition_archived: 'Field definition archived',
+      fieldDefinition_deleted: 'Field definition deleted',
+      recipe_created: 'Recipe created',
+      recipe_updated: 'Recipe updated',
+      recipe_archived: 'Recipe archived',
+      recipeVersion_created: 'Recipe version created',
+      recipeVersion_published: 'Recipe version published',
+      recipeVersion_retired: 'Recipe version retired',
+      recipeField_added: 'Recipe field added',
+      recipeField_updated: 'Recipe field updated',
+      recipeField_removed: 'Recipe field removed',
+      recipeVersion_fieldsReordered: 'Recipe fields reordered',
+      event_created: 'Service created',
+      event_updated: 'Service updated',
+      event_fieldsUpdated: 'Service fields updated',
+      event_statusChanged: 'Service status updated',
+      event_cancelled: 'Service cancelled',
+      location_created: 'Location created',
+      location_updated: 'Location updated',
+      location_archived: 'Location archived',
+      location_deleted: 'Location deleted',
+      relationship_created: 'Relationship created',
+      relationship_removed: 'Relationship removed',
+    },
+  },
+  table: {
+    loaded:
+      '{count, plural, =0 {No records loaded} one {# record loaded} other {# records loaded}}',
+    loadMore: 'Load more',
+    loadingMore: 'Loading…',
+    endOfList: 'End of list',
+  },
+  empty: {
+    noRecords: 'No records yet',
+    noRecordsBody:
+      'The first one will show up in this list as soon as it is created.',
+    noMatches: 'No records match the filter',
+    noMatchesBody: 'Adjust or clear the filter to see more results.',
+    unavailable: 'Content unavailable',
+  },
+} as const satisfies TranslationShape<typeof esCO>;
+
+export default enUS;

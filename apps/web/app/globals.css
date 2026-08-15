@@ -1,0 +1,252 @@
+@import 'tailwindcss';
+
+/*
+ * Sancocho — calm operations console.
+ *
+ * Dark is canonical: `:root` holds the dark palette, so any surface that fails
+ * to resolve a theme still lands on the designed ground. The light palette is a
+ * separate clean neutral design and applies to
+ * viewers whose OS asks for light. `data-theme` on <html> overrides either way,
+ * which is all a future theme toggle needs.
+ */
+
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media not (prefers-color-scheme: light) {
+    &:where(
+      :root:not([data-theme='light']),
+      :root:not([data-theme='light']) *
+    ) {
+      @slot;
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+
+  --sc-ground-0: #0a0a0a;
+  --sc-ground-1: #141414;
+  --sc-ground-2: #1c1c1c;
+  --sc-ground-3: #242424;
+  --sc-well: #060606;
+
+  /* Rules. `line` is the default hairline; `line-strong` marks structure. */
+  --sc-line: #262626;
+  --sc-line-strong: #343434;
+
+  /* Ink. */
+  --sc-ink: #f5f5f5;
+  --sc-ink-2: #a3a3a3;
+  --sc-ink-3: #737373;
+
+  --sc-accent: #f9c50f;
+  --sc-accent-hi: #ffd94a;
+  --sc-accent-ink: #1a1400;
+
+  /* Focus is cyan and belongs to no status, so it never reads as state. */
+  --sc-focus: #7cc4ff;
+
+  /* Status tones — disposition, never lifecycle phase (that is the shape). */
+  --sc-tone-mute: #8f8f8f;
+  --sc-tone-hold: #7aa7e8;
+  --sc-tone-go: #4ade80;
+  --sc-tone-live: #2dd4bf;
+  --sc-tone-done: #5b9e78;
+  --sc-tone-stop: #f87171;
+  --sc-tone-shelf: #5f5f5f;
+  --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+
+  --sc-radius-panel: 20px;
+  --sc-radius-input: 12px;
+  --sc-radius-pill: 999px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+
+    --sc-ground-0: #fafafa;
+    --sc-ground-1: #ffffff;
+    --sc-ground-2: #f5f5f5;
+    --sc-ground-3: #ebebeb;
+    --sc-well: #f0f0f0;
+
+    --sc-line: #e5e5e5;
+    --sc-line-strong: #d4d4d4;
+
+    --sc-ink: #171717;
+    --sc-ink-2: #525252;
+    --sc-ink-3: #737373;
+
+    --sc-accent: #f9c50f;
+    --sc-accent-hi: #ffd94a;
+    --sc-accent-ink: #1a1400;
+
+    --sc-focus: #0b74d1;
+
+    --sc-tone-mute: #6b6b6b;
+    --sc-tone-hold: #2f6fc4;
+    --sc-tone-go: #15803d;
+    --sc-tone-live: #0d9488;
+    --sc-tone-done: #3f7d5f;
+    --sc-tone-stop: #dc2626;
+    --sc-tone-shelf: #787878;
+    --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.1);
+  }
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --sc-ground-0: #fafafa;
+  --sc-ground-1: #ffffff;
+  --sc-ground-2: #f5f5f5;
+  --sc-ground-3: #ebebeb;
+  --sc-well: #f0f0f0;
+
+  --sc-line: #e5e5e5;
+  --sc-line-strong: #d4d4d4;
+
+  --sc-ink: #171717;
+  --sc-ink-2: #525252;
+  --sc-ink-3: #737373;
+
+  --sc-accent: #f9c50f;
+  --sc-accent-hi: #ffd94a;
+  --sc-accent-ink: #1a1400;
+
+  --sc-focus: #0b74d1;
+
+  --sc-tone-mute: #6b6b6b;
+  --sc-tone-hold: #2f6fc4;
+  --sc-tone-go: #15803d;
+  --sc-tone-live: #0d9488;
+  --sc-tone-done: #3f7d5f;
+  --sc-tone-stop: #dc2626;
+  --sc-tone-shelf: #787878;
+  --sc-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.1);
+}
+
+/*
+ * `inline` keeps the utility referencing the custom property instead of baking
+ * the value in, which is what lets one stylesheet serve both themes.
+ */
+@theme inline {
+  --font-sans: var(--font-chivo), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-chivo-mono), ui-monospace, monospace;
+
+  --color-ground-0: var(--sc-ground-0);
+  --color-ground-1: var(--sc-ground-1);
+  --color-ground-2: var(--sc-ground-2);
+  --color-ground-3: var(--sc-ground-3);
+  --color-well: var(--sc-well);
+  --color-line: var(--sc-line);
+  --color-line-strong: var(--sc-line-strong);
+  --color-ink: var(--sc-ink);
+  --color-ink-2: var(--sc-ink-2);
+  --color-ink-3: var(--sc-ink-3);
+  --color-accent: var(--sc-accent);
+  --color-accent-hi: var(--sc-accent-hi);
+  --color-accent-ink: var(--sc-accent-ink);
+  --color-focus: var(--sc-focus);
+  --color-tone-mute: var(--sc-tone-mute);
+  --color-tone-hold: var(--sc-tone-hold);
+  --color-tone-go: var(--sc-tone-go);
+  --color-tone-live: var(--sc-tone-live);
+  --color-tone-done: var(--sc-tone-done);
+  --color-tone-stop: var(--sc-tone-stop);
+  --color-tone-shelf: var(--sc-tone-shelf);
+  --radius-panel: var(--sc-radius-panel);
+  --radius-input: var(--sc-radius-input);
+  --radius-pill: var(--sc-radius-pill);
+
+  /* Type scale. Sized for the Spanish string, so nothing here needs truncation. */
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1rem;
+  --text-micro--letter-spacing: 0.09em;
+  --text-micro--font-weight: 600;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.4375rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-lg--letter-spacing: -0.01em;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-xl--letter-spacing: -0.015em;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-display: clamp(2rem, 1.2rem + 2.4vw, 3rem);
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+}
+
+@layer base {
+  html {
+    /* Chivo's tabular figures make every numeric column line up without effort. */
+    font-variant-numeric: tabular-nums;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--sc-ground-0);
+    color: var(--sc-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    min-height: 100dvh;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--sc-accent) 32%, transparent);
+    color: var(--sc-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sc-focus);
+    outline-offset: 2px;
+  }
+
+  /* A tool people stare at all day: motion is opt-out by default. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* The one animation in the system: the skeleton sweep. */
+  @keyframes sc-sweep {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  /* The second: the halo on an in-progress status marker. */
+  @keyframes sc-breathe {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.16;
+      transform: scale(1.9);
+    }
+  }
+}

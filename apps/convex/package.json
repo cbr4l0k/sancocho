@@ -3,6 +3,15 @@
   "private": true,
   "type": "module",
   "version": "0.0.0",
+  "exports": {
+    "./api": {
+      "types": "./convex/_generated/api.d.ts",
+      "default": "./convex/_generated/api.js"
+    },
+    "./validators": {
+      "types": "./convex/validators/index.ts"
+    }
+  },
   "scripts": {
     "codegen": "convex codegen",
     "typecheck": "tsc --noEmit",
