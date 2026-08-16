@@ -1,10 +1,11 @@
-# Sancocho — Logistics Operations Platform (Backend Foundation)
+# Sancocho — Logistics Operations Platform
 
-Open-source logistics operations platform backend: TypeScript (strict) + Convex + Clerk.
-For logistics companies, transportation coordinators, event organizers, and ops teams
-currently running complex transportation projects on spreadsheets and email.
+Open-source logistics operations platform: TypeScript (strict) + Convex + Clerk backend,
+with a Next.js operations console on top. For logistics companies, transportation
+coordinators, event organizers, and ops teams currently running complex transportation
+projects on spreadsheets and email.
 
-Work is specified and tracked in **GitHub issues** (see the epic tracking issue); each
+Work is specified and tracked in **GitHub issues** (see the epic tracking issues); each
 issue carries its own scope checklist and required tests. This file holds the invariants
 and conventions that apply to everything.
 
@@ -27,6 +28,8 @@ Event → Event Field Values
 - A Recipe is **configuration**; an Event is **operational data**.
 - Every Event references the exact published Recipe Version it was created from.
 - Historical Events must never silently change because a Recipe is edited later.
+- Vocabulary: the backend entity is an **Event**; the console calls it a **Service**
+  (`Servicio`). Keep backend identifiers on `event`; keep user-facing words on service.
 
 ## Non-negotiable invariants (I1–I9)
 
@@ -48,9 +51,10 @@ Event → Event Field Values
 - **I8 No escape hatches**: no user scripts, expression DSLs, arbitrary JSON, generic
   reference types, workflow engines, or low-code form engines. Structured flexibility only.
 - **I9 Don't disclose cross-tenant existence** — generic "not found/inaccessible" errors
-  when a caller lacks access, whether or not the entity exists.
+  when a caller lacks access, whether or not the entity exists. The console must not
+  translate an error into anything more specific than the backend's own code.
 
-## Tech & conventions
+## Backend conventions
 
 - TypeScript strict mode; **never `any`**, no unsafe assertions.
 - Convex for all backend (queries/mutations/actions/internal functions/crons).
@@ -69,6 +73,8 @@ Event → Event Field Values
 - **Temporal semantics**: `datetime` = absolute timestamp (ms); `date` = `YYYY-MM-DD`
   string, never converted to a timestamp; `time` = strict `HH:mm` wall-clock string.
   An Event's canonical `startsAt` is always a complete absolute timestamp.
+- **Errors are stable codes**, not prose: throw `ConvexError` carrying a code from
+  `convex/lib/errors.ts`. Nothing (tests included) may match on message text.
 - Public handlers stay thin; authorization, validation, and business invariants live in
   reusable domain functions. Role decisions are centralized in shared helpers — no
   scattered role string comparisons.
@@ -79,17 +85,51 @@ Event → Event Field Values
   verify references first.
 - Audit log (not event sourcing): domain operations record audit events; metadata never
   contains secrets, tokens, provider claims, or excessive PII.
-- Package manager: **bun** (no npm). No frontend UI work in this phase.
 
-## Repository structure (target)
+## Web console conventions
+
+`docs/web-design.md` is the design decision record — typography, palette, status
+colour/shape mapping, table/form/pagination patterns, bento rules. Read it before
+building a screen.
+
+- Next.js App Router (React 19) + Tailwind v4. Tokens live in CSS-first `@theme` in
+  `app/globals.css`; there is **no `tailwind.config.js`**. Dark is canonical.
+- shadcn 4.x primitives (`base-nova` style, on Base UI — not Radix) are vendored into
+  `components/ui/` and re-skinned onto our tokens. Compose screens from those primitives.
+- Route pages under `app/[locale]/(application)/` stay thin (await `params`, render a
+  surface); the work lives in `'use client'` surface components under `components/<domain>/`.
+- Backend access is the generated API only: `import { api } from '@sancocho/convex/api'`,
+  plus `@sancocho/convex/validators` and `/errors` for shared types. Never hand-write a
+  backend signature or re-declare a union the backend owns.
+- Tenant lists use `usePaginatedQuery` (mirrors I6) and pass `'skip'` until the current
+  organization is known.
+- **UI role checks are affordances, never authorization** (`lib/roles.ts`); the backend
+  is the sole authority. Hiding a button protects nothing.
+- Errors: map backend codes → message keys in `lib/convex-errors.ts`; unknown code falls
+  back to the generic message. Never render raw backend prose.
+- Statuses: exhaustive `Record`s keyed off backend unions in `lib/status.ts`, so a new
+  backend status is a `tsc` failure, not an uncoloured chip. Colour is never the only
+  channel — shape carries the same information.
+- i18n via `next-intl`: canonical locales `es-CO` (default) and `en-US`, URL segments
+  `/es` and `/en`, mapped only in `i18n/locales.ts`. Internal links always carry the
+  locale segment via the `i18n/` href helpers — never a bare path. Message keys may not
+  contain `.` (next-intl reserves it for nesting). Catalogues cover UI chrome and
+  code-owned vocabulary only — **tenant-authored text (recipe/field/project/location
+  names, option labels) is rendered exactly as entered, never translated.**
+- Pure logic goes in `lib/*.ts` with a colocated `*.test.ts` (`bun test`); components
+  stay presentational enough that the rules are testable without rendering.
+
+## Repository structure
 
 ```
-apps/convex/convex/   — schema.ts + one directory per domain
-                        (auth, organizations, projects, fields, recipes,
-                         events, locations, relationships, audit, validators,
-                         seed, internal)
-apps/web/             — placeholder, no UI yet
-packages/shared/      — shared types/validators
+apps/convex/convex/   — schema.ts + one directory per domain (auth, organizations,
+                        projects, fields, recipes, recipes/fields, events, locations,
+                        relationships, audit, seed, validators, lib)
+                        each domain: model.ts (logic) + queries.ts / mutations.ts (thin)
+apps/convex/tests/    — convex-test suites, one per domain
+apps/web/             — app/[locale]/… routes, components/{ui,<domain>}, i18n/, lib/
+packages/shared/      — provider-neutral shared package (placeholder)
+docs/                 — architecture, per-domain decision records, web-design.md
 ```
 
 Guidance, not rigid; prefer cohesive modules over giant files.
@@ -98,22 +138,29 @@ Guidance, not rigid; prefer cohesive modules over giant files.
 
 - Pick up a GitHub issue, implement it fully (including its listed tests), verify, close
   with a summary comment noting any deliberate deviations.
-- Stage discipline (labels): `stage:A` architecture review → `stage:B` priority vertical
-  slice → `stage:C` remaining domains → `stage:D` seeds/demo → `stage:E` docs. Don't
-  start a stage while the previous one is knowingly broken.
-- After every change set: `convex codegen → typecheck → test → fix`. Never leave the repo
+- Stage discipline (labels): backend `stage:A` architecture → `stage:B` priority vertical
+  slice → `stage:C` remaining domains → `stage:D` seeds/demo → `stage:E` docs; console
+  `stage:F` foundation (shell, auth, i18n) → `stage:G` configuration surfaces (fields,
+  recipes) → `stage:H` operations surfaces (projects, locations, services) → `stage:I`
+  chat → `stage:J` statistics & export. Don't start a stage while the previous one is
+  knowingly broken.
+- After every change set, from the repo root: `bun run codegen` → `bun run typecheck` →
+  `bun run lint` (includes `i18n:check`) → `bun run test` → fix. Never leave the repo
   non-compiling; never claim tests passed without running them. If a command can't run,
   say which, why, and what was verified instead.
+- Package manager: **bun** (no npm). Assume the dev server is already running; don't run
+  `dev` or `build`.
 - The **priority vertical slice** beats breadth: sign-in → app user → org → project →
-  built-in fields → recipe → publish version → create typed Event → retrieve it. A
-  smaller coherent compiling backend is better than a broad partially connected one.
+  built-in fields → recipe → publish version → create typed Service → retrieve it. A
+  smaller coherent working product is better than a broad partially connected one.
 - After implementing backend code, run the `invariant-auditor` agent on the diff; before
   claiming a domain's tests done, run `test-coverage-auditor`.
 
 ## Explicit non-goals
 
-No frontend UI, driver/vehicle/fleet management, routing, mapping, geocoding, address
-normalization, billing/pricing, flight-tracking integrations, workflow engines, rules
-engines (leave documented room for future structured conditional rules — don't build
-them), low-code builders, event sourcing, or generic reference systems. Future
-compatibility yes; premature building no.
+No driver/vehicle/fleet management, routing, mapping, geocoding, address normalization,
+billing/pricing, flight-tracking integrations, workflow engines, rules engines (leave
+documented room for future structured conditional rules — don't build them), low-code
+builders, event sourcing, or generic reference systems. The chat surface is a UI with a
+stubbed responder that produces reviewable proposals — it is not an agent, a rules
+engine, or a write path of its own. Future compatibility yes; premature building no.
