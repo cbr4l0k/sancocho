@@ -226,6 +226,7 @@ export type MessageSchema = {
     createTitle: string;
     create: string;
     chooseProject: string;
+    chooseProjectHint: string;
     chooseRecipe: string;
     project: string;
     recipe: string;
@@ -396,6 +397,24 @@ export type MessageSchema = {
     loadMore: string;
     loadingMore: string;
     endOfList: string;
+  };
+  /**
+   * Data-table chrome. `loadedScope` is not decoration: sorting and filtering
+   * run over the pages fetched so far, and the table must say so.
+   */
+  dataTable: {
+    search: string;
+    columns: string;
+    selected: string;
+    organiseHint: string;
+    moveEarlier: string;
+    moveLater: string;
+    sortBy: string;
+    sortedAscending: string;
+    sortedDescending: string;
+    loadedScope: string;
+    selectAll: string;
+    selectRow: string;
   };
   empty: {
     noRecords: string;
