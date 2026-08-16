@@ -118,6 +118,11 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',
+  seedOrganizationMissing: 'errors.generic',
+  seedOrganizationOwnerMissing: 'errors.generic',
+  seedLocationMissing: 'errors.generic',
+  seedRecipeMissing: 'errors.generic',
+  seedRecipeVersionMissing: 'errors.generic',
   auditEntityIdTooLong: 'errors.auditInvalid',
   auditMetadataInvalid: 'errors.auditInvalid',
 };
