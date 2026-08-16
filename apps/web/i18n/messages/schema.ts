@@ -10,10 +10,7 @@ import type {
   roleValidator,
 } from '@sancocho/convex/validators';
 import type { SemanticCapability } from '@sancocho/convex/validators';
-import type {
-  AuditActionMessageKey,
-  SemanticTypeMessageKey,
-} from '../vocab-keys';
+import type { AuditActionMessageKey, SemanticTypeMessageKey } from '../vocab-keys';
 export type TranslationShape<Value> = Value extends string
   ? string
   : Value extends object
@@ -55,17 +52,49 @@ export type MessageSchema = {
     slugInvalid: string;
     slugTaken: string;
     rosterTitle: string;
-    rosterDescription: string;
     memberName: string;
     memberEmail: string;
     memberRole: string;
     noOrganizationTitle: string;
   };
-  projects: { title: string; statuses: Record<ProjectStatus, string> };
+  projects: {
+    title: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    name: string;
+    description: string;
+    status: string;
+    start: string;
+    end: string;
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+    dateRange: string;
+    noDates: string;
+    listTitle: string;
+    detailsTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    statusFilter: string;
+    allStatuses: string;
+    loadedFilterNotice: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    cancelArchive: string;
+    archivedNotice: string;
+    servicesTitle: string;
+    servicesPlaceholder: string;
+    servicesLink: string;
+    statuses: Record<ProjectStatus, string>;
+  };
   fields: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     builtin: string;
     custom: string;
@@ -113,15 +142,10 @@ export type MessageSchema = {
     capabilities: Record<SemanticCapability, string>;
     dataTypes: Record<FieldDataType, string>;
     statuses: Record<ArchivalStatus, string>;
-    semanticTypes: Record<
-      SemanticTypeMessageKey,
-      { label: string; description: string }
-    >;
+    semanticTypes: Record<SemanticTypeMessageKey, { label: string; description: string }>;
   };
   recipes: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     createTitle: string;
     createLead: string;
@@ -148,6 +172,7 @@ export type MessageSchema = {
     newVersionFrom: string;
     publishDraft: string;
     draftEditor: string;
+    backToRecipe: string;
     draftEditorNote: string;
     archivedNotice: string;
     immutableNotice: string;
@@ -166,7 +191,6 @@ export type MessageSchema = {
     duplicatePosition: string;
     invalidPosition: string;
     requiredHidden: string;
-    draftEditorLead: string;
     draftMissing: string;
     draftArchived: string;
     fieldCount: string;
@@ -189,11 +213,105 @@ export type MessageSchema = {
     statuses: Record<RecipeStatus, string>;
     versionStatuses: Record<RecipeVersionStatus, string>;
   };
-  services: { title: string; statuses: Record<EventStatus, string> };
-  locations: { title: string; types: Record<LocationType, string> };
+  services: {
+    title: string;
+    listTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    status: string;
+    statusFilter: string;
+    allStatuses: string;
+    loadedFilterNotice: string;
+    notSet: string;
+    createTitle: string;
+    create: string;
+    chooseProject: string;
+    chooseProjectHint: string;
+    chooseRecipe: string;
+    project: string;
+    recipe: string;
+    selectPlaceholder: string;
+    chooseRecipeHint: string;
+    noProjectsHint: string;
+    noRecipesHint: string;
+    projectUnavailable: string;
+    recipeUnavailable: string;
+    permissionNotice: string;
+    serviceDetails: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    valuesTitle: string;
+    recipeVersionTitle: string;
+    recipeVersionDescription: string;
+    recipeVersionNumber: string;
+    recipeVersionRetired: string;
+    statusActions: string;
+    advanceTo: string;
+    cancel: string;
+    terminalNotice: string;
+    projectFrozenNotice: string;
+    auditTitle: string;
+    name: string;
+    startsAt: string;
+    endsAt: string;
+    fieldInvalid: string;
+    loadMore: string;
+    statuses: Record<EventStatus, string>;
+  };
+  locations: {
+    title: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    name: string;
+    type: string;
+    address: string;
+    status: string;
+    coordinates: string;
+    latitude: string;
+    longitude: string;
+    coordinatesHelp: string;
+    detailsTitle: string;
+    listTitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    notSet: string;
+    archivedNotice: string;
+    archive: string;
+    delete: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    deleteTitle: string;
+    deleteWarning: string;
+    deleteConfirm: string;
+    search: string;
+    typeFilter: string;
+    allTypes: string;
+    loadedFilterNotice: string;
+    selectedArchived: string;
+    loadMore: string;
+    types: Record<LocationType, string>;
+  };
   relationships: { title: string; types: Record<RelationshipType, string> };
   stats: { itemsSelected: string; welcome: string };
-  chat: { title: string; eyebrow: string; description: string };
+  chat: { title: string };
+  /** Organization configuration: the settings frame and its section rail. */
+  settings: {
+    title: string;
+    sectionsLabel: string;
+    sections: {
+      organization: string;
+      fields: string;
+      locations: string;
+      recipes: string;
+    };
+    adminOnlyTitle: string;
+    adminOnlyBody: string;
+  };
   common: {
     language: string;
     languageDescription: string;
@@ -205,6 +323,8 @@ export type MessageSchema = {
     retry: string;
     clear: string;
     notAvailable: string;
+    yes: string;
+    no: string;
   };
   errors: {
     generic: string;
@@ -251,7 +371,6 @@ export type MessageSchema = {
     auditInvalid: string;
   };
   nav: {
-    home: string;
     chat: string;
     projects: string;
     services: string;
@@ -266,7 +385,6 @@ export type MessageSchema = {
   };
   shell: {
     comingSoonTitle: string;
-    comingSoonDescription: string;
     comingSoonBody: string;
   };
   vocab: {
@@ -279,6 +397,24 @@ export type MessageSchema = {
     loadMore: string;
     loadingMore: string;
     endOfList: string;
+  };
+  /**
+   * Data-table chrome. `loadedScope` is not decoration: sorting and filtering
+   * run over the pages fetched so far, and the table must say so.
+   */
+  dataTable: {
+    search: string;
+    columns: string;
+    selected: string;
+    organiseHint: string;
+    moveEarlier: string;
+    moveLater: string;
+    sortBy: string;
+    sortedAscending: string;
+    sortedDescending: string;
+    loadedScope: string;
+    selectAll: string;
+    selectRow: string;
   };
   empty: {
     noRecords: string;

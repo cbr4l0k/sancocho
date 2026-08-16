@@ -79,7 +79,7 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
   // The built-in is visible to the tenant through the shared catalogue, which is
   // how a real client would have found it.
   const catalogue = await client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 10, cursor: null } });
-  expect(catalogue.page.map((field) => field._id)).toEqual([builtinFieldId]);
+  expect(catalogue.page.map((field) => field._id)).toEqual(expect.arrayContaining([builtinFieldId]));
 
   // 5. Recipe → draft version → composition. A built-in belongs to no
   // organization, so composing it proves the usability predicate admits it.

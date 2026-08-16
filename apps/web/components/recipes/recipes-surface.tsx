@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -12,6 +11,7 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, FieldControl, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
@@ -25,10 +25,11 @@ import {
   TableRowHeaderCell,
   TableSkeletonRows,
 } from '@/components/ui/table';
+import { LocaleLink } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { roleAtLeast } from '@/lib/roles';
 
-export function RecipesSurface({ locale }: { locale: string }) {
+export function RecipesSurface() {
   const { currentOrganization } = useCurrentOrganization();
   const t = useTranslations();
   const recipes = usePaginatedQuery(
@@ -67,22 +68,18 @@ export function RecipesSurface({ locale }: { locale: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('recipes.eyebrow')}
-        </p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-          {t('recipes.title')}
-        </h1>
-        <p className="text-sm text-ink-2">{t('recipes.lead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('recipes.title')}
+        actions={
+          canManage && !creating ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              {t('recipes.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
-      {canManage ? (
-        <Button className="self-start" variant="primary" onClick={() => setCreating(true)}>
-          {t('recipes.create')}
-        </Button>
-      ) : null}
       {creating ? <RecipeForm onClose={() => setCreating(false)} onSubmit={submit} /> : null}
       {recipes.status === 'Exhausted' && recipes.results.length === 0 ? (
         <EmptyState title={t('recipes.emptyTitle')} description={t('recipes.emptyBody')} />
@@ -105,7 +102,7 @@ export function RecipesSurface({ locale }: { locale: string }) {
             ) : (
               <TableBody>
                 {recipes.results.map((recipe) => (
-                  <RecipeRow key={recipe._id} locale={locale} recipe={recipe} />
+                  <RecipeRow key={recipe._id} recipe={recipe} />
                 ))}
               </TableBody>
             )}
@@ -123,7 +120,7 @@ export function RecipesSurface({ locale }: { locale: string }) {
 
 type Recipe = FunctionReturnType<typeof api.recipes.queries.listRecipes>['page'][number];
 
-function RecipeRow({ recipe, locale }: { recipe: Recipe; locale: string }) {
+function RecipeRow({ recipe }: { recipe: Recipe }) {
   const t = useTranslations();
   const details = useQuery(api.recipes.queries.getRecipe, { recipeId: recipe._id });
   const published = details?.versions.find((version) => version.status === 'published');
@@ -131,12 +128,12 @@ function RecipeRow({ recipe, locale }: { recipe: Recipe; locale: string }) {
   return (
     <TableRow>
       <TableRowHeaderCell>
-        <Link
+        <LocaleLink
           className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-          href={`/${locale}/recipes/${recipe._id}`}
+          to={`/settings/recipes/${recipe._id}`}
         >
           {recipe.name}
-        </Link>
+        </LocaleLink>
       </TableRowHeaderCell>
       <TableCell className="font-mono text-xs">{recipe.key}</TableCell>
       <TableCell>

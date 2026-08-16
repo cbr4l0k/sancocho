@@ -11,7 +11,7 @@ import {
 } from '../lib/access';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
-import type { Role } from '../lib/roles';
+import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { isFiniteNumber, type locationTypeValidator } from '../validators';
 
 type LocationType = typeof locationTypeValidator.type;
@@ -49,7 +49,7 @@ export async function createLocation(
   ctx: MutationCtx,
   args: { organizationId: Id<'organizations'>; name: string; type: LocationType; address?: string } & LocationCoordinates,
 ): Promise<Id<'locations'>> {
-  const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
+  const access = await requireOrganizationRole(ctx, args.organizationId, organizationConfigurationRole);
   // The validator returns the trimmed name, and the trimmed name is what is stored.
   const name = validateEntityName(args.name, 'location');
   validateAddress(args.address);
@@ -90,7 +90,7 @@ export async function listLocations(
 }
 
 export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations'>, patch: LocationPatch): Promise<void> {
-  const { location, access } = await requireLocationAccess(ctx, locationId, 'planner');
+  const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status === 'archived') return invalidInput('locationArchived', 'Archived locations cannot be updated');
   // Validated (and therefore trimmed) before the diff, so what is compared
   // against the stored name is exactly what would be stored.
@@ -139,7 +139,7 @@ export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations
 }
 
 export async function archiveLocation(ctx: MutationCtx, locationId: Id<'locations'>): Promise<void> {
-  const { location, access } = await requireLocationAccess(ctx, locationId, 'planner');
+  const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status === 'archived') return;
   // Event writes reject archived locations through the shared location-default check (#10).
   await ctx.db.patch(locationId, { status: 'archived' });
@@ -154,7 +154,7 @@ export async function archiveLocation(ctx: MutationCtx, locationId: Id<'location
 }
 
 export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations'>): Promise<void> {
-  const { location, access } = await requireLocationAccess(ctx, locationId, 'planner');
+  const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status !== 'archived') return invalidInput('locationArchiveRequired', 'Locations must be archived before deletion');
   // Both tables that can reference a location are checked first-hit through
   // their indexes, mirroring `deleteFieldDefinition`. `eventFieldValues` covers

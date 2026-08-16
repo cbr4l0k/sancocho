@@ -71,7 +71,7 @@ async function fixture() {
     owner.client.mutation(createFieldDefinition, { organizationId, key, label, config });
   const definitions = {
     code: await field('code', 'Code', { kind: 'text', minLength: 2, maxLength: 5 }),
-    notes: await field('notes', 'Notes', { kind: 'longText', minLength: 3, maxLength: 10 }),
+    notes: await field('eventNotes', 'Notes', { kind: 'longText', minLength: 3, maxLength: 10 }),
     seats: await field('seats', 'Seats', { kind: 'number', min: 1, max: 10, integer: true }),
     vip: await field('vip', 'VIP', { kind: 'boolean' }),
     day: await field('day', 'Day', { kind: 'date', min: '2026-01-01', max: '2026-12-31' }),
@@ -738,7 +738,7 @@ test('event queries paginate by start time, stay tenant-scoped, and join live de
   const event = await member.client.query(getEvent, { eventId });
   expect(event.values.find((value) => value.fieldDefinitionId === definitions.notes)).toEqual({
     fieldDefinitionId: definitions.notes,
-    key: 'notes',
+    key: 'eventNotes',
     label: 'Operator notes',
     value: { kind: 'longText', value: 'joined' },
   });
@@ -826,7 +826,7 @@ test('F2 regression: an archived project freezes its events through every write 
   // Frozen means read-only, not gone: the event is untouched and still readable.
   const event = await owner.client.query(getEvent, { eventId });
   expect(event.event).toMatchObject({ name: 'Arrival', status: 'planned' });
-  expect(event.values.find((value) => value.key === 'notes')?.value).toEqual({ kind: 'longText', value: 'before' });
+  expect(event.values.find((value) => value.key === 'eventNotes')?.value).toEqual({ kind: 'longText', value: 'before' });
   await expect(owner.client.query(listProjectEvents, { projectId, paginationOpts: firstPage })).resolves.toMatchObject({ isDone: true });
   await t.run(async (ctx) => {
     expect(await ctx.db.query('events').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()).toHaveLength(1);

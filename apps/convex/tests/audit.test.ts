@@ -69,7 +69,7 @@ function countAuditEvents(t: ReturnType<typeof convexTest>) {
 
 test('writes a newest-first operational audit log and filters entity history', async () => {
   const { owner, organizationId, projectId, eventId } = await operationalFixture();
-  const page = await owner.client.query(listOrganizationAuditEvents, { organizationId, paginationOpts: { numItems: 50, cursor: null } });
+  const page = await owner.client.query(listOrganizationAuditEvents, { organizationId, paginationOpts: { numItems: 100, cursor: null } });
   const actions = page.page.map((entry) => entry.action);
   expect(actions.slice(0, 3)).toEqual(['event.statusChanged', 'event.statusChanged', 'event.created']);
   expect(actions).toEqual(expect.arrayContaining([

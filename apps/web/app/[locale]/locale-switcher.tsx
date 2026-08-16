@@ -4,11 +4,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import {
-  localeCookieName,
-  segmentForCanonicalLocale,
-  type CanonicalLocale,
-} from '@/i18n/locales';
+import { localeHref } from '@/i18n/locale-href';
+import { localeCookieName, type CanonicalLocale } from '@/i18n/locales';
 
 /**
  * A segmented control built from the shared primitives.
@@ -25,9 +22,7 @@ export function LocaleSwitcher() {
   function selectLocale(nextLocale: CanonicalLocale) {
     document.cookie = `${localeCookieName}=${nextLocale}; Path=/; Max-Age=31536000; SameSite=Lax`;
     const pathWithoutLocale = pathname.replace(/^\/(?:es|en)(?=\/|$)/, '');
-    router.replace(
-      `/${segmentForCanonicalLocale(nextLocale)}${pathWithoutLocale}`,
-    );
+    router.replace(localeHref(nextLocale, pathWithoutLocale));
   }
 
   return (

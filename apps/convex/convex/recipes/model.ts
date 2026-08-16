@@ -5,7 +5,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { recordAuditEvent } from '../audit/model';
 import { assertValidFieldConfig } from '../fields/model';
 import { locationIdFromValue, validateFieldValueAgainstConfig } from '../fields/values';
-import { requireAuthenticatedUser, requireOrganizationMembership, requireOrganizationRole, type OrganizationMembershipAccess } from '../lib/access';
+import { requireAuthenticatedUser, requireOrganizationAccess, requireOrganizationMembership, requireOrganizationRole, type OrganizationMembershipAccess } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
@@ -136,6 +136,40 @@ export async function getRecipe(ctx: QueryCtx, recipeId: Id<'eventRecipes'>): Pr
 export async function listRecipes(ctx: QueryCtx, organizationId: Id<'organizations'>, paginationOpts: PaginationOptions): Promise<PaginationResult<Doc<'eventRecipes'>>> {
   await requireOrganizationMembership(ctx, organizationId);
   return ctx.db.query('eventRecipes').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts);
+}
+
+/**
+ * The web recipe picker previously issued `getRecipe` once per listed recipe,
+ * creating an N+1 fan-out. Starting at published versions makes the picker a
+ * single indexed, paginated read while preserving the version it must create an
+ * Event against.
+ */
+export async function listPublishedRecipes(
+  ctx: QueryCtx,
+  organizationId: Id<'organizations'>,
+  paginationOpts: PaginationOptions,
+): Promise<PaginationResult<{ recipe: Doc<'eventRecipes'>; publishedVersion: Pick<Doc<'recipeVersions'>, '_id' | 'versionNumber' | 'publishedAt'> }>> {
+  await requireOrganizationAccess(ctx, organizationId);
+  const published = await ctx.db
+    .query('recipeVersions')
+    .withIndex('by_org_status', (q) => q.eq('organizationId', organizationId).eq('status', 'published'))
+    .paginate(paginationOpts);
+  const page = await Promise.all(published.page.map(async (publishedVersion) => {
+    const recipe = await ctx.db.get(publishedVersion.recipeId);
+    // Normal lifecycle transitions retire a published version before archival.
+    // Treat a corrupt graph as inaccessible rather than leaking or returning a
+    // recipe the picker cannot legitimately use (I1/I9).
+    if (recipe === null || recipe.organizationId !== organizationId || recipe.status === 'archived') return notFoundOrInaccessible();
+    return {
+      recipe,
+      publishedVersion: {
+        _id: publishedVersion._id,
+        versionNumber: publishedVersion.versionNumber,
+        ...(publishedVersion.publishedAt === undefined ? {} : { publishedAt: publishedVersion.publishedAt }),
+      },
+    };
+  }));
+  return { ...published, page };
 }
 
 export async function getRecipeVersion(ctx: QueryCtx, recipeVersionId: Id<'recipeVersions'>): Promise<{ version: Doc<'recipeVersions'>; recipeFields: Doc<'recipeFields'>[] }> {

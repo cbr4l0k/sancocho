@@ -2,6 +2,7 @@ import type { PaginationOptions, PaginationResult } from 'convex/server';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { recordAuditEvent } from '../audit/model';
+import { ensureBuiltinFieldDefinitions } from '../fields/builtins';
 import {
   requireAuthenticatedUser,
   requireOrganizationAccess,
@@ -11,6 +12,7 @@ import {
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import { canAssignRole, isOwner, type Role } from '../lib/roles';
+import { provisionStarterRecipes } from '../recipes/builtins';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const minSlugLength = 3;
@@ -71,6 +73,12 @@ export async function createOrganization(
     entityId: membershipId,
     metadata: { role: 'owner' },
   });
+  // The membership exists before composition begins, so every field and recipe
+  // model proves the new owner's ordinary role rather than receiving a bootstrap
+  // exception. Keeping this in the creation transaction means no organization
+  // can ever commit without its usable starter configuration.
+  const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
+  await provisionStarterRecipes(ctx, organizationId, fieldIds);
   return organizationId;
 }
 

@@ -44,7 +44,7 @@ test('createOrganization creates the organization, owner membership, and audits 
     const audits = await ctx.db.query('auditEvents').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
     expect(organization).toMatchObject({ name: 'Acme', slug: 'acme' });
     expect(membership).toMatchObject({ role: 'owner' });
-    expect(audits.map((audit) => audit.action).sort()).toEqual(['membership.created', 'organization.created']);
+    expect(audits.map((audit) => audit.action)).toEqual(expect.arrayContaining(['membership.created', 'organization.created']));
   });
 
   await expect(owner.client.mutation(createOrganization, { name: 'Other', slug: 'acme' })).rejects.toMatchObject({

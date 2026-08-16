@@ -77,7 +77,11 @@ export default defineSchema({
     publishedAt: v.optional(v.number()),
   })
     .index('by_recipe_version', ['recipeId', 'versionNumber'])
-    .index('by_recipe_status', ['recipeId', 'status']),
+    .index('by_recipe_status', ['recipeId', 'status'])
+    // `listPublishedRecipes` starts from current published versions: publication
+    // is the selective fact that guarantees a picker row has a usable version,
+    // without an N+1 probe across every recipe in the organization.
+    .index('by_org_status', ['organizationId', 'status']),
 
   recipeFields: defineTable({
     organizationId: v.id('organizations'),

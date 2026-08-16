@@ -1,32 +1,18 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useTranslations } from 'next-intl';
+import { localeHref } from '@/i18n/locale-href';
+import { canonicalLocaleForSegment, defaultLocale, isLocaleSegment } from '@/i18n/locales';
 
-import { EmptyState } from '@/components/ui/empty-state';
-import { Panel, PanelBody } from '@/components/ui/panel';
-
-export default function ChatPage() {
-  const t = useTranslations();
-
-  return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-2xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('chat.eyebrow')}
-        </p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-          {t('chat.title')}
-        </h1>
-        <p className="text-sm text-ink-2">{t('chat.description')}</p>
-      </header>
-      <Panel>
-        <PanelBody>
-          <EmptyState
-            title={t('shell.comingSoonTitle')}
-            description={t('shell.comingSoonBody')}
-          />
-        </PanelBody>
-      </Panel>
-    </div>
-  );
+/**
+ * Fallback for the locale root. `proxy.ts` normally redirects `/{locale}` to the
+ * landing view before this renders — a real 307, where a `redirect()` here can
+ * only be a soft client-side one because the application layout has already
+ * begun streaming its client shell. This exists so the route still resolves to
+ * the same place if the proxy ever stops matching, rather than rendering
+ * nothing.
+ */
+export default async function ApplicationIndexPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+  const canonical = isLocaleSegment(locale) ? canonicalLocaleForSegment(locale) : defaultLocale;
+  redirect(localeHref(canonical, '/projects'));
 }

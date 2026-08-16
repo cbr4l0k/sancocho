@@ -1,23 +1,18 @@
-import type { eventFieldValueValidator } from '@sancocho/convex/validators';
+import {
+  emptyFieldValueFormState,
+  fromEventFieldValue,
+  toEventFieldValue,
+  type EventFieldValue,
+  type FieldValueFormState,
+} from './field-value-form';
 
-import { parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';
-
-export type EventFieldValue = typeof eventFieldValueValidator.type;
-
-/** Form state deliberately mirrors every persisted discriminator. */
-export type DefaultValueFormState =
-  | { kind: 'text'; value: string }
-  | { kind: 'longText'; value: string }
-  | { kind: 'number'; value: string }
-  | { kind: 'boolean'; value: boolean }
-  | { kind: 'date'; value: string }
-  | { kind: 'datetime'; date: string; time: string }
-  | { kind: 'time'; value: string }
-  | { kind: 'select'; optionId: string }
-  | { kind: 'multiSelect'; optionIds: string[] }
-  | { kind: 'location'; locationId?: Extract<EventFieldValue, { kind: 'location' }>['locationId'] };
-
+/** @deprecated Use the neutral field-value-form module for all Event field forms. */
+export type DefaultValueFormState = FieldValueFormState;
+export { fromEventFieldValue, toEventFieldValue };
 export function defaultFormState(kind: EventFieldValue['kind']): DefaultValueFormState {
+  return emptyFieldValueFormState(kind);
+}
+/*
   switch (kind) {
     case 'text':
       return { kind, value: '' };
@@ -106,3 +101,4 @@ export function fromEventFieldValue(value: EventFieldValue): DefaultValueFormSta
     }
   }
 }
+*/

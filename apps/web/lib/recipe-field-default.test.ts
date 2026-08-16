@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { defaultFormState, fromEventFieldValue, toEventFieldValue } from './recipe-field-default';
+import { emptyFieldValueFormState, fromEventFieldValue, toEventFieldValue } from './field-value-form';
 
 describe('recipe field default values', () => {
   test('maps every default kind to its typed event value', () => {
@@ -16,7 +16,7 @@ describe('recipe field default values', () => {
       kind: 'multiSelect',
       optionIds: ['a'],
     });
-    expect(defaultFormState('location')).toEqual({ kind: 'location' });
+    expect(emptyFieldValueFormState('location')).toEqual({ kind: 'location' });
   });
 
   test('keeps calendar and clock strings strict and datetime numeric', () => {
@@ -26,5 +26,11 @@ describe('recipe field default values', () => {
     expect(datetime?.kind === 'datetime' && typeof datetime.value).toBe('number');
     expect(fromEventFieldValue({ kind: 'date', value: '2026-02-03' })).toEqual({ kind: 'date', value: '2026-02-03' });
     expect(fromEventFieldValue({ kind: 'time', value: '09:05' })).toEqual({ kind: 'time', value: '09:05' });
+  });
+
+  test('preserves first-twelve-day calendar strings and wall-clock times', () => {
+    expect(toEventFieldValue({ kind: 'date', value: '2026-03-07' })).toEqual({ kind: 'date', value: '2026-03-07' });
+    expect(fromEventFieldValue({ kind: 'date', value: '2026-11-12' })).toEqual({ kind: 'date', value: '2026-11-12' });
+    expect(fromEventFieldValue({ kind: 'time', value: '04:09' })).toEqual({ kind: 'time', value: '04:09' });
   });
 });

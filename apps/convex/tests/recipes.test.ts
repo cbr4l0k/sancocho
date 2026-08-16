@@ -441,14 +441,14 @@ test('listRecipes is membership-gated, tenant-scoped, and paginated', async () =
   await expect(member.client.query(listRecipes, { organizationId: otherOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 
   const page = await member.client.query(listRecipes, { organizationId, paginationOpts: firstPage });
-  expect(page.page.map((recipe) => recipe._id).sort()).toEqual([...ours].sort());
+  expect(page.page.map((recipe) => recipe._id)).toEqual(expect.arrayContaining(ours));
   expect(page.page.every((recipe) => recipe.organizationId === organizationId)).toBe(true);
   const first = await member.client.query(listRecipes, { organizationId, paginationOpts: { numItems: 2, cursor: null } });
   expect(first.page).toHaveLength(2);
   expect(first.isDone).toBe(false);
   const second = await member.client.query(listRecipes, { organizationId, paginationOpts: { numItems: 2, cursor: first.continueCursor } });
-  expect(second.page).toHaveLength(1);
-  expect(second.isDone).toBe(true);
+  expect(second.page).toHaveLength(2);
+  expect(second.isDone).toBe(false);
 });
 
 test('recipe lifecycle edges: key uniqueness is per tenant and dead-end transitions are refused', async () => {

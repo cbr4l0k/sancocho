@@ -3,25 +3,27 @@
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useState } from 'react';
 
 import { api } from '@sancocho/convex/api';
 
 import { useFieldDefinitionIndex } from '@/components/fields/use-field-definition-index';
 import { FieldConfigEditor } from '@/components/fields/field-config-editor';
+import { LocationPicker } from '@/components/locations/location-picker';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
+import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import {
-  defaultFormState,
+  emptyFieldValueFormState,
   fromEventFieldValue,
   toEventFieldValue,
-  type DefaultValueFormState,
-} from '@/lib/recipe-field-default';
+  type FieldValueFormState,
+} from '@/lib/field-value-form';
 import { checkRecipeDraft } from '@/lib/recipe-draft-checks';
 import { roleAtLeast } from '@/lib/roles';
 
@@ -63,8 +65,8 @@ export function DraftRecipeEditorSurface({ recipeId }: { recipeId: RecipeId }) {
   }
 
   if (recipeData === undefined) return null;
-  if (recipeData.recipe.status === 'archived') return <BackNotice text={t('recipes.draftArchived')} />;
-  if (draft === undefined) return <BackNotice text={t('recipes.draftMissing')} />;
+  if (recipeData.recipe.status === 'archived') return <BackNotice recipeId={recipeId} text={t('recipes.draftArchived')} />;
+  if (draft === undefined) return <BackNotice recipeId={recipeId} text={t('recipes.draftMissing')} />;
   if (fields === undefined || index === undefined) return null;
 
   const used = new Set(fields.map((field) => field.fieldDefinitionId));
@@ -75,11 +77,7 @@ export function DraftRecipeEditorSurface({ recipeId }: { recipeId: RecipeId }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('recipes.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('recipes.editDraft')}</h1>
-        <p className="text-sm text-ink-2">{t('recipes.draftEditorLead')}</p>
-      </header>
+      <PageHeader title={t('recipes.editDraft')} />
       {message === null ? null : (
         <p role="alert" className="text-sm text-tone-stop">
           {message}
@@ -199,7 +197,7 @@ function RecipeFieldRow({
   problems: readonly string[];
 }) {
   const t = useTranslations();
-  const [defaultState, setDefaultState] = useState<DefaultValueFormState | null>(
+  const [defaultState, setDefaultState] = useState<FieldValueFormState | null>(
     field.defaultValue === undefined ? null : fromEventFieldValue(field.defaultValue),
   );
   const [config, setConfig] = useState(field.config);
@@ -307,31 +305,24 @@ function DefaultEditor({
   onSave,
 }: {
   config: RecipeField['config'];
-  state: DefaultValueFormState | null;
-  setState: (state: DefaultValueFormState | null) => void;
+  state: FieldValueFormState | null;
+  setState: (state: FieldValueFormState | null) => void;
   canManage: boolean;
   onClear: () => void;
   onSave: () => void;
 }) {
   const t = useTranslations();
-  const current = state?.kind === config.kind ? state : defaultFormState(config.kind);
+  const current = state?.kind === config.kind ? state : emptyFieldValueFormState(config.kind);
   const { currentOrganization } = useCurrentOrganization();
-  const locations = usePaginatedQuery(
-    api.locations.queries.listLocations,
-    config.kind === 'location' && currentOrganization !== null
-      ? { organizationId: currentOrganization.organization._id }
-      : 'skip',
-    { initialNumItems: 50 },
-  );
   return (
     <div className="mt-4 rounded-input border border-line p-3">
       <p className="text-micro font-semibold uppercase text-ink-3">{t('recipes.defaultValue')}</p>
       <DefaultControl
         config={config}
-        locations={locations.results}
         state={current}
         onChange={setState}
         disabled={!canManage}
+        organizationId={currentOrganization?.organization._id}
       />
       <div className="mt-2 flex gap-2">
         <Button size="sm" disabled={!canManage} onClick={onSave}>
@@ -350,16 +341,16 @@ function DefaultEditor({
 
 function DefaultControl({
   config,
-  locations,
   state,
   onChange,
   disabled,
+  organizationId,
 }: {
   config: RecipeField['config'];
-  locations: FunctionReturnType<typeof api.locations.queries.listLocations>['page'];
-  state: DefaultValueFormState;
-  onChange: (state: DefaultValueFormState) => void;
+  state: FieldValueFormState;
+  onChange: (state: FieldValueFormState) => void;
   disabled: boolean;
+  organizationId: FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'] | undefined;
 }) {
   if (config.kind === 'boolean' && state.kind === 'boolean')
     return (
@@ -446,33 +437,26 @@ function DefaultControl({
       </select>
     );
   if (config.kind === 'location' && state.kind === 'location')
-    return (
-      <div className="flex flex-wrap gap-2">
-        {locations
-          .filter((location) => location.status === 'active')
-          .map((location) => (
-            <Button
-              key={location._id}
-              size="sm"
-              selected={state.locationId === location._id}
-              disabled={disabled}
-              onClick={() => onChange({ kind: 'location', locationId: location._id })}
-            >
-              {location.name}
-            </Button>
-          ))}
-      </div>
+    return organizationId === undefined ? null : (
+      <LocationPicker
+        organizationId={organizationId}
+        value={state.locationId}
+        disabled={disabled}
+        onChange={(locationId) => onChange({ kind: 'location', locationId })}
+      />
     );
   return null;
 }
 
-function BackNotice({ text }: { text: string }) {
+function BackNotice({ recipeId, text }: { recipeId: RecipeId; text: string }) {
+  const t = useTranslations();
+
   return (
     <Panel>
       <PanelBody>
         <p className="text-sm text-ink-2">{text}</p>
-        <Button className="mt-3" variant="link" render={<Link href="../" />}>
-          ←
+        <Button className="mt-3" variant="link" render={<LocaleLink to={`/settings/recipes/${recipeId}`} />}>
+          {t('recipes.backToRecipe')}
         </Button>
       </PanelBody>
     </Panel>

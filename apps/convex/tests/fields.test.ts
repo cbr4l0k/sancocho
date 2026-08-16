@@ -287,21 +287,40 @@ test('field operations are indistinguishable for unauthenticated probes (I9)', a
   }
 });
 
-test('operators cannot author fields; planners and above can', async () => {
+test('authoring fields is admin+; planners and operators are refused generically', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const operator = await provision(t, 'operator');
   const planner = await provision(t, 'planner');
+  const admin = await provision(t, 'admin');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'fields-roles' });
   await owner.client.mutation(addMember, { organizationId, userId: operator.userId, role: 'operator' });
   await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
-  const fieldDefinitionId = await planner.client.mutation(createFieldDefinition, { organizationId, key: 'plannerField', label: 'Planner field', config: textConfig });
+  await owner.client.mutation(addMember, { organizationId, userId: admin.userId, role: 'admin' });
 
-  await expect(operator.client.mutation(createFieldDefinition, { organizationId, key: 'operatorField', label: 'Nope', config: textConfig })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
-  await expect(operator.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
-  await expect(operator.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
-  await expect(operator.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
-  await expect(planner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Renamed' })).resolves.toBeNull();
+  // Admin is the floor (`organizationConfigurationRole`): a field definition is
+  // the tenant's shared vocabulary, and once a published version references it
+  // its key, semantic type and config are frozen for good (I2/I3), so authoring
+  // one is an administrator's decision rather than day-to-day planning.
+  // Asserted from the floor rank itself, so moving the floor fails here rather
+  // than passing on the owner's back.
+  const fieldDefinitionId = await admin.client.mutation(createFieldDefinition, { organizationId, key: 'adminField', label: 'Admin field', config: textConfig });
+  await expect(admin.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Renamed' })).resolves.toBeNull();
+
+  // A planner is a member and still one rank below the floor, so the refusal is
+  // the role check speaking, not membership — and it is the same generic error a
+  // stranger gets (I9).
+  for (const below of [planner, operator]) {
+    await expect(below.client.mutation(createFieldDefinition, { organizationId, key: 'belowField', label: 'Nope', config: textConfig })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(below.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Nope' })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(below.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+    await expect(below.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
+  }
+
+  // Reading is unaffected: planners compose recipes from this catalogue.
+  await expect(planner.client.query(listFieldDefinitions, { organizationId, paginationOpts: { numItems: 10, cursor: null } })).resolves.toMatchObject({
+    page: [{ _id: fieldDefinitionId }],
+  });
 });
 
 test('semantic compatibility is enforced on creation and update, and absent semantics grant no capabilities', async () => {
@@ -489,7 +508,8 @@ test('listBuiltinFieldDefinitions serves every authenticated user and only built
 
   // Built-ins are the shared catalog: membership in nothing is still enough.
   const page = await outsider.client.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage });
-  expect(page.page.map((field) => field._id)).toEqual([builtinId]);
+  expect(page.page.map((field) => field._id)).toEqual(expect.arrayContaining([builtinId]));
+  expect(page.page).toHaveLength(10);
   expect(page.page.every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
 });
 
@@ -508,12 +528,17 @@ test('listBuiltinFieldDefinitions walks the catalogue by cursor without repeatin
   const first = await owner.client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 2, cursor: null } });
   expect(first.page).toHaveLength(2);
   expect(first.isDone).toBe(false);
-  const second = await owner.client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 2, cursor: first.continueCursor } });
-  expect(second.page).toHaveLength(1);
-  expect(second.isDone).toBe(true);
-  // Every built-in appears exactly once across the two pages, and nothing else does.
-  expect([...first.page, ...second.page].map((field) => field._id).sort()).toEqual([...builtins].sort());
-  expect([...first.page, ...second.page].every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
+  const pages = [first];
+  let next = first;
+  while (!next.isDone) {
+    next = await owner.client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 2, cursor: next.continueCursor } });
+    pages.push(next);
+  }
+  const catalogue = pages.flatMap((page) => page.page);
+  // Every built-in appears exactly once across the cursor walk, and nothing else does.
+  expect(catalogue.map((field) => field._id)).toEqual(expect.arrayContaining(builtins));
+  expect(catalogue).toHaveLength(12);
+  expect(catalogue.every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
 });
 
 test('getFieldDefinitionsByIds resolves organization definitions and built-ins', async () => {
@@ -629,14 +654,16 @@ test('getFieldDefinitionsByIds requires membership and authentication', async ()
 test('field lifecycle writes attributed audit rows naming what changed', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
-  const planner = await provision(t, 'planner');
+  // A second actor at the configuration floor, so attribution is proved against
+  // someone other than the owner who created the organization.
+  const editor = await provision(t, 'editor');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'fields-audit' });
-  await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  await owner.client.mutation(addMember, { organizationId, userId: editor.userId, role: 'admin' });
 
   const audited = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'auditedField', label: 'Audited', config: textConfig });
-  await planner.client.mutation(updateFieldDefinition, { fieldDefinitionId: audited, label: 'Audited twice', key: 'renamedField' });
+  await editor.client.mutation(updateFieldDefinition, { fieldDefinitionId: audited, label: 'Audited twice', key: 'renamedField' });
   // A patch that changes nothing must not write an empty audit row.
-  await planner.client.mutation(updateFieldDefinition, { fieldDefinitionId: audited, label: 'Audited twice', key: 'renamedField' });
+  await editor.client.mutation(updateFieldDefinition, { fieldDefinitionId: audited, label: 'Audited twice', key: 'renamedField' });
   await owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: audited });
 
   const deleted = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'deletedField', label: 'Deleted', config: textConfig });
@@ -657,7 +684,7 @@ test('field lifecycle writes attributed audit rows naming what changed', async (
     expect(created?.actorUserId).toBe(owner.userId);
     expect(created?.metadata).toMatchObject({ key: 'auditedField' });
     const updated = audits.find((audit) => audit.action === 'fieldDefinition.updated');
-    expect(updated?.actorUserId).toBe(planner.userId);
+    expect(updated?.actorUserId).toBe(editor.userId);
     expect(updated?.metadata).toMatchObject({ changedFields: 'label,key' });
     const archived = audits.find((audit) => audit.action === 'fieldDefinition.archived');
     expect(archived?.actorUserId).toBe(owner.userId);

@@ -2,9 +2,8 @@
 
 import { UserButton } from '@clerk/nextjs';
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from 'convex/react';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { api } from '@sancocho/convex/api';
@@ -16,8 +15,10 @@ import { EmptyState, UnavailableState } from '@/components/ui/empty-state';
 import { Field, FieldControl, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton';
+import { localeHref } from '@/i18n/locale-href';
+import { LocaleLink, useLocaleHref } from '@/i18n/locale-link';
+import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError, type ConvexErrorPresentation } from '@/lib/convex-errors';
-import { segmentForCanonicalLocale } from '@/i18n/locales';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -52,7 +53,6 @@ function ShellLoading() {
 }
 
 function SignedOut() {
-  const locale = useLocale();
   const t = useTranslations();
 
   return (
@@ -65,10 +65,10 @@ function SignedOut() {
           <PanelDescription>{t('auth.signedOut')}</PanelDescription>
         </PanelHeader>
         <PanelBody className="flex-row flex-wrap items-center">
-          <Button variant="primary" render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-in`} />}>
+          <Button variant="primary" render={<LocaleLink to="/sign-in" />}>
             {t('auth.signIn')}
           </Button>
-          <Button variant="secondary" render={<Link href={`/${segmentForCanonicalLocale(locale)}/sign-up`} />}>
+          <Button variant="secondary" render={<LocaleLink to="/sign-up" />}>
             {t('auth.signUp')}
           </Button>
         </PanelBody>
@@ -81,8 +81,8 @@ function ProvisionedShell({ children }: ApplicationShellProps) {
   const user = useQuery(api.auth.queries.getCurrentUser);
   const ensureUser = useMutation(api.auth.mutations.ensureUser);
   const requested = useRef(false);
-  const locale = useLocale();
   const router = useRouter();
+  const localeHref = useLocaleHref();
   const [error, setError] = useState<ConvexErrorPresentation | null>(null);
 
   useEffect(() => {
@@ -91,12 +91,12 @@ function ProvisionedShell({ children }: ApplicationShellProps) {
     void ensureUser().catch((caught: unknown) => {
       const presentation = presentConvexError(caught);
       if (presentation === 'errors.unauthenticated') {
-        router.replace(`/${segmentForCanonicalLocale(locale)}/sign-in`);
+        router.replace(localeHref('/sign-in'));
         return;
       }
       setError(presentation);
     });
-  }, [ensureUser, locale, router, user]);
+  }, [ensureUser, localeHref, router, user]);
 
   // A Clerk session can exist before Convex has provisioned its app user. Keep
   // this distinct from the organization check below so that window never redirects.
@@ -204,42 +204,47 @@ function CreateOrganization() {
 
 function ShellFrame({ children }: ApplicationShellProps) {
   const { currentOrganization, organizations, selectOrganization } = useCurrentOrganization();
-  const locale = useLocale();
+  const locale = useCanonicalLocale();
   const pathname = usePathname();
   const t = useTranslations();
-  const segment = segmentForCanonicalLocale(locale);
   // Nav visibility is presentation only, never authorization (I1); the server is sole authority.
+  //
+  // Five destinations, in the order a day runs: ask, then plan, then dispatch,
+  // then review, and configuration last. Recipes, locations and field
+  // definitions are organization *configuration*, not daily operations, so they
+  // live under /settings rather than competing with them here.
   const nav = [
-    { href: `/${segment}`, label: t('nav.chat') },
-    { href: `/${segment}/recipes`, label: t('nav.recipes') },
-    { href: `/${segment}/services`, label: t('nav.services') },
-    { href: `/${segment}/projects`, label: t('nav.projects') },
-    { href: `/${segment}/locations`, label: t('nav.locations') },
-    { href: `/${segment}/fields`, label: t('nav.fields') },
-    { href: `/${segment}/statistics`, label: t('nav.statistics') },
+    { to: '/chat', label: t('nav.chat') },
+    { to: '/projects', label: t('nav.projects') },
+    { to: '/services', label: t('nav.services') },
+    { to: '/statistics', label: t('nav.statistics') },
+    { to: '/settings', label: t('nav.settings') },
   ];
 
   return (
     <div className="min-h-dvh bg-ground-0">
       <header className="h-16 border-b border-line bg-ground-0">
         <div className="mx-auto flex h-full w-full max-w-[88rem] items-center gap-4 px-6">
-          <Link
-            href={`/${segment}`}
+          <LocaleLink
+            to="/"
             className="flex shrink-0 items-center gap-2 text-lg font-extrabold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
             <span aria-hidden="true" className="size-2.5 rounded-full bg-accent" />
             {t('nav.application')}
-          </Link>
+          </LocaleLink>
           <nav aria-label={t('nav.label')} className="min-w-0 flex-1 overflow-x-auto">
             <div className="flex w-max min-w-full items-center justify-center gap-0.5 rounded-pill bg-ground-1 p-1">
               {nav.map((item) => {
+                // Prefix match, so a detail route (/projects/<id>) and a settings
+                // subsection (/settings/fields) keep their section highlighted.
+                const href = localeHref(locale, item.to);
                 return (
                   <Button
-                    key={item.href}
+                    key={item.to}
                     variant="ghost"
                     size="sm"
-                    selected={pathname === item.href}
-                    render={<Link href={item.href} />}
+                    selected={pathname === href || pathname.startsWith(`${href}/`)}
+                    render={<LocaleLink to={item.to} />}
                   >
                     {item.label}
                   </Button>
@@ -275,18 +280,6 @@ function ShellFrame({ children }: ApplicationShellProps) {
               </select>
             </div>
             <LocaleSwitcher />
-            <Button
-              variant="ghost"
-              size="icon"
-              selected={pathname === `/${segment}/settings`}
-              aria-label={t('nav.settings')}
-              render={<Link href={`/${segment}/settings`} />}
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
-                <path d="m19.4 13.6 1.1.9-1.8 3.1-1.3-.5a7.7 7.7 0 0 1-1.6.9l-.2 1.4h-3.6l-.2-1.4a7.7 7.7 0 0 1-1.6-.9l-1.3.5-1.8-3.1 1.1-.9a7 7 0 0 1 0-1.8l-1.1-.9L9 7l1.3.5a7.7 7.7 0 0 1 1.6-.9l.2-1.4h3.6l.2 1.4a7.7 7.7 0 0 1 1.6.9l1.3-.5 1.8 3.1-1.1.9a7 7 0 0 1 0 1.8Z" />
-              </svg>
-            </Button>
             <UserButton />
           </div>
         </div>

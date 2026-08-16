@@ -3,75 +3,15 @@ import { v } from 'convex/values';
 
 import { ensureAuthenticatedUser } from '../auth/model';
 import { internalMutation, type MutationCtx } from '../_generated/server';
-import type { Doc, Id } from '../_generated/dataModel';
+import type { Id } from '../_generated/dataModel';
 import { createEventFromRecipe } from '../events/model';
-import { createBuiltinFieldDefinition } from '../fields/model';
+import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { conflict, invalidInput } from '../lib/errors';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { addMember, createOrganization } from '../organizations/model';
 import { createProject } from '../projects/model';
-import { addRecipeField } from '../recipes/fields/model';
-import { createInitialDraftVersion, createRecipe, publishRecipeVersion } from '../recipes/model';
-import type { fieldConfigValidator, SemanticType } from '../validators';
-
-type FieldConfig = typeof fieldConfigValidator.type;
-
-type BuiltinSeed = {
-  key: string;
-  label: string;
-  semanticType: SemanticType;
-  config: FieldConfig;
-};
-
-/**
- * The deployment-wide built-in catalogue, in the order issue #14 tabulates it.
- *
- * These rows are effectively permanent. A built-in key squats the key namespace
- * of EVERY tenant in the deployment (see the shadow probe in
- * fields/model.ts `assertKeyAvailable`), and once the demonstration version is
- * published `isReferencedByPublishedVersion` freezes each key, semanticType and
- * config for good (I2/I3). A typo shipped once can never be corrected in place —
- * so this array must be read against the issue's table, not adjusted casually.
- *
- * DECLARATION ORDER IS NOT COMPOSITION ORDER: the recipe's field order and
- * required flags live in `demonstrationComposition` below.
- */
-const builtinFields = [
-  { key: 'passengerCount', label: 'Passenger Count', semanticType: 'passenger.count', config: { kind: 'number', min: 0, integer: true } },
-  { key: 'pickupLocation', label: 'Pickup Location', semanticType: 'transport.origin', config: { kind: 'location' } },
-  { key: 'destination', label: 'Destination', semanticType: 'transport.destination', config: { kind: 'location' } },
-  { key: 'flightNumber', label: 'Flight Number', semanticType: 'aviation.flightNumber', config: { kind: 'text' } },
-  { key: 'luggageCount', label: 'Luggage Count', semanticType: 'luggage.count', config: { kind: 'number', min: 0, integer: true } },
-  { key: 'wheelchairCount', label: 'Wheelchair Count', semanticType: 'accessibility.wheelchairCount', config: { kind: 'number', min: 0, integer: true } },
-  { key: 'contactPerson', label: 'Contact Person', semanticType: 'contact.primary', config: { kind: 'text' } },
-  { key: 'terminal', label: 'Terminal', semanticType: 'aviation.terminal', config: { kind: 'text' } },
-  { key: 'notes', label: 'Notes', semanticType: 'general.notes', config: { kind: 'longText' } },
-] as const satisfies readonly BuiltinSeed[];
-
-type BuiltinKey = (typeof builtinFields)[number]['key'];
-
-/**
- * The Airport Arrival Transfer composition: position IS this array's index and
- * `required` is stated per entry.
- *
- * Both are frozen the moment version 1 publishes (I2), and neither may be
- * derived from `builtinFields`' order — that coupling is exactly how a
- * catalogue reordering would silently rewrite which fields a published recipe
- * requires. The two lists are independent on purpose; `BuiltinKey` keeps them
- * referentially honest at compile time.
- */
-const demonstrationComposition: readonly { key: BuiltinKey; required: boolean }[] = [
-  { key: 'pickupLocation', required: true },
-  { key: 'destination', required: true },
-  { key: 'passengerCount', required: true },
-  { key: 'flightNumber', required: true },
-  { key: 'terminal', required: false },
-  { key: 'luggageCount', required: false },
-  { key: 'wheelchairCount', required: false },
-  { key: 'contactPerson', required: false },
-  { key: 'notes', required: false },
-];
+import { provisionStarterRecipes } from '../recipes/builtins';
 
 /**
  * Identity accepted by both seed entry points, in provider terms rather than
@@ -163,33 +103,59 @@ function withSeedIdentity(ctx: MutationCtx, owner: SeedOwner): MutationCtx {
   };
 }
 
-async function findBuiltinField(ctx: MutationCtx, key: string): Promise<Doc<'fieldDefinitions'> | null> {
-  return ctx.db
-    .query('fieldDefinitions')
-    .withIndex('by_org_key', (q) => q.eq('organizationId', undefined).eq('key', key))
-    .unique();
-}
-
-async function builtinFieldIds(ctx: MutationCtx): Promise<Map<string, Id<'fieldDefinitions'>>> {
-  const ids = new Map<string, Id<'fieldDefinitions'>>();
-  for (const field of builtinFields) {
-    const existing = await findBuiltinField(ctx, field.key);
-    if (existing === null) {
-      ids.set(field.key, await createBuiltinFieldDefinition(ctx, field));
-    } else {
-      ids.set(field.key, existing._id);
-    }
-  }
-  return ids;
-}
-
 /** Creates the deployment-wide built-in catalogue through the field model. */
 export const seedBuiltinFieldDefinitions = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     assertSeedingEnabled();
-    await builtinFieldIds(ctx);
+    await ensureBuiltinFieldDefinitions(ctx);
+    return null;
+  },
+});
+
+/**
+ * Gives organizations created *before* starter provisioning existed the same
+ * built-in catalogue and starter recipes a new organization now receives.
+ *
+ * `createOrganization` provisions inside its own transaction, so only tenants
+ * that predate that change can be missing them; `provisionStarterRecipes` is
+ * idempotent per organization, so an already-provisioned tenant is skipped by
+ * its own indexed key lookup rather than duplicated.
+ *
+ * Provisioning is performed as each organization's own owner — resolved from
+ * the membership rows — so the recipe models prove a real member's role instead
+ * of receiving a bootstrap exception, exactly as they do at creation time. An
+ * organization whose owner cannot be resolved is skipped rather than forced.
+ *
+ * Guarded by the seed opt-in for the same reason as the backfill below: it is a
+ * deployment-level administrative operation, and `internalMutation` alone does
+ * not stop someone running `convex run --prod`.
+ */
+export const provisionExistingOrganizations = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    assertSeedingEnabled();
+    const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
+    // A deployment-wide administrative sweep, deliberately not a tenant-facing
+    // read: this is the one place a full organization scan is the correct shape.
+    const organizations = await ctx.db.query('organizations').collect();
+    for (const organization of organizations) {
+      const memberships = await ctx.db
+        .query('organizationMemberships')
+        .withIndex('by_org_user', (q) => q.eq('organizationId', organization._id))
+        .collect();
+      const owner = memberships.find((membership) => membership.role === 'owner');
+      if (owner === undefined) continue;
+      const user = await ctx.db.get(owner.userId);
+      if (user === null) continue;
+      await provisionStarterRecipes(
+        withSeedIdentity(ctx, { issuer: user.authProvider, subject: user.authSubject }),
+        organization._id,
+        fieldIds,
+      );
+    }
     return null;
   },
 });
@@ -223,7 +189,7 @@ export const backfillRecipeVersionPublishedAt = internalMutation({
   },
 });
 
-function requireFieldId(ids: ReadonlyMap<string, Id<'fieldDefinitions'>>, key: BuiltinKey): Id<'fieldDefinitions'> {
+function requireFieldId(ids: ReadonlyMap<BuiltinFieldKey, Id<'fieldDefinitions'>>, key: BuiltinFieldKey): Id<'fieldDefinitions'> {
   const id = ids.get(key);
   if (id === undefined) {
     return invalidInput('seedBuiltinFieldMissing', `Seed built-in field is missing: ${key}`);
@@ -233,7 +199,7 @@ function requireFieldId(ids: ReadonlyMap<string, Id<'fieldDefinitions'>>, key: B
 
 /**
  * Seeds one complete, deterministic vertical slice: organization → project →
- * locations → recipe → published version 1 → typed Event, every step through
+ * locations → provisioned recipe → published version 1 → typed Event, every step through
  * the ordinary domain models.
  *
  * Idempotent: a re-run stops at the recipe's indexed org/key lookup, so it can
@@ -246,7 +212,7 @@ export const seedDemonstrationData = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     assertSeedingEnabled();
-    const fieldIds = await builtinFieldIds(ctx);
+    const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
     const seededCtx = withSeedIdentity(ctx, args.owner ?? defaultSeedOwner);
     await ensureAuthenticatedUser(seededCtx);
 
@@ -259,7 +225,16 @@ export const seedDemonstrationData = internalMutation({
         .query('eventRecipes')
         .withIndex('by_org_key', (q) => q.eq('organizationId', existingOrganization._id).eq('key', demonstrationRecipe.key))
         .unique();
-      if (existingRecipe !== null) return null;
+      if (existingRecipe !== null) {
+        // Provisioning always supplies this recipe; the named project is the
+        // seed's durable completion marker. A tenant that merely chose the demo
+        // slug has the starter recipe too, but must never receive demo data.
+        const projects = await ctx.db
+          .query('projects')
+          .withIndex('by_org', (q) => q.eq('organizationId', existingOrganization._id))
+          .collect();
+        if (projects.some((project) => project.name === demonstrationProjectName)) return null;
+      }
       // The slug is a deployment-wide namespace and something else owns it, so
       // there is no organization this seed may write into. Generic conflict:
       // the caller learns the seed cannot proceed, not who holds the slug (I9).
@@ -285,25 +260,22 @@ export const seedDemonstrationData = internalMutation({
       latitude: 41.0122,
       longitude: 28.976,
     });
-    const recipeId = await createRecipe(seededCtx, { organizationId, ...demonstrationRecipe });
-    const recipeVersionId = await createInitialDraftVersion(seededCtx, recipeId);
-
-    for (const [position, entry] of demonstrationComposition.entries()) {
-      await addRecipeField(seededCtx, {
-        recipeVersionId,
-        fieldDefinitionId: requireFieldId(fieldIds, entry.key),
-        required: entry.required,
-        visible: true,
-        position,
-      });
-    }
-    await publishRecipeVersion(seededCtx, recipeVersionId);
+    const recipe = await ctx.db
+      .query('eventRecipes')
+      .withIndex('by_org_key', (q) => q.eq('organizationId', organizationId).eq('key', demonstrationRecipe.key))
+      .unique();
+    if (recipe === null) return conflict();
+    const publishedVersion = await ctx.db
+      .query('recipeVersions')
+      .withIndex('by_recipe_status', (q) => q.eq('recipeId', recipe._id).eq('status', 'published'))
+      .unique();
+    if (publishedVersion === null) return conflict();
     // Every composed field carries a value, so the demonstration exercises all
     // three text-ish semantic types (text, longText) and both location fields
     // end to end, not just the required four.
     await createEventFromRecipe(seededCtx, {
       projectId,
-      recipeVersionId,
+      recipeVersionId: publishedVersion._id,
       name: demonstrationEventName,
       startsAt: demonstrationStartsAt,
       values: [
