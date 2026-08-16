@@ -4,10 +4,11 @@ import { api } from '@sancocho/convex/api';
 
 import { ServiceDetailSurface } from '@/components/services/service-detail-surface';
 
-export default function ServiceDetailPage({
+export default async function ServiceDetailPage({
   params,
 }: {
-  params: { id: FunctionArgs<typeof api.events.queries.getEvent>['eventId'] };
+  params: Promise<{ id: FunctionArgs<typeof api.events.queries.getEvent>['eventId'] }>;
 }) {
-  return <ServiceDetailSurface eventId={params.id} />;
+  const { id: eventId } = await params;
+  return <ServiceDetailSurface eventId={eventId} />;
 }

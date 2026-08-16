@@ -1,16 +1,17 @@
 import { ServiceListSurface } from '@/components/services/service-list-surface';
 
-export default function ServicesPage({
+export default async function ServicesPage({
   params,
   searchParams,
 }: {
-  params: { locale: string };
-  searchParams: { projectId?: string };
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<{ projectId?: string }>;
 }) {
+  const [{ locale }, { projectId }] = await Promise.all([params, searchParams]);
   return (
     <ServiceListSurface
-      locale={params.locale}
-      {...(searchParams.projectId === undefined ? {} : { initialProjectId: searchParams.projectId })}
+      locale={locale}
+      {...(projectId === undefined ? {} : { initialProjectId: projectId })}
     />
   );
 }

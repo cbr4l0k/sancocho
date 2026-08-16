@@ -4,10 +4,11 @@ import { api } from '@sancocho/convex/api';
 
 import { LocationDetailSurface } from '@/components/locations/locations-surface';
 
-export default function LocationDetailPage({
+export default async function LocationDetailPage({
   params,
 }: {
-  params: { id: FunctionArgs<typeof api.locations.queries.getLocation>['locationId'] };
+  params: Promise<{ id: FunctionArgs<typeof api.locations.queries.getLocation>['locationId'] }>;
 }) {
-  return <LocationDetailSurface locationId={params.id} />;
+  const { id: locationId } = await params;
+  return <LocationDetailSurface locationId={locationId} />;
 }

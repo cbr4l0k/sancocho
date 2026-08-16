@@ -1,16 +1,17 @@
 import { ServiceCreateSurface } from '@/components/services/service-create-surface';
 
-export default function NewServicePage({
+export default async function NewServicePage({
   params,
   searchParams,
 }: {
-  params: { locale: string };
-  searchParams: { projectId?: string };
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<{ projectId?: string }>;
 }) {
+  const [{ locale }, { projectId }] = await Promise.all([params, searchParams]);
   return (
     <ServiceCreateSurface
-      locale={params.locale}
-      {...(searchParams.projectId === undefined ? {} : { initialProjectId: searchParams.projectId })}
+      locale={locale}
+      {...(projectId === undefined ? {} : { initialProjectId: projectId })}
     />
   );
 }

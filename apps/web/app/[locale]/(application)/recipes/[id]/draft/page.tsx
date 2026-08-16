@@ -3,10 +3,11 @@ import type { FunctionArgs } from 'convex/server';
 
 import { api } from '@sancocho/convex/api';
 
-export default function DraftRecipePage({
+export default async function DraftRecipePage({
   params,
 }: {
-  params: { id: FunctionArgs<typeof api.recipes.queries.getRecipe>['recipeId'] };
+  params: Promise<{ id: FunctionArgs<typeof api.recipes.queries.getRecipe>['recipeId'] }>;
 }) {
-  return <DraftRecipeEditorSurface recipeId={params.id} />;
+  const { id: recipeId } = await params;
+  return <DraftRecipeEditorSurface recipeId={recipeId} />;
 }

@@ -1,5 +1,6 @@
 import { RecipesSurface } from '@/components/recipes/recipes-surface';
 
-export default function RecipesPage({ params }: { params: { locale: string } }) {
-  return <RecipesSurface locale={params.locale} />;
+export default async function RecipesPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+  return <RecipesSurface locale={locale} />;
 }
