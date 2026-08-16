@@ -10,6 +10,7 @@ import { api } from '@sancocho/convex/api';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
@@ -68,18 +69,18 @@ export function ProjectsSurface() {
     statusFilter === '' ? projects.results : projects.results.filter((project) => project.status === statusFilter);
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('projects.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('projects.title')}</h1>
-        <p className="text-sm text-ink-2">{t('projects.lead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('projects.title')}
+        actions={
+          canManage && !creating ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              {t('projects.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
-      {canManage ? (
-        <Button className="self-start" variant="primary" onClick={() => setCreating(true)}>
-          {t('projects.create')}
-        </Button>
-      ) : null}
       {creating ? <ProjectForm onClose={() => setCreating(false)} onSubmit={create} /> : null}
       {projects.status === 'Exhausted' && projects.results.length === 0 ? (
         <EmptyState title={t('projects.emptyTitle')} description={t('projects.emptyBody')} />

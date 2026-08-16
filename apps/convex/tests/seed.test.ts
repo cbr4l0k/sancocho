@@ -222,7 +222,12 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
   expect(events.page.map((row) => row._id)).toEqual([event._id]);
   expect(events.isDone).toBe(true);
   const recipes = await client.query(listRecipes, { organizationId: snapshot.organization._id, paginationOpts: { numItems: 10, cursor: null } });
-  expect(recipes.page.map((row) => ({ key: row.key, status: row.status }))).toEqual([{ key: 'airportArrivalTransfer', status: 'active' }]);
+  expect(recipes.page.map((row) => ({ key: row.key, status: row.status })).sort((left, right) => left.key.localeCompare(right.key))).toEqual([
+    { key: 'airportArrivalTransfer', status: 'active' },
+    { key: 'airportDepartureTransfer', status: 'active' },
+    { key: 'pointToPointTransfer', status: 'active' },
+    { key: 'shuttleService', status: 'active' },
+  ]);
 
   const recipeVersion = await client.query(getRecipeVersion, { recipeVersionId: snapshot.version._id });
   await expect(client.mutation(addRecipeField, {
@@ -242,9 +247,9 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
     projects: 1,
     locations: 2,
     fieldDefinitions: 9,
-    recipes: 1,
-    versions: 1,
-    recipeFields: 9,
+    recipes: 4,
+    versions: 4,
+    recipeFields: 29,
     events: 1,
     eventFieldValues: 9,
   });
@@ -322,5 +327,5 @@ test('the seed refuses to write into an organization that already owns the demon
   // the deployment-wide slug (I9).
   await expect(t.mutation(seedDemonstrationData, {})).rejects.toMatchObject({ data: { code: 'conflict' } });
   const counts = await countRows(t);
-  expect(counts).toMatchObject({ organizations: 1, projects: 0, recipes: 0, events: 0 });
+  expect(counts).toMatchObject({ organizations: 1, projects: 0, recipes: 4, events: 0 });
 });

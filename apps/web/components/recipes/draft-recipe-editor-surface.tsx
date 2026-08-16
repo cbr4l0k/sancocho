@@ -12,6 +12,7 @@ import { FieldConfigEditor } from '@/components/fields/field-config-editor';
 import { LocationPicker } from '@/components/locations/location-picker';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
 import { LocaleLink } from '@/i18n/locale-link';
@@ -76,11 +77,7 @@ export function DraftRecipeEditorSurface({ recipeId }: { recipeId: RecipeId }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('recipes.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('recipes.editDraft')}</h1>
-        <p className="text-sm text-ink-2">{t('recipes.draftEditorLead')}</p>
-      </header>
+      <PageHeader title={t('recipes.editDraft')} />
       {message === null ? null : (
         <p role="alert" className="text-sm text-tone-stop">
           {message}
@@ -458,7 +455,7 @@ function BackNotice({ recipeId, text }: { recipeId: RecipeId; text: string }) {
     <Panel>
       <PanelBody>
         <p className="text-sm text-ink-2">{text}</p>
-        <Button className="mt-3" variant="link" render={<LocaleLink to={`/recipes/${recipeId}`} />}>
+        <Button className="mt-3" variant="link" render={<LocaleLink to={`/settings/recipes/${recipeId}`} />}>
           {t('recipes.backToRecipe')}
         </Button>
       </PanelBody>

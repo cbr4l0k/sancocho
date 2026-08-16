@@ -199,23 +199,42 @@ test('location types outside the code-owned taxonomy are rejected by the validat
   });
 });
 
-test('a planner — the role floor itself — can create, update, archive and delete a location', async () => {
+test('an admin — the role floor itself — can create, update, archive and delete a location', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId } = await makeLocation(t);
-  const planner = await provision(t, 'planner');
-  await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  const admin = await provision(t, 'admin');
+  await owner.client.mutation(addMember, { organizationId, userId: admin.userId, role: 'admin' });
 
-  // Every location mutation is planner+, not admin+: composing the tenant's
-  // planning catalogue is exactly a planner's job. Asserted from the floor rank
-  // itself, so raising the floor to admin fails here rather than passing on the
-  // owner's back.
-  const locationId = await planner.client.mutation(createLocation, { organizationId, name: 'Planner depot', type: 'depot' });
-  await expect(planner.client.mutation(updateLocation, { locationId, name: 'Planner depot renamed' })).resolves.toBeNull();
-  await expect(planner.client.mutation(archiveLocation, { locationId })).resolves.toBeNull();
-  await expect(planner.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
+  // Every location mutation is admin+ (`organizationConfigurationRole`), not
+  // planner+: a location is shared vocabulary the whole tenant's field values
+  // reference, so it is configuration rather than planning work. Asserted from
+  // the floor rank itself, so moving the floor in either direction fails here
+  // rather than passing on the owner's back.
+  const locationId = await admin.client.mutation(createLocation, { organizationId, name: 'Admin depot', type: 'depot' });
+  await expect(admin.client.mutation(updateLocation, { locationId, name: 'Admin depot renamed' })).resolves.toBeNull();
+  await expect(admin.client.mutation(archiveLocation, { locationId })).resolves.toBeNull();
+  await expect(admin.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
   await t.run(async (ctx) => {
     expect(await ctx.db.get(locationId)).toBeNull();
   });
+});
+
+test('a planner sits below the location floor and is refused generically', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId, locationId } = await makeLocation(t);
+  const planner = await provision(t, 'planner');
+  await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+
+  // A planner is a member, so this proves the refusal comes from the role floor
+  // and not from membership — and it stays the same generic error a stranger
+  // gets, never "you need to be an admin" (I9).
+  await expect(planner.client.mutation(createLocation, { organizationId, name: 'No', type: 'custom' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(planner.client.mutation(updateLocation, { locationId, name: 'No' })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(planner.client.mutation(archiveLocation, { locationId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(planner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  // Reading is unaffected: planners still need the catalogue to build services.
+  await expect(planner.client.query(getLocation, { locationId })).resolves.toMatchObject({ _id: locationId });
 });
 
 test('access probes are generic, operators cannot manage, and viewers can read', async () => {

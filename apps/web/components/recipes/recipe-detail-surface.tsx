@@ -11,6 +11,7 @@ import { useFieldDefinitionIndex } from '@/components/fields/use-field-definitio
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -79,31 +80,24 @@ export function RecipeDetailSurface({ recipeId }: { recipeId: RecipeId }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('recipes.eyebrow')}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-            {recipe.name}
-          </h1>
-          <StatusChip emphasis="loud" kind="recipe" status={recipe.status} />
-        </div>
-        <p className="font-mono text-xs text-ink-2">{recipe.key}</p>
-        <p className="text-sm text-ink-2">{recipe.description}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={recipe.name}
+        badge={<StatusChip emphasis="loud" kind="recipe" status={recipe.status} />}
+        actions={
+          canManage && recipe.status !== 'archived' && !editing ? (
+            <>
+              <Button onClick={() => setEditing(true)}>{t('recipes.edit')}</Button>
+              <Button variant="danger" onClick={() => setConfirming(true)}>
+                {t('recipes.archive')}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
       {recipe.status === 'archived' ? (
         <Notice>{t('recipes.archivedNotice')}</Notice>
-      ) : null}
-      {canManage && recipe.status !== 'archived' ? (
-        <ActionGroup>
-          <Button onClick={() => setEditing(true)}>{t('recipes.edit')}</Button>
-          <Button variant="danger" onClick={() => setConfirming(true)}>
-            {t('recipes.archive')}
-          </Button>
-        </ActionGroup>
       ) : null}
       {editing ? (
         <MetadataForm
@@ -112,7 +106,17 @@ export function RecipeDetailSurface({ recipeId }: { recipeId: RecipeId }) {
           onClose={() => setEditing(false)}
           onSubmit={saveMetadata}
         />
-      ) : null}
+      ) : (
+        /* The key and description are the recipe's own data, so they belong in a
+         * panel with the rest of it — not stacked under the page title where
+         * they read as chrome explaining the screen. */
+        <Panel>
+          <PanelBody className="gap-2 text-sm text-ink-2">
+            <p className="font-mono text-xs text-ink-3">{recipe.key}</p>
+            {recipe.description === undefined ? null : <p className="text-ink">{recipe.description}</p>}
+          </PanelBody>
+        </Panel>
+      )}
       {confirming ? (
         <Confirmation
           onCancel={() => setConfirming(false)}
@@ -232,7 +236,7 @@ function DraftActions({
       >
         {t('recipes.publishDraft')}
       </Button>
-      <Button render={<LocaleLink to={`/recipes/${recipeId}/draft`} />}>
+      <Button render={<LocaleLink to={`/settings/recipes/${recipeId}/draft`} />}>
         {t('recipes.draftEditor')}
       </Button>
     </div>

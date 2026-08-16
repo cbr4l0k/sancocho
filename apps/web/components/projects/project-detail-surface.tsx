@@ -10,6 +10,7 @@ import { api } from '@sancocho/convex/api';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { ProjectServicesPanel } from '@/components/services/service-list-surface';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import { formatDateTime } from '@/i18n/formats';
@@ -28,7 +29,6 @@ const editableStatuses: readonly Exclude<ProjectStatus, 'archived'>[] = ['draft'
 
 export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
   const t = useTranslations();
-  const locale = useCanonicalLocale();
   const { currentOrganization } = useCurrentOrganization();
   const project = useQuery(api.projects.queries.getProject, { projectId });
   const update = useMutation(api.projects.mutations.updateProject);
@@ -74,31 +74,35 @@ export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('projects.eyebrow')}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{project.name}</h1>
-          <StatusChip emphasis="loud" kind="project" status={project.status} />
-        </div>
-        {project.description === undefined ? null : <p className="text-sm text-ink-2">{project.description}</p>}
-      </header>
+    /* Order matters here: the edit form takes the details panel's place at the
+     * top of the page rather than appending after the services table, which is
+     * long enough to push a form appended below it entirely off-screen — you
+     * pressed Edit and nothing appeared to happen. Same reason the archive
+     * confirmation sits directly under the header that triggered it. */
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={project.name}
+        badge={<StatusChip emphasis="loud" kind="project" status={project.status} />}
+        actions={
+          canManage && project.status !== 'archived' && !editing ? (
+            <>
+              <Button onClick={() => setEditing(true)}>{t('projects.edit')}</Button>
+              <Button variant="danger" onClick={() => setConfirming(true)}>
+                {t('projects.archive')}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
-      <ProjectDetails project={project} />
-      <ProjectServicesPanel project={project} />
-      {project.status === 'archived' ? <Notice>{t('projects.archivedNotice')}</Notice> : null}
-      {canManage && project.status !== 'archived' ? (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setEditing(true)}>{t('projects.edit')}</Button>
-          <Button variant="danger" onClick={() => setConfirming(true)}>
-            {t('projects.archive')}
-          </Button>
-        </div>
-      ) : null}
+      {confirming ? <ArchiveConfirmation onCancel={() => setConfirming(false)} onConfirm={confirmArchive} /> : null}
       {editing && project.status !== 'archived' ? (
         <MetadataForm project={project} onClose={() => setEditing(false)} onSubmit={save} />
-      ) : null}
-      {confirming ? <ArchiveConfirmation onCancel={() => setConfirming(false)} onConfirm={confirmArchive} /> : null}
+      ) : (
+        <ProjectDetails project={project} />
+      )}
+      {project.status === 'archived' ? <Notice>{t('projects.archivedNotice')}</Notice> : null}
+      <ProjectServicesPanel project={project} />
     </div>
   );
 }
@@ -112,6 +116,9 @@ function ProjectDetails({ project }: { project: Project }) {
         <PanelTitle>{t('projects.detailsTitle')}</PanelTitle>
       </PanelHeader>
       <PanelBody className="gap-2 text-sm text-ink-2">
+        {/* The description lives here rather than under the page title: it is a
+         * property of the project like its dates, not a subtitle for the screen. */}
+        {project.description === undefined ? null : <p className="text-ink">{project.description}</p>}
         <p>
           <span className="text-ink-3">{t('projects.start')} </span>
           {project.startsAt === undefined ? t('projects.noDates') : formatDateTime(locale, project.startsAt)}

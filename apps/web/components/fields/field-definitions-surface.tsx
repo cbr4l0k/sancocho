@@ -26,6 +26,7 @@ import {
   PanelHeader,
   PanelTitle,
 } from '@/components/ui/panel';
+import { PageHeader } from '@/components/ui/page-header';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
   Table,
@@ -141,7 +142,7 @@ export function FieldDefinitionsSurface() {
   const [confirmation, setConfirmation] = useState<ConfirmationState>(null);
   const [message, setMessage] = useState<string | null>(null);
   const canManage =
-    currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
+    currentOrganization !== null && roleAtLeast(currentOrganization.role, 'admin');
 
   if (currentOrganization === null) return null;
 
@@ -164,16 +165,17 @@ export function FieldDefinitionsSurface() {
   const editorKey = editor.mode === 'edit' ? editor.field._id : 'create';
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('fields.eyebrow')}
-        </p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-          {t('fields.title')}
-        </h1>
-        <p className="text-sm text-ink-2">{t('fields.lead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('fields.title')}
+        actions={
+          canManage && editor.mode === 'closed' ? (
+            <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
+              {t('fields.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {message === null ? null : (
         <p
           role="alert"
@@ -182,15 +184,6 @@ export function FieldDefinitionsSurface() {
           {message}
         </p>
       )}
-      {canManage ? (
-        <Button
-          variant="primary"
-          className="self-start"
-          onClick={() => setEditor({ mode: 'create' })}
-        >
-          {t('fields.create')}
-        </Button>
-      ) : null}
       {canManage && editor.mode !== 'closed' ? (
         <FieldEditor
           key={editorKey}

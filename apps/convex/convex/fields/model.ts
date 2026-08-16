@@ -11,7 +11,7 @@ import {
 } from '../lib/access';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
-import type { Role } from '../lib/roles';
+import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { maxLongTextValueLength, maxTextValueLength } from './values';
 import {
   fieldConfigValidator,
@@ -89,7 +89,7 @@ export async function createFieldDefinition(
   ctx: MutationCtx,
   args: { organizationId: Id<'organizations'>; key: string; label: string; description?: string; semanticType?: SemanticType; config: FieldConfig },
 ): Promise<Id<'fieldDefinitions'>> {
-  const access = await requireOrganizationRole(ctx, args.organizationId, 'planner');
+  const access = await requireOrganizationRole(ctx, args.organizationId, organizationConfigurationRole);
   const label = await assertValidNewField(ctx, args.organizationId, args);
   const fieldDefinitionId = await ctx.db.insert('fieldDefinitions', {
     scope: 'organization',
@@ -113,7 +113,7 @@ export async function createFieldDefinition(
 }
 
 export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>, patch: FieldDefinitionPatch): Promise<void> {
-  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, 'planner');
+  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, organizationConfigurationRole);
   // Archived fields are immutable regardless of which columns are patched.
   if (field.status === 'archived') {
     return invalidInput('fieldArchived', 'Archived fields cannot be updated');
@@ -184,7 +184,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
 }
 
 export async function archiveFieldDefinition(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>): Promise<void> {
-  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, 'planner');
+  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, organizationConfigurationRole);
   // Idempotent: re-archiving neither re-patches nor writes a second audit row.
   if (field.status === 'archived') return;
   // #8/#9 must exclude archived fields when composing new recipe drafts.
@@ -200,7 +200,7 @@ export async function archiveFieldDefinition(ctx: MutationCtx, fieldDefinitionId
 }
 
 export async function deleteFieldDefinition(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>): Promise<void> {
-  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, 'planner');
+  const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, organizationConfigurationRole);
   // Both reference tables are checked first-hit through their by_field indexes.
   // recipeFields covers configuration references; eventFieldValues covers
   // operational data, so a field carrying stored Event values survives even if

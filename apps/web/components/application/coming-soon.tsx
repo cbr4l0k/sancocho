@@ -3,13 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import { EmptyState } from '@/components/ui/empty-state';
-import {
-  Panel,
-  PanelBody,
-  PanelDescription,
-  PanelHeader,
-  PanelTitle,
-} from '@/components/ui/panel';
+import { PageHeader } from '@/components/ui/page-header';
+import { Panel, PanelBody } from '@/components/ui/panel';
 
 export type ComingSoonSurface =
   | 'chat'
@@ -43,16 +38,8 @@ export function ComingSoon({ surface }: { surface: ComingSoonSurface }) {
   const t = useTranslations();
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-2xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('shell.comingSoonTitle')}
-        </p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-          {t(titleKeys[surface])}
-        </h1>
-        <p className="text-sm text-ink-2">{t('shell.comingSoonDescription')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader title={t(titleKeys[surface])} />
       <Panel>
         <PanelBody>
           <EmptyState

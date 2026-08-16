@@ -11,6 +11,7 @@ import type { locationTypeValidator } from '@sancocho/convex/validators';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelBodyFlush, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
@@ -60,7 +61,7 @@ export function LocationsSurface() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const canManage = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
+  const canManage = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'admin');
 
   if (currentOrganization === null) return null;
 
@@ -76,18 +77,18 @@ export function LocationsSurface() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('locations.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('locations.title')}</h1>
-        <p className="text-sm text-ink-2">{t('locations.lead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('locations.title')}
+        actions={
+          canManage && editor === null ? (
+            <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
+              {t('locations.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {message === null ? null : <Alert>{message}</Alert>}
-      {canManage ? (
-        <Button className="self-start" variant="primary" onClick={() => setEditor({ mode: 'create' })}>
-          {t('locations.create')}
-        </Button>
-      ) : null}
       {editor === null ? null : (
         <LocationEditor
           key={editor.mode === 'create' ? 'create' : editor.location._id}
@@ -128,7 +129,7 @@ export function LocationDetailSurface({ locationId }: { locationId: LocationId }
   const [editing, setEditing] = useState(false);
   const [confirmation, setConfirmation] = useState<'archive' | 'delete' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const canManage = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
+  const canManage = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'admin');
   if (location === undefined) return null;
 
   async function confirm(): Promise<void> {
@@ -142,35 +143,36 @@ export function LocationDetailSurface({ locationId }: { locationId: LocationId }
     }
   }
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('locations.eyebrow')}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{location.name}</h1>
-          <StatusChip emphasis="loud" kind="archival" status={location.status} />
-        </div>
-        <p className="text-sm text-ink-2">{t(`locations.types.${location.type}`)}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={location.name}
+        badge={<StatusChip emphasis="loud" kind="archival" status={location.status} />}
+        actions={
+          canManage && location.status === 'active' && !editing ? (
+            <>
+              <Button onClick={() => setEditing(true)}>{t('locations.edit')}</Button>
+              <Button variant="danger" onClick={() => setConfirmation('archive')}>
+                {t('locations.archive')}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
       {message === null ? null : <Alert>{message}</Alert>}
-      <LocationDetails location={location} />
+      {/* The editor takes the details panel's place rather than appending after
+       * it, so pressing Edit never opens a form below the fold. */}
+      {editing ? (
+        <LocationEditor location={location} onClose={() => setEditing(false)} onCreate={undefined} onUpdate={update} />
+      ) : (
+        <LocationDetails location={location} />
+      )}
       {location.status === 'archived' ? (
         <p className="rounded-input border border-line px-4 py-3 text-sm text-ink-2">{t('locations.archivedNotice')}</p>
-      ) : null}
-      {canManage && location.status === 'active' ? (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setEditing(true)}>{t('locations.edit')}</Button>
-          <Button variant="danger" onClick={() => setConfirmation('archive')}>
-            {t('locations.archive')}
-          </Button>
-        </div>
       ) : null}
       {canManage && location.status === 'archived' ? (
         <Button className="self-start" variant="danger" onClick={() => setConfirmation('delete')}>
           {t('locations.delete')}
         </Button>
-      ) : null}
-      {editing ? (
-        <LocationEditor location={location} onClose={() => setEditing(false)} onCreate={undefined} onUpdate={update} />
       ) : null}
       {confirmation === null ? null : (
         <LocationConfirmation mode={confirmation} onCancel={() => setConfirmation(null)} onConfirm={confirm} />
@@ -221,7 +223,7 @@ function LocationTable({
                   <TableRowHeaderCell>
                     <LocaleLink
                       className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-                      to={`/locations/${location._id}`}
+                      to={`/settings/locations/${location._id}`}
                     >
                       {location.name}
                     </LocaleLink>

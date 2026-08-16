@@ -11,6 +11,7 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, FieldControl, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
@@ -67,22 +68,18 @@ export function RecipesSurface() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
-          {t('recipes.eyebrow')}
-        </p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">
-          {t('recipes.title')}
-        </h1>
-        <p className="text-sm text-ink-2">{t('recipes.lead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('recipes.title')}
+        actions={
+          canManage && !creating ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              {t('recipes.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
-      {canManage ? (
-        <Button className="self-start" variant="primary" onClick={() => setCreating(true)}>
-          {t('recipes.create')}
-        </Button>
-      ) : null}
       {creating ? <RecipeForm onClose={() => setCreating(false)} onSubmit={submit} /> : null}
       {recipes.status === 'Exhausted' && recipes.results.length === 0 ? (
         <EmptyState title={t('recipes.emptyTitle')} description={t('recipes.emptyBody')} />
@@ -133,7 +130,7 @@ function RecipeRow({ recipe }: { recipe: Recipe }) {
       <TableRowHeaderCell>
         <LocaleLink
           className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-          to={`/recipes/${recipe._id}`}
+          to={`/settings/recipes/${recipe._id}`}
         >
           {recipe.name}
         </LocaleLink>

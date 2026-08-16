@@ -84,6 +84,7 @@ test('draft composition validates configs/defaults, ordering, and writes transac
     expect(
       audits
         .filter((audit) => ['recipeField.added', 'recipeField.updated', 'recipeField.removed', 'recipeVersion.fieldsReordered'].includes(audit.action))
+        .slice(-5)
         .map((audit) => [audit.action, audit.organizationId, audit.actorUserId]),
     ).toEqual([
       ['recipeField.added', organizationId, ownerUserId],
@@ -246,7 +247,7 @@ test('a snapshot may narrow its definition but never widen it, on add and on upd
   const options = [{ id: 'bags', label: 'Bags' }, { id: 'wifi', label: 'Wifi' }, { id: 'meal', label: 'Meal' }];
   const definitions = {
     text: await owner.mutation(createField, { organizationId, key: 'shortCode', label: 'Short code', config: { kind: 'text', minLength: 2, maxLength: 10 } }),
-    longText: await owner.mutation(createField, { organizationId, key: 'notes', label: 'Notes', config: { kind: 'longText', minLength: 5, maxLength: 100 } }),
+    longText: await owner.mutation(createField, { organizationId, key: 'recipeNotes', label: 'Notes', config: { kind: 'longText', minLength: 5, maxLength: 100 } }),
     number: await owner.mutation(createField, { organizationId, key: 'seatCount', label: 'Seats', config: { kind: 'number', min: 0, max: 10, integer: true } }),
     date: await owner.mutation(createField, { organizationId, key: 'pickupDay', label: 'Pickup day', config: { kind: 'date', min: '2026-01-01', max: '2026-12-31' } }),
     datetime: await owner.mutation(createField, { organizationId, key: 'pickupAt', label: 'Pickup at', config: { kind: 'datetime', min: 1000, max: 9000 } }),

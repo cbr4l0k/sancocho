@@ -208,14 +208,17 @@ function ShellFrame({ children }: ApplicationShellProps) {
   const pathname = usePathname();
   const t = useTranslations();
   // Nav visibility is presentation only, never authorization (I1); the server is sole authority.
+  //
+  // Five destinations, in the order a day runs: ask, then plan, then dispatch,
+  // then review, and configuration last. Recipes, locations and field
+  // definitions are organization *configuration*, not daily operations, so they
+  // live under /settings rather than competing with them here.
   const nav = [
-    { to: '/', label: t('nav.chat') },
-    { to: '/recipes', label: t('nav.recipes') },
-    { to: '/services', label: t('nav.services') },
+    { to: '/chat', label: t('nav.chat') },
     { to: '/projects', label: t('nav.projects') },
-    { to: '/locations', label: t('nav.locations') },
-    { to: '/fields', label: t('nav.fields') },
+    { to: '/services', label: t('nav.services') },
     { to: '/statistics', label: t('nav.statistics') },
+    { to: '/settings', label: t('nav.settings') },
   ];
 
   return (
@@ -232,12 +235,15 @@ function ShellFrame({ children }: ApplicationShellProps) {
           <nav aria-label={t('nav.label')} className="min-w-0 flex-1 overflow-x-auto">
             <div className="flex w-max min-w-full items-center justify-center gap-0.5 rounded-pill bg-ground-1 p-1">
               {nav.map((item) => {
+                // Prefix match, so a detail route (/projects/<id>) and a settings
+                // subsection (/settings/fields) keep their section highlighted.
+                const href = localeHref(locale, item.to);
                 return (
                   <Button
                     key={item.to}
                     variant="ghost"
                     size="sm"
-                    selected={pathname === localeHref(locale, item.to)}
+                    selected={pathname === href || pathname.startsWith(`${href}/`)}
                     render={<LocaleLink to={item.to} />}
                   >
                     {item.label}
@@ -274,18 +280,6 @@ function ShellFrame({ children }: ApplicationShellProps) {
               </select>
             </div>
             <LocaleSwitcher />
-            <Button
-              variant="ghost"
-              size="icon"
-              selected={pathname === localeHref(locale, '/settings')}
-              aria-label={t('nav.settings')}
-              render={<LocaleLink to="/settings" />}
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
-                <path d="m19.4 13.6 1.1.9-1.8 3.1-1.3-.5a7.7 7.7 0 0 1-1.6.9l-.2 1.4h-3.6l-.2-1.4a7.7 7.7 0 0 1-1.6-.9l-1.3.5-1.8-3.1 1.1-.9a7 7 0 0 1 0-1.8l-1.1-.9L9 7l1.3.5a7.7 7.7 0 0 1 1.6-.9l.2-1.4h3.6l.2 1.4a7.7 7.7 0 0 1 1.6.9l1.3-.5 1.8 3.1-1.1.9a7 7 0 0 1 0 1.8Z" />
-              </svg>
-            </Button>
             <UserButton />
           </div>
         </div>

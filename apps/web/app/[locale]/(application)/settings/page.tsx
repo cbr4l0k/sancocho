@@ -7,7 +7,8 @@ import { api } from '@sancocho/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Panel, PanelBodyFlush, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
+import { PageHeader } from '@/components/ui/page-header';
+import { Panel, PanelBodyFlush } from '@/components/ui/panel';
 import {
   Table,
   TableBody,
@@ -33,12 +34,8 @@ export default function SettingsPage() {
   if (currentOrganization === null) return null;
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-2xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('organizations.title')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('organizations.rosterTitle')}</h1>
-        <p className="text-sm text-ink-2">{t('organizations.rosterDescription')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader title={t('organizations.rosterTitle')} />
       <Panel>
         <PanelBodyFlush>
           <Table>

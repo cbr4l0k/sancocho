@@ -52,7 +52,6 @@ export type MessageSchema = {
     slugInvalid: string;
     slugTaken: string;
     rosterTitle: string;
-    rosterDescription: string;
     memberName: string;
     memberEmail: string;
     memberRole: string;
@@ -60,8 +59,6 @@ export type MessageSchema = {
   };
   projects: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     createTitle: string;
     edit: string;
@@ -98,8 +95,6 @@ export type MessageSchema = {
   };
   fields: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     builtin: string;
     custom: string;
@@ -151,8 +146,6 @@ export type MessageSchema = {
   };
   recipes: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     createTitle: string;
     createLead: string;
@@ -198,7 +191,6 @@ export type MessageSchema = {
     duplicatePosition: string;
     invalidPosition: string;
     requiredHidden: string;
-    draftEditorLead: string;
     draftMissing: string;
     draftArchived: string;
     fieldCount: string;
@@ -223,8 +215,6 @@ export type MessageSchema = {
   };
   services: {
     title: string;
-    eyebrow: string;
-    listLead: string;
     listTitle: string;
     emptyTitle: string;
     emptyBody: string;
@@ -234,10 +224,15 @@ export type MessageSchema = {
     loadedFilterNotice: string;
     notSet: string;
     createTitle: string;
-    createLead: string;
     create: string;
     chooseProject: string;
     chooseRecipe: string;
+    project: string;
+    recipe: string;
+    selectPlaceholder: string;
+    chooseRecipeHint: string;
+    noProjectsHint: string;
+    noRecipesHint: string;
     projectUnavailable: string;
     recipeUnavailable: string;
     permissionNotice: string;
@@ -265,8 +260,6 @@ export type MessageSchema = {
   };
   locations: {
     title: string;
-    eyebrow: string;
-    lead: string;
     create: string;
     createTitle: string;
     edit: string;
@@ -304,7 +297,20 @@ export type MessageSchema = {
   };
   relationships: { title: string; types: Record<RelationshipType, string> };
   stats: { itemsSelected: string; welcome: string };
-  chat: { title: string; eyebrow: string; description: string };
+  chat: { title: string };
+  /** Organization configuration: the settings frame and its section rail. */
+  settings: {
+    title: string;
+    sectionsLabel: string;
+    sections: {
+      organization: string;
+      fields: string;
+      locations: string;
+      recipes: string;
+    };
+    adminOnlyTitle: string;
+    adminOnlyBody: string;
+  };
   common: {
     language: string;
     languageDescription: string;
@@ -316,6 +322,8 @@ export type MessageSchema = {
     retry: string;
     clear: string;
     notAvailable: string;
+    yes: string;
+    no: string;
   };
   errors: {
     generic: string;
@@ -362,7 +370,6 @@ export type MessageSchema = {
     auditInvalid: string;
   };
   nav: {
-    home: string;
     chat: string;
     projects: string;
     services: string;
@@ -377,7 +384,6 @@ export type MessageSchema = {
   };
   shell: {
     comingSoonTitle: string;
-    comingSoonDescription: string;
     comingSoonBody: string;
   };
   vocab: {

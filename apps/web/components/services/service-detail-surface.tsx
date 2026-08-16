@@ -9,8 +9,9 @@ import { api } from '@sancocho/convex/api';
 import { auditActionMessageKey } from '@/i18n/vocab-keys';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
-import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-create-surface';
+import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import { formatDate, formatDateTime, formatNumber, formatTime } from '@/i18n/formats';
@@ -63,29 +64,23 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
     }
   }
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('services.eyebrow')}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{data.event.name}</h1>
-          <StatusChip emphasis="loud" kind="service" status={data.event.status} />
-        </div>
-      </header>
+    /* The editor replaces the read-only panels in place, rather than being
+     * appended after them: three panels of detail is more than a screen, so an
+     * edit form rendered below them opened out of sight. */
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={data.event.name}
+        badge={<StatusChip emphasis="loud" kind="service" status={data.event.status} />}
+        actions={
+          canEdit && !editing ? <Button onClick={() => setEditing(true)}>{t('services.edit')}</Button> : undefined
+        }
+      />
       {message === null ? null : <Alert>{message}</Alert>}
       {frozenByProject ? (
         <Notice>{t('services.projectFrozenNotice')}</Notice>
       ) : terminal ? (
         <Notice>{t('services.terminalNotice')}</Notice>
       ) : null}
-      <ServiceCoreDetails data={data} />
-      <RecipeVersionPanel version={version} />
-      <ServiceValues data={data} version={version} />
-      {canEdit ? (
-        <Button className="self-start" onClick={() => setEditing(true)}>
-          {t('services.edit')}
-        </Button>
-      ) : null}
-      {canOperate ? <StatusControls status={data.event.status} onTransition={transition} /> : null}
       {editing ? (
         <ServiceEditor
           key={data.event._id}
@@ -96,7 +91,14 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
           updateCore={updateCore}
           updateFields={updateFields}
         />
-      ) : null}
+      ) : (
+        <>
+          <ServiceCoreDetails data={data} />
+          <RecipeVersionPanel version={version} />
+          <ServiceValues data={data} version={version} />
+        </>
+      )}
+      {canOperate ? <StatusControls status={data.event.status} onTransition={transition} /> : null}
       <AuditPanel
         organizationId={data.event.organizationId}
         eventId={data.event._id}

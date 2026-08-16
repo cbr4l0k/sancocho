@@ -10,6 +10,7 @@ import { api } from '@sancocho/convex/api';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelBodyFlush, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
 import {
@@ -33,6 +34,11 @@ type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId
 type Project = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number];
 type Service = FunctionReturnType<typeof api.events.queries.listProjectEvents>['page'][number];
 
+/** Carries the chosen project into the create screen so it opens pre-filled. */
+function newServiceHref(projectId: ProjectId | undefined): string {
+  return projectId === undefined ? '/services/new' : `/services/new?projectId=${projectId}`;
+}
+
 export function ServiceListSurface({ initialProjectId }: { initialProjectId?: string }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
@@ -42,15 +48,21 @@ export function ServiceListSurface({ initialProjectId }: { initialProjectId?: st
     { initialNumItems: 25 },
   );
   const [projectId, setProjectId] = useState<ProjectId | undefined>();
+  const canCreate = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
   if (currentOrganization === null) return null;
   const selectedProject = projects.results.find((project) => project._id === (projectId ?? initialProjectId));
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex max-w-3xl flex-col gap-2">
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('services.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('services.title')}</h1>
-        <p className="text-sm text-ink-2">{t('services.listLead')}</p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('services.title')}
+        actions={
+          canCreate ? (
+            <Button variant="primary" render={<LocaleLink to={newServiceHref(selectedProject?._id)} />}>
+              {t('services.create')}
+            </Button>
+          ) : undefined
+        }
+      />
       <ProjectPicker
         projects={projects.results}
         selectedProject={selectedProject}
@@ -70,11 +82,7 @@ export function ProjectServicesPanel({ project }: { project: Project }) {
   return (
     <div className="flex flex-col gap-3">
       {canCreate && project.status !== 'archived' && project.status !== 'completed' ? (
-        <Button
-          className="self-start"
-          variant="primary"
-          render={<LocaleLink to={`/services/new?projectId=${project._id}`} />}
-        >
+        <Button className="self-start" variant="primary" render={<LocaleLink to={newServiceHref(project._id)} />}>
           {t('services.create')}
         </Button>
       ) : null}

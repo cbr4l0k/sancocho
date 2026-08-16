@@ -4,16 +4,17 @@ import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 import { api } from '@sancocho/convex/api';
 
-import { LocationPicker } from '@/components/locations/location-picker';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
+import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { Button } from '@/components/ui/button';
-import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
-import { StatusChip } from '@/components/ui/status-chip';
-import { useLocaleHref } from '@/i18n/locale-link';
+import { Field, FieldControl, FieldGroup, FieldLabel, FieldSpanFull } from '@/components/ui/field';
+import { PageHeader } from '@/components/ui/page-header';
+import { Panel, PanelBody } from '@/components/ui/panel';
+import { LocaleLink, useLocaleHref } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import {
   emptyFieldValueFormState,
@@ -21,181 +22,90 @@ import {
   toEventFieldValue,
   type FieldValueFormState,
 } from '@/lib/field-value-form';
+import { roleAtLeast } from '@/lib/roles';
 import { serviceFieldProblem } from '@/lib/service-form-checks';
 import { timestampFromParts, type TimestampParts } from '@/lib/timestamps';
-import { roleAtLeast } from '@/lib/roles';
 
 type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId'];
+type RecipeVersionId = FunctionArgs<typeof api.recipes.fields.queries.listRecipeFields>['recipeVersionId'];
 type RecipeField = FunctionReturnType<typeof api.recipes.fields.queries.listRecipeFields>[number];
-type Project = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number];
 
+/**
+ * Creating a service is one form on one screen.
+ *
+ * It used to be three stacked panels revealed in sequence — pick a project from
+ * a wall of buttons, then pick a recipe from another wall, and only then did any
+ * input appear — which meant you could not see what a service actually required
+ * until you had already committed to two choices, and the picker issued one
+ * `getRecipe` query per listed recipe to find out which of them were even
+ * usable. Now the whole shape of the record is visible immediately: project and
+ * recipe are two selects at the top, the fields below them fill in as soon as a
+ * recipe is chosen, and the server answers "which recipes are usable" in a
+ * single paginated query.
+ */
 export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: string }) {
   const t = useTranslations();
   const router = useRouter();
   const localeHref = useLocaleHref();
   const { currentOrganization } = useCurrentOrganization();
+  const organizationId = currentOrganization?.organization._id;
+
   const projects = usePaginatedQuery(
     api.projects.queries.listProjects,
-    currentOrganization === null ? 'skip' : { organizationId: currentOrganization.organization._id },
-    { initialNumItems: 25 },
+    organizationId === undefined ? 'skip' : { organizationId },
+    { initialNumItems: 100 },
   );
   const recipes = usePaginatedQuery(
-    api.recipes.queries.listRecipes,
-    currentOrganization === null ? 'skip' : { organizationId: currentOrganization.organization._id },
-    { initialNumItems: 25 },
+    api.recipes.queries.listPublishedRecipes,
+    organizationId === undefined ? 'skip' : { organizationId },
+    { initialNumItems: 100 },
   );
-  const [projectId, setProjectId] = useState<ProjectId | undefined>();
-  const [recipeVersionId, setRecipeVersionId] =
-    useState<FunctionArgs<typeof api.recipes.fields.queries.listRecipeFields>['recipeVersionId']>();
+
+  const [chosenProjectId, setChosenProjectId] = useState<ProjectId>();
+  const [chosenVersionId, setChosenVersionId] = useState<RecipeVersionId>();
+  const [name, setName] = useState('');
+  const [start, setStart] = useState<TimestampParts>({ date: '', time: '' });
+  const [end, setEnd] = useState<TimestampParts>({ date: '', time: '' });
+  const [values, setValues] = useState<Map<string, FieldValueFormState>>(new Map());
   const [message, setMessage] = useState<string>();
-  const canCreate = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
-  if (currentOrganization === null) return null;
-  const selectedProject = projects.results.find((project) => project._id === (projectId ?? initialProjectId));
-  const effectiveProjectId = projectId ?? selectedProject?._id;
-  return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('services.eyebrow')}</p>
-        <h1 className="text-display font-extrabold tracking-[-0.025em] text-ink">{t('services.createTitle')}</h1>
-        <p className="text-sm text-ink-2">{t('services.createLead')}</p>
-      </header>
-      {!canCreate ? <p className="text-sm text-ink-3">{t('services.permissionNotice')}</p> : null}
-      <Panel>
-        <PanelHeader>
-          <PanelTitle>{t('services.chooseProject')}</PanelTitle>
-        </PanelHeader>
-        <PanelBody>
-          <div className="flex flex-wrap gap-2">
-            {projects.results.map((project) => (
-              <ProjectChoice
-                key={project._id}
-                project={project}
-                selected={project._id === effectiveProjectId}
-                onSelect={() => {
-                  setProjectId(project._id);
-                  setRecipeVersionId(undefined);
-                }}
-              />
-            ))}
-          </div>
-          {projects.status !== 'Exhausted' ? (
-            <Button size="sm" onClick={() => projects.loadMore(25)}>
-              {t('services.loadMore')}
-            </Button>
-          ) : null}
-        </PanelBody>
-      </Panel>
-      {effectiveProjectId === undefined ||
-      selectedProject?.status === 'completed' ||
-      selectedProject?.status === 'archived' ? null : (
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>{t('services.chooseRecipe')}</PanelTitle>
-          </PanelHeader>
-          <PanelBody>
-            <div className="flex flex-col gap-2">
-              {recipes.results.map((recipe) => (
-                <RecipeChoice
-                  key={recipe._id}
-                  recipeId={recipe._id}
-                  selectedVersionId={recipeVersionId}
-                  onSelect={setRecipeVersionId}
-                />
-              ))}
-            </div>
-            {recipes.status !== 'Exhausted' ? (
-              <Button size="sm" onClick={() => recipes.loadMore(25)}>
-                {t('services.loadMore')}
-              </Button>
-            ) : null}
-          </PanelBody>
-        </Panel>
-      )}
-      {effectiveProjectId !== undefined && recipeVersionId !== undefined && canCreate ? (
-        <ServiceForm
-          organizationId={currentOrganization.organization._id}
-          projectId={effectiveProjectId}
-          recipeVersionId={recipeVersionId}
-          onCreated={(id) => router.push(localeHref(`/services/${id}`))}
-          onMessage={setMessage}
-        />
-      ) : null}
-      {message === undefined ? null : (
-        <p role="alert" className="text-sm text-tone-stop">
-          {message}
-        </p>
-      )}
-    </div>
-  );
-}
+  const [submitting, setSubmitting] = useState(false);
 
-function ProjectChoice({ project, selected, onSelect }: { project: Project; selected: boolean; onSelect: () => void }) {
-  const t = useTranslations();
-  const unavailable = project.status === 'archived' || project.status === 'completed';
-  return (
-    <Button size="sm" selected={selected} disabled={unavailable} onClick={onSelect}>
-      {project.name} <StatusChip kind="project" status={project.status} />
-      {unavailable ? ` · ${t('services.projectUnavailable')}` : ''}
-    </Button>
+  // A project cannot take new services once it is completed or archived, so it
+  // is not offered rather than offered-and-rejected.
+  const selectableProjects = projects.results.filter(
+    (project) => project.status !== 'archived' && project.status !== 'completed',
   );
-}
-function RecipeChoice({
-  recipeId,
-  selectedVersionId,
-  onSelect,
-}: {
-  recipeId: FunctionArgs<typeof api.recipes.queries.getRecipe>['recipeId'];
-  selectedVersionId: FunctionArgs<typeof api.recipes.fields.queries.listRecipeFields>['recipeVersionId'] | undefined;
-  onSelect: (id: FunctionArgs<typeof api.recipes.fields.queries.listRecipeFields>['recipeVersionId']) => void;
-}) {
-  const data = useQuery(api.recipes.queries.getRecipe, { recipeId });
-  const t = useTranslations();
-  if (data === undefined) return null;
-  const version = data.versions.find((item) => item.status === 'published');
-  const unavailable = data.recipe.status === 'archived' || version === undefined;
-  return (
-    <Button
-      size="sm"
-      selected={version?._id === selectedVersionId}
-      disabled={unavailable}
-      onClick={() => (version === undefined ? undefined : onSelect(version._id))}
-    >
-      {data.recipe.name}
-      {version === undefined ? ` · ${t('services.recipeUnavailable')}` : ` · v${version.versionNumber}`}
-    </Button>
-  );
-}
+  /* `initialProjectId` arrives from the query string, so it is matched against
+   * loaded projects rather than trusted: only an id the server already returned
+   * for this organization can end up in the mutation. */
+  const selectedProject =
+    selectableProjects.find((project) => project._id === (chosenProjectId ?? initialProjectId)) ??
+    (selectableProjects.length === 1 ? selectableProjects[0] : undefined);
+  const selectedRecipe =
+    recipes.results.find((entry) => entry.publishedVersion._id === chosenVersionId) ??
+    (recipes.results.length === 1 ? recipes.results[0] : undefined);
+  const recipeVersionId = selectedRecipe?.publishedVersion._id;
 
-function ServiceForm({
-  organizationId,
-  projectId,
-  recipeVersionId,
-  onCreated,
-  onMessage,
-}: {
-  organizationId: FunctionArgs<typeof api.fields.queries.getFieldDefinitionsByIds>['organizationId'];
-  projectId: ProjectId;
-  recipeVersionId: FunctionArgs<typeof api.recipes.fields.queries.listRecipeFields>['recipeVersionId'];
-  onCreated: (id: string) => void;
-  onMessage: (message: string) => void;
-}) {
-  const t = useTranslations();
-  const fields = useQuery(api.recipes.fields.queries.listRecipeFields, { recipeVersionId });
-  const defs = useQuery(
+  const fields = useQuery(
+    api.recipes.fields.queries.listRecipeFields,
+    recipeVersionId === undefined ? 'skip' : { recipeVersionId },
+  );
+  const definitions = useQuery(
     api.fields.queries.getFieldDefinitionsByIds,
-    fields === undefined
+    fields === undefined || organizationId === undefined
       ? 'skip'
       : { organizationId, fieldDefinitionIds: fields.map((field) => field.fieldDefinitionId) },
   );
+
   const create = useMutation(api.events.mutations.createEventFromRecipe);
-  const [name, setName] = useState('');
-  const [values, setValues] = useState<Map<string, FieldValueFormState>>(new Map());
-  const [start, setStart] = useState<TimestampParts>({ date: '', time: '' });
-  const [end, setEnd] = useState<TimestampParts>({ date: '', time: '' });
-  if (fields === undefined || defs === undefined) return null;
-  const loadedFields = fields;
-  const definitions = new Map(defs.map((definition) => [definition._id, definition]));
-  function state(field: RecipeField): FieldValueFormState {
+  const canCreate = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
+
+  if (currentOrganization === null || organizationId === undefined) return null;
+
+  const labels = new Map((definitions ?? []).map((definition) => [definition._id, definition.label]));
+  const visibleFields = (fields ?? []).filter((field) => field.visible);
+
+  function fieldState(field: RecipeField): FieldValueFormState {
     return (
       values.get(field.fieldDefinitionId) ??
       (field.defaultValue === undefined
@@ -203,7 +113,11 @@ function ServiceForm({
         : fromEventFieldValue(field.defaultValue))
     );
   }
-  async function submit(): Promise<void> {
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (selectedProject === undefined || recipeVersionId === undefined) return;
+
     const startsAt = timestampFromParts(start);
     const endsAt = end.date === '' && end.time === '' ? undefined : timestampFromParts(end);
     if (
@@ -211,235 +125,170 @@ function ServiceForm({
       (endsAt === undefined && !(end.date === '' && end.time === '')) ||
       (endsAt !== undefined && endsAt < startsAt)
     ) {
-      onMessage(t('errors.eventDatesInvalid'));
+      setMessage(t('errors.eventDatesInvalid'));
       return;
     }
-    const submitted = loadedFields.flatMap((field) => {
-      if (!field.visible) return [];
-      const value = toEventFieldValue(state(field));
-      return value === undefined ? [] : [{ fieldDefinitionId: field.fieldDefinitionId, value }];
-    });
-    for (const field of loadedFields) {
-      if (!field.visible) continue;
-      if (
-        serviceFieldProblem(
-          field.config,
-          toEventFieldValue(state(field)),
-          field.required,
-          field.defaultValue !== undefined,
-        ) !== undefined
-      ) {
-        onMessage(t('services.fieldInvalid'));
+
+    for (const field of visibleFields) {
+      const problem = serviceFieldProblem(
+        field.config,
+        toEventFieldValue(fieldState(field)),
+        field.required,
+        field.defaultValue !== undefined,
+      );
+      if (problem !== undefined) {
+        setMessage(t('services.fieldInvalid'));
         return;
       }
     }
+
+    const submitted = visibleFields.flatMap((field) => {
+      const value = toEventFieldValue(fieldState(field));
+      return value === undefined ? [] : [{ fieldDefinitionId: field.fieldDefinitionId, value }];
+    });
+
+    setSubmitting(true);
+    setMessage(undefined);
     try {
-      onCreated(
-        await create({
-          projectId,
-          recipeVersionId,
-          name,
-          startsAt,
-          ...(endsAt === undefined ? {} : { endsAt }),
-          values: submitted,
-        }),
-      );
+      const eventId = await create({
+        projectId: selectedProject._id,
+        recipeVersionId,
+        name,
+        startsAt,
+        ...(endsAt === undefined ? {} : { endsAt }),
+        values: submitted,
+      });
+      router.push(localeHref(`/services/${eventId}`));
     } catch (error) {
-      onMessage(t(errorMessageKey(presentConvexError(error))));
+      setMessage(t(errorMessageKey(presentConvexError(error))));
+    } finally {
+      setSubmitting(false);
     }
   }
-  return (
-    <Panel emphasis="focal">
-      <PanelHeader>
-        <PanelTitle>{t('services.serviceDetails')}</PanelTitle>
-      </PanelHeader>
-      <PanelBody>
-        <div className="flex flex-col gap-4">
-          <label>
-            {t('services.name')}
-            <input
-              required
-              className="ml-2 h-[38px] rounded-input border border-line bg-well px-3 text-sm"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <ServiceDateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
-          <ServiceDateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
-          {loadedFields
-            .filter((field) => field.visible)
-            .map((field) => (
-              <ServiceDynamicField
-                key={field._id}
-                field={field}
-                label={definitions.get(field.fieldDefinitionId)?.label ?? t('common.notAvailable')}
-                value={state(field)}
-                organizationId={organizationId}
-                hasDefault={field.defaultValue !== undefined}
-                onChange={(next) => setValues((old) => new Map(old).set(field.fieldDefinitionId, next))}
-              />
-            ))}
-          <Button variant="primary" onClick={submit}>
-            {t('services.create')}
-          </Button>
-        </div>
-      </PanelBody>
-    </Panel>
-  );
-}
 
-export function ServiceDateTime({
-  label,
-  value,
-  onChange,
-  required = false,
-}: {
-  label: string;
-  value: TimestampParts;
-  onChange: (value: TimestampParts) => void;
-  required?: boolean;
-}) {
+  const ready = canCreate && selectedProject !== undefined && recipeVersionId !== undefined;
+
   return (
-    <label className="flex flex-wrap gap-2 text-sm">
-      {label}
-      <input
-        type="date"
-        required={required}
-        value={value.date}
-        onChange={(event) => onChange({ ...value, date: event.target.value })}
-      />
-      <input
-        type="time"
-        required={required}
-        value={value.time}
-        onChange={(event) => onChange({ ...value, time: event.target.value })}
-      />
-    </label>
+    <div className="flex flex-col gap-6">
+      <PageHeader title={t('services.createTitle')} />
+      {canCreate ? null : <p className="text-sm text-ink-3">{t('services.permissionNotice')}</p>}
+      <Panel emphasis="focal">
+        <PanelBody>
+          <form className="flex flex-col gap-6" onSubmit={submit}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel required>{t('services.project')}</FieldLabel>
+                <FieldControl
+                  render={<select />}
+                  required
+                  className="text-sm normal-case tracking-normal"
+                  value={selectedProject?._id ?? ''}
+                  onChange={(event) =>
+                    setChosenProjectId(
+                      selectableProjects.find((project) => project._id === event.target.value)?._id,
+                    )
+                  }
+                >
+                  <option value="">{t('services.selectPlaceholder')}</option>
+                  {selectableProjects.map((project) => (
+                    <option key={project._id} value={project._id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </FieldControl>
+                {projects.status === 'Exhausted' && selectableProjects.length === 0 ? (
+                  <p className="text-xs text-ink-3">{t('services.noProjectsHint')}</p>
+                ) : null}
+                {/* The query is paginated, so a tenant past the first page needs
+                 * a way to reach the rest — a `<select>` cannot scroll-load. */}
+                {projects.status === 'CanLoadMore' ? (
+                  <Button type="button" variant="link" size="sm" onClick={() => projects.loadMore(100)}>
+                    {t('services.loadMore')}
+                  </Button>
+                ) : null}
+              </Field>
+              <Field>
+                <FieldLabel required>{t('services.recipe')}</FieldLabel>
+                <FieldControl
+                  render={<select />}
+                  required
+                  className="text-sm normal-case tracking-normal"
+                  value={recipeVersionId ?? ''}
+                  onChange={(event) => {
+                    setChosenVersionId(
+                      recipes.results.find((entry) => entry.publishedVersion._id === event.target.value)
+                        ?.publishedVersion._id,
+                    );
+                    // A different recipe means a different field set; values
+                    // keyed by the previous recipe's fields must not carry over.
+                    setValues(new Map());
+                  }}
+                >
+                  <option value="">{t('services.selectPlaceholder')}</option>
+                  {recipes.results.map((entry) => (
+                    <option key={entry.recipe._id} value={entry.publishedVersion._id}>
+                      {entry.recipe.name}
+                    </option>
+                  ))}
+                </FieldControl>
+                {recipes.status === 'Exhausted' && recipes.results.length === 0 ? (
+                  <p className="text-xs text-ink-3">{t('services.noRecipesHint')}</p>
+                ) : null}
+                {recipes.status === 'CanLoadMore' ? (
+                  <Button type="button" variant="link" size="sm" onClick={() => recipes.loadMore(100)}>
+                    {t('services.loadMore')}
+                  </Button>
+                ) : null}
+              </Field>
+            </FieldGroup>
+
+            <hr className="border-0 border-t border-line" />
+
+            <FieldGroup>
+              <FieldSpanFull>
+                <Field>
+                  <FieldLabel required>{t('services.name')}</FieldLabel>
+                  <FieldControl required value={name} onChange={(event) => setName(event.target.value)} />
+                </Field>
+              </FieldSpanFull>
+              <ServiceDateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
+              <ServiceDateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
+              {recipeVersionId === undefined ? (
+                <FieldSpanFull>
+                  <p className="text-sm text-ink-3">{t('services.chooseRecipeHint')}</p>
+                </FieldSpanFull>
+              ) : (
+                visibleFields.map((field) => (
+                  <ServiceDynamicField
+                    key={field._id}
+                    field={field}
+                    label={labels.get(field.fieldDefinitionId) ?? t('common.notAvailable')}
+                    value={fieldState(field)}
+                    organizationId={organizationId}
+                    hasDefault={field.defaultValue !== undefined}
+                    onChange={(next) => setValues((old) => new Map(old).set(field.fieldDefinitionId, next))}
+                  />
+                ))
+              )}
+            </FieldGroup>
+
+            {message === undefined ? null : (
+              <p role="alert" className="text-sm text-tone-stop">
+                {message}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="primary" disabled={!ready || submitting}>
+                {t('services.create')}
+              </Button>
+              <Button type="button" render={<LocaleLink to="/services" />}>
+                {t('common.cancel')}
+              </Button>
+            </div>
+          </form>
+        </PanelBody>
+      </Panel>
+    </div>
   );
-}
-export function ServiceDynamicField({
-  field,
-  label,
-  value,
-  onChange,
-  organizationId,
-  hasDefault = false,
-}: {
-  field: RecipeField;
-  label: string;
-  value: FieldValueFormState;
-  onChange: (value: FieldValueFormState) => void;
-  organizationId: FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'] | undefined;
-  hasDefault?: boolean;
-}) {
-  const required = field.required && !hasDefault;
-  if (field.config.kind === 'location' && value.kind === 'location' && organizationId !== undefined)
-    return (
-      <label>
-        {label}
-        <LocationPicker
-          organizationId={organizationId}
-          value={value.locationId}
-          onChange={(locationId) => onChange({ kind: 'location', locationId })}
-        />
-      </label>
-    );
-  if (field.config.kind === 'boolean' && value.kind === 'boolean')
-    return (
-      <label>
-        {label}
-        <input
-          type="checkbox"
-          checked={value.value}
-          onChange={(event) => onChange({ kind: 'boolean', value: event.target.checked })}
-        />
-      </label>
-    );
-  if (field.config.kind === 'select' && value.kind === 'select')
-    return (
-      <label>
-        {label}
-        <select
-          required={required}
-          value={value.optionId}
-          onChange={(event) => onChange({ kind: 'select', optionId: event.target.value })}
-        >
-          <option value="" />
-          {field.config.options.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
-  if (field.config.kind === 'multiSelect' && value.kind === 'multiSelect')
-    return (
-      <fieldset>
-        <legend>{label}</legend>
-        {field.config.options.map((option) => (
-          <label key={option.id}>
-            <input
-              type="checkbox"
-              checked={value.optionIds.includes(option.id)}
-              onChange={(event) =>
-                onChange({
-                  kind: 'multiSelect',
-                  optionIds: event.target.checked
-                    ? [...value.optionIds, option.id]
-                    : value.optionIds.filter((id) => id !== option.id),
-                })
-              }
-            />
-            {option.label}
-          </label>
-        ))}
-      </fieldset>
-    );
-  if (field.config.kind === 'datetime' && value.kind === 'datetime')
-    return (
-      <ServiceDateTime
-        label={label}
-        value={value}
-        onChange={(next) => onChange({ kind: 'datetime', ...next })}
-        required={required}
-      />
-    );
-  if (
-    (field.config.kind === 'text' ||
-      field.config.kind === 'longText' ||
-      field.config.kind === 'number' ||
-      field.config.kind === 'date' ||
-      field.config.kind === 'time') &&
-    value.kind === field.config.kind
-  )
-    return (
-      <label>
-        {label}
-        {field.required ? ' *' : ''}
-        {field.config.kind === 'longText' ? (
-          <textarea
-            required={required}
-            value={value.value}
-            onChange={(event) => onChange({ kind: 'longText', value: event.target.value })}
-          />
-        ) : (
-          <input
-            required={required}
-            type={
-              field.config.kind === 'number'
-                ? 'number'
-                : field.config.kind === 'date'
-                  ? 'date'
-                  : field.config.kind === 'time'
-                    ? 'time'
-                    : 'text'
-            }
-            value={value.value}
-            onChange={(event) => onChange({ kind: value.kind, value: event.target.value })}
-          />
-        )}
-      </label>
-    );
-  return null;
 }
