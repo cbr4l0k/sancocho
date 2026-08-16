@@ -4,7 +4,6 @@ import { useMutation, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import Link from 'next/link';
 
 import { api } from '@sancocho/convex/api';
 
@@ -17,6 +16,7 @@ import { StatusChip } from '@/components/ui/status-chip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
 import { formatDateTime } from '@/i18n/formats';
+import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { checkRecipeDraft, type DraftFieldProblem } from '@/lib/recipe-draft-checks';
@@ -217,7 +217,6 @@ function DraftActions({
   onAction: OnAction;
 }) {
   const t = useTranslations();
-  const locale = useCanonicalLocale();
   const details = useQuery(api.recipes.queries.getRecipeVersion, {
     recipeVersionId: draft._id,
   });
@@ -233,7 +232,7 @@ function DraftActions({
       >
         {t('recipes.publishDraft')}
       </Button>
-      <Button render={<Link href={`/${locale}/recipes/${recipeId}/draft`} />}>
+      <Button render={<LocaleLink to={`/recipes/${recipeId}/draft`} />}>
         {t('recipes.draftEditor')}
       </Button>
     </div>

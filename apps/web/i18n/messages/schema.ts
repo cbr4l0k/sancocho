@@ -179,6 +179,7 @@ export type MessageSchema = {
     newVersionFrom: string;
     publishDraft: string;
     draftEditor: string;
+    backToRecipe: string;
     draftEditorNote: string;
     archivedNotice: string;
     immutableNotice: string;

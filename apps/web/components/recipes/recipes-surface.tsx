@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -25,10 +24,11 @@ import {
   TableRowHeaderCell,
   TableSkeletonRows,
 } from '@/components/ui/table';
+import { LocaleLink } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { roleAtLeast } from '@/lib/roles';
 
-export function RecipesSurface({ locale }: { locale: string }) {
+export function RecipesSurface() {
   const { currentOrganization } = useCurrentOrganization();
   const t = useTranslations();
   const recipes = usePaginatedQuery(
@@ -105,7 +105,7 @@ export function RecipesSurface({ locale }: { locale: string }) {
             ) : (
               <TableBody>
                 {recipes.results.map((recipe) => (
-                  <RecipeRow key={recipe._id} locale={locale} recipe={recipe} />
+                  <RecipeRow key={recipe._id} recipe={recipe} />
                 ))}
               </TableBody>
             )}
@@ -123,7 +123,7 @@ export function RecipesSurface({ locale }: { locale: string }) {
 
 type Recipe = FunctionReturnType<typeof api.recipes.queries.listRecipes>['page'][number];
 
-function RecipeRow({ recipe, locale }: { recipe: Recipe; locale: string }) {
+function RecipeRow({ recipe }: { recipe: Recipe }) {
   const t = useTranslations();
   const details = useQuery(api.recipes.queries.getRecipe, { recipeId: recipe._id });
   const published = details?.versions.find((version) => version.status === 'published');
@@ -131,12 +131,12 @@ function RecipeRow({ recipe, locale }: { recipe: Recipe; locale: string }) {
   return (
     <TableRow>
       <TableRowHeaderCell>
-        <Link
+        <LocaleLink
           className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-          href={`/${locale}/recipes/${recipe._id}`}
+          to={`/recipes/${recipe._id}`}
         >
           {recipe.name}
-        </Link>
+        </LocaleLink>
       </TableRowHeaderCell>
       <TableCell className="font-mono text-xs">{recipe.key}</TableCell>
       <TableCell>

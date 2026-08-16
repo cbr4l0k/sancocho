@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -25,6 +24,7 @@ import {
   TableSkeletonRows,
 } from '@/components/ui/table';
 import { formatDateTime } from '@/i18n/formats';
+import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { projectDateRangeFromParts, type ProjectTimestampParts } from '@/lib/project-timestamps';
@@ -142,12 +142,12 @@ function ProjectRow({ project, locale }: { project: Project; locale: string }) {
     <TableRow>
       <TableRowHeaderCell>
         <div className="flex flex-col gap-1">
-          <Link
+          <LocaleLink
             className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-            href={`/${locale}/projects/${project._id}`}
+            to={`/projects/${project._id}`}
           >
             {project.name}
-          </Link>
+          </LocaleLink>
           {project.description === undefined ? null : (
             <span className="text-xs font-normal text-ink-3">{project.description}</span>
           )}

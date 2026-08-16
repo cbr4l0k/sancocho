@@ -3,7 +3,6 @@
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useState } from 'react';
 
 import { api } from '@sancocho/convex/api';
@@ -15,6 +14,7 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { Button } from '@/components/ui/button';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
+import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import {
@@ -64,8 +64,8 @@ export function DraftRecipeEditorSurface({ recipeId }: { recipeId: RecipeId }) {
   }
 
   if (recipeData === undefined) return null;
-  if (recipeData.recipe.status === 'archived') return <BackNotice text={t('recipes.draftArchived')} />;
-  if (draft === undefined) return <BackNotice text={t('recipes.draftMissing')} />;
+  if (recipeData.recipe.status === 'archived') return <BackNotice recipeId={recipeId} text={t('recipes.draftArchived')} />;
+  if (draft === undefined) return <BackNotice recipeId={recipeId} text={t('recipes.draftMissing')} />;
   if (fields === undefined || index === undefined) return null;
 
   const used = new Set(fields.map((field) => field.fieldDefinitionId));
@@ -451,13 +451,15 @@ function DefaultControl({
   return null;
 }
 
-function BackNotice({ text }: { text: string }) {
+function BackNotice({ recipeId, text }: { recipeId: RecipeId; text: string }) {
+  const t = useTranslations();
+
   return (
     <Panel>
       <PanelBody>
         <p className="text-sm text-ink-2">{text}</p>
-        <Button className="mt-3" variant="link" render={<Link href="../" />}>
-          ←
+        <Button className="mt-3" variant="link" render={<LocaleLink to={`/recipes/${recipeId}`} />}>
+          {t('recipes.backToRecipe')}
         </Button>
       </PanelBody>
     </Panel>

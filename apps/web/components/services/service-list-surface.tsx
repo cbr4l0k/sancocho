@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { usePaginatedQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -25,6 +24,7 @@ import {
   TableSkeletonRows,
 } from '@/components/ui/table';
 import { formatDateTime } from '@/i18n/formats';
+import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { roleAtLeast } from '@/lib/roles';
 import { serviceStatuses, type EventStatus } from '@/lib/status';
@@ -33,7 +33,7 @@ type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId
 type Project = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number];
 type Service = FunctionReturnType<typeof api.events.queries.listProjectEvents>['page'][number];
 
-export function ServiceListSurface({ locale, initialProjectId }: { locale: string; initialProjectId?: string }) {
+export function ServiceListSurface({ initialProjectId }: { initialProjectId?: string }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
   const projects = usePaginatedQuery(
@@ -58,12 +58,12 @@ export function ServiceListSurface({ locale, initialProjectId }: { locale: strin
         canLoadMore={projects.status !== 'Exhausted'}
         onLoadMore={() => projects.loadMore(25)}
       />
-      {selectedProject === undefined ? null : <ProjectServicesPanel locale={locale} project={selectedProject} />}
+      {selectedProject === undefined ? null : <ProjectServicesPanel project={selectedProject} />}
     </div>
   );
 }
 
-export function ProjectServicesPanel({ locale, project }: { locale: string; project: Project }) {
+export function ProjectServicesPanel({ project }: { project: Project }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
   const canCreate = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
@@ -73,12 +73,12 @@ export function ProjectServicesPanel({ locale, project }: { locale: string; proj
         <Button
           className="self-start"
           variant="primary"
-          render={<Link href={`/${locale}/services/new?projectId=${project._id}`} />}
+          render={<LocaleLink to={`/services/new?projectId=${project._id}`} />}
         >
           {t('services.create')}
         </Button>
       ) : null}
-      <ServiceTable projectId={project._id} locale={locale} />
+      <ServiceTable projectId={project._id} />
     </div>
   );
 }
@@ -125,7 +125,7 @@ function ProjectPicker({
   );
 }
 
-function ServiceTable({ projectId, locale }: { projectId: ProjectId; locale: string }) {
+function ServiceTable({ projectId }: { projectId: ProjectId }) {
   const t = useTranslations();
   const canonicalLocale = useCanonicalLocale();
   const events = usePaginatedQuery(api.events.queries.listProjectEvents, { projectId }, { initialNumItems: 25 });
@@ -173,7 +173,7 @@ function ServiceTable({ projectId, locale }: { projectId: ProjectId; locale: str
             ) : (
               <TableBody>
                 {visible.map((event) => (
-                  <ServiceRow key={event._id} event={event} locale={locale} canonicalLocale={canonicalLocale} />
+                  <ServiceRow key={event._id} event={event} canonicalLocale={canonicalLocale} />
                 ))}
               </TableBody>
             )}
@@ -189,23 +189,21 @@ function ServiceTable({ projectId, locale }: { projectId: ProjectId; locale: str
 
 function ServiceRow({
   event,
-  locale,
   canonicalLocale,
 }: {
   event: Service;
-  locale: string;
   canonicalLocale: ReturnType<typeof useCanonicalLocale>;
 }) {
   const t = useTranslations();
   return (
     <TableRow>
       <TableRowHeaderCell>
-        <Link
+        <LocaleLink
           className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-          href={`/${locale}/services/${event._id}`}
+          to={`/services/${event._id}`}
         >
           {event.name}
-        </Link>
+        </LocaleLink>
       </TableRowHeaderCell>
       <TableCell mono>{formatDateTime(canonicalLocale, event.startsAt)}</TableCell>
       <TableCell mono>

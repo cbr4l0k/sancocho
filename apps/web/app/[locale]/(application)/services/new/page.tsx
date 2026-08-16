@@ -7,11 +7,7 @@ export default async function NewServicePage({
   params: Promise<{ locale: string }>;
   searchParams: Promise<{ projectId?: string }>;
 }) {
-  const [{ locale }, { projectId }] = await Promise.all([params, searchParams]);
-  return (
-    <ServiceCreateSurface
-      locale={locale}
-      {...(projectId === undefined ? {} : { initialProjectId: projectId })}
-    />
-  );
+  await params;
+  const { projectId } = await searchParams;
+  return <ServiceCreateSurface {...(projectId === undefined ? {} : { initialProjectId: projectId })} />;
 }

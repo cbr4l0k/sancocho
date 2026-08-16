@@ -250,6 +250,7 @@ const esCO = {
     newVersionFrom: 'Nueva versión desde v{version}',
     publishDraft: 'Publicar borrador',
     draftEditor: 'Abrir editor del borrador',
+    backToRecipe: 'Volver a la receta',
     draftEditorNote: 'El editor de campos del borrador llegará en el siguiente paso.',
     archivedNotice: 'Esta receta está archivada y es de solo lectura. Su versión publicada se retiró al archivarla.',
     immutableNotice:

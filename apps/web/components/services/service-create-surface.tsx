@@ -13,6 +13,7 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { Button } from '@/components/ui/button';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
+import { useLocaleHref } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import {
   emptyFieldValueFormState,
@@ -28,9 +29,10 @@ type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId
 type RecipeField = FunctionReturnType<typeof api.recipes.fields.queries.listRecipeFields>[number];
 type Project = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number];
 
-export function ServiceCreateSurface({ locale, initialProjectId }: { locale: string; initialProjectId?: string }) {
+export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: string }) {
   const t = useTranslations();
   const router = useRouter();
+  const localeHref = useLocaleHref();
   const { currentOrganization } = useCurrentOrganization();
   const projects = usePaginatedQuery(
     api.projects.queries.listProjects,
@@ -114,7 +116,7 @@ export function ServiceCreateSurface({ locale, initialProjectId }: { locale: str
           organizationId={currentOrganization.organization._id}
           projectId={effectiveProjectId}
           recipeVersionId={recipeVersionId}
-          onCreated={(id) => router.push(`/${locale}/services/${id}`)}
+          onCreated={(id) => router.push(localeHref(`/services/${id}`))}
           onMessage={setMessage}
         />
       ) : null}

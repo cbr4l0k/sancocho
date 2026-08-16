@@ -85,7 +85,7 @@ export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
       </header>
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
       <ProjectDetails project={project} />
-      <ProjectServicesPanel locale={locale} project={project} />
+      <ProjectServicesPanel project={project} />
       {project.status === 'archived' ? <Notice>{t('projects.archivedNotice')}</Notice> : null}
       {canManage && project.status !== 'archived' ? (
         <div className="flex flex-wrap gap-2">

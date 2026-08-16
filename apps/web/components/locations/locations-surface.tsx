@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
@@ -25,7 +24,7 @@ import {
   TableRowHeaderCell,
   TableSkeletonRows,
 } from '@/components/ui/table';
-import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
+import { LocaleLink } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { validateLocationCoordinates } from '@/lib/location-coordinates';
 import { roleAtLeast } from '@/lib/roles';
@@ -48,7 +47,6 @@ const locationTypes = [
 
 export function LocationsSurface() {
   const t = useTranslations();
-  const locale = useCanonicalLocale();
   const { currentOrganization } = useCurrentOrganization();
   const locations = usePaginatedQuery(
     api.locations.queries.listLocations,
@@ -106,7 +104,6 @@ export function LocationsSurface() {
         <LocationTable
           locations={locations.results}
           loading={locations.status === 'LoadingFirstPage'}
-          locale={locale}
           canManage={canManage}
           onEdit={(location) => setEditor({ mode: 'edit', location })}
           onArchive={(location) => setConfirmation({ mode: 'archive', location })}
@@ -185,7 +182,6 @@ export function LocationDetailSurface({ locationId }: { locationId: LocationId }
 function LocationTable({
   locations,
   loading,
-  locale,
   canManage,
   onEdit,
   onArchive,
@@ -193,7 +189,6 @@ function LocationTable({
 }: {
   locations: readonly Location[];
   loading: boolean;
-  locale: string;
   canManage: boolean;
   onEdit: (location: Location) => void;
   onArchive: (location: Location) => void;
@@ -224,12 +219,12 @@ function LocationTable({
               {locations.map((location) => (
                 <TableRow key={location._id}>
                   <TableRowHeaderCell>
-                    <Link
+                    <LocaleLink
                       className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-                      href={`/${locale}/locations/${location._id}`}
+                      to={`/locations/${location._id}`}
                     >
                       {location.name}
-                    </Link>
+                    </LocaleLink>
                   </TableRowHeaderCell>
                   <TableCell>{t(`locations.types.${location.type}`)}</TableCell>
                   <TableCell>{location.address ?? t('locations.notSet')}</TableCell>

@@ -248,6 +248,7 @@ const enUS = {
     newVersionFrom: 'New version from v{version}',
     publishDraft: 'Publish draft',
     draftEditor: 'Open draft editor',
+    backToRecipe: 'Back to recipe',
     draftEditorNote: 'The draft field editor is coming in the next step.',
     archivedNotice: 'This recipe is archived and read-only. Its published version was retired when it was archived.',
     immutableNotice:
