@@ -82,8 +82,16 @@ export async function listProjects(
   ctx: QueryCtx,
   organizationId: Id<'organizations'>,
   paginationOpts: PaginationOptions,
+  filters: { status?: ProjectStatus },
 ): Promise<PaginationResult<Doc<'projects'>>> {
   await requireOrganizationMembership(ctx, organizationId);
+  if (filters.status !== undefined) {
+    const status = filters.status;
+    return ctx.db
+      .query('projects')
+      .withIndex('by_org_status', (q) => q.eq('organizationId', organizationId).eq('status', status))
+      .paginate(paginationOpts);
+  }
   // Paginated: a tenant's project list is unbounded (I6).
   return ctx.db
     .query('projects')

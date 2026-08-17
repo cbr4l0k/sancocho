@@ -7,6 +7,7 @@ import type { Id } from '../_generated/dataModel';
 import { createEventFromRecipe } from '../events/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { conflict, invalidInput } from '../lib/errors';
+import { normalizeSearchText } from '../lib/search';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { addMember, createOrganization } from '../organizations/model';
@@ -184,6 +185,31 @@ export const backfillRecipeVersionPublishedAt = internalMutation({
         .collect();
       const published = audits.find((audit) => audit.action === 'recipeVersion.published');
       if (published !== undefined) await ctx.db.patch(version._id, { publishedAt: published._creationTime });
+    }
+    return null;
+  },
+});
+
+/**
+ * Backfills normalized search text after introducing the derived column. This
+ * is deliberately guarded by the seed deployment opt-in: it is a deployment-
+ * level administrative operation in the same risk class, and internalMutation
+ * alone does not guard against someone running `convex run --prod`.
+ */
+export const backfillSearchText = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    assertSeedingEnabled();
+    const locations = await ctx.db.query('locations').collect();
+    for (const location of locations) {
+      const searchText = normalizeSearchText(location.name);
+      if (location.searchText !== searchText) await ctx.db.patch(location._id, { searchText });
+    }
+    const fields = await ctx.db.query('fieldDefinitions').collect();
+    for (const field of fields) {
+      const searchText = normalizeSearchText(field.key, field.label);
+      if (field.searchText !== searchText) await ctx.db.patch(field._id, { searchText });
     }
     return null;
   },

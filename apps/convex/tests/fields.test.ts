@@ -513,6 +513,26 @@ test('listBuiltinFieldDefinitions serves every authenticated user and only built
   expect(page.page.every((field) => field.scope === 'builtin' && field.organizationId === undefined)).toBe(true);
 });
 
+test('field-definition search covers labels and keys while preserving scopes and tenants', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const member = await provision(t, 'member');
+  const orgA = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-search-a' });
+  const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'fields-search-b' });
+  await owner.client.mutation(addMember, { organizationId: orgA, userId: member.userId, role: 'viewer' });
+  const labelMatch = await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'arrivalPoint', label: 'Arrival terminal', config: textConfig });
+  const keyMatch = await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'pickupWindow', label: 'Pickup window', config: textConfig });
+  await owner.client.mutation(createFieldDefinition, { organizationId: orgB, key: 'foreignNeedle', label: 'Foreign needle', config: textConfig });
+  const builtin = await t.mutation(createBuiltinFieldDefinition, { key: 'builtinNeedle', label: 'Builtin needle', config: textConfig, semanticType: 'eventName' });
+
+  await expect(member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage, search: 'terminal' })).resolves.toMatchObject({ page: [{ _id: labelMatch }] });
+  await expect(member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage, search: 'pickupwindow' })).resolves.toMatchObject({ page: [{ _id: keyMatch }] });
+  await expect(member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage, search: 'foreignneedle' })).resolves.toMatchObject({ page: [] });
+  const builtins = await member.client.query(listBuiltinFieldDefinitions, { paginationOpts: firstPage, search: 'builtinneedle' });
+  expect(builtins.page.map((field) => field._id)).toEqual([builtin]);
+  expect(builtins.page.every((field) => field.organizationId === undefined)).toBe(true);
+});
+
 test('listBuiltinFieldDefinitions walks the catalogue by cursor without repeating or dropping a row', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');

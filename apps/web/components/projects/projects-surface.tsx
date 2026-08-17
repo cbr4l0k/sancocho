@@ -41,14 +41,20 @@ export function ProjectsSurface() {
   const { currentOrganization } = useCurrentOrganization();
   const t = useTranslations();
   const locale = useCanonicalLocale();
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | ''>('');
+  const hasActiveFilter = statusFilter !== '';
   const projects = usePaginatedQuery(
     api.projects.queries.listProjects,
-    currentOrganization === null ? 'skip' : { organizationId: currentOrganization.organization._id },
+    currentOrganization === null
+      ? 'skip'
+      : {
+          organizationId: currentOrganization.organization._id,
+          ...(statusFilter === '' ? {} : { status: statusFilter }),
+        },
     { initialNumItems: 25 },
   );
   const createProject = useMutation(api.projects.mutations.createProject);
   const [creating, setCreating] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | ''>('');
   const [message, setMessage] = useState<string | null>(null);
   const canManage = currentOrganization !== null && roleAtLeast(currentOrganization.role, 'planner');
 
@@ -65,9 +71,6 @@ export function ProjectsSurface() {
     }
   }
 
-  const filteredProjects =
-    statusFilter === '' ? projects.results : projects.results.filter((project) => project.status === statusFilter);
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -82,36 +85,39 @@ export function ProjectsSurface() {
       />
       {message === null ? null : <AlertMessage>{message}</AlertMessage>}
       {creating ? <ProjectForm onClose={() => setCreating(false)} onSubmit={create} /> : null}
-      {projects.status === 'Exhausted' && projects.results.length === 0 ? (
-        <EmptyState title={t('projects.emptyTitle')} description={t('projects.emptyBody')} />
-      ) : (
-        <Panel>
-          <PanelHeader>
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <PanelTitle>{t('projects.listTitle')}</PanelTitle>
-              <label className="flex max-w-full flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
-                {t('projects.statusFilter')}
-                <select
-                  className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
-                  value={statusFilter}
-                  onChange={(event) => {
-                    const candidate = projectStatuses.find((status) => status === event.target.value);
-                    setStatusFilter(candidate ?? '');
-                  }}
-                >
-                  <option value="">{t('projects.allStatuses')}</option>
-                  {projectStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {t(`projects.statuses.${status}`)}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs font-normal normal-case tracking-normal text-ink-3">
-                  {t('projects.loadedFilterNotice')}
-                </span>
-              </label>
-            </div>
-          </PanelHeader>
+      <Panel>
+        <PanelHeader>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <PanelTitle>{t('projects.listTitle')}</PanelTitle>
+            <label className="flex max-w-full flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+              {t('projects.statusFilter')}
+              <select
+                className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+                value={statusFilter}
+                onChange={(event) => {
+                  const candidate = projectStatuses.find((status) => status === event.target.value);
+                  setStatusFilter(candidate ?? '');
+                }}
+              >
+                <option value="">{t('projects.allStatuses')}</option>
+                {projectStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {t(`projects.statuses.${status}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </PanelHeader>
+        {projects.status === 'Exhausted' && projects.results.length === 0 ? (
+          <PanelBody>
+            <EmptyState
+              tone={hasActiveFilter ? 'filtered' : 'empty'}
+              title={t(hasActiveFilter ? 'projects.noMatchesTitle' : 'projects.emptyTitle')}
+              description={t(hasActiveFilter ? 'projects.noMatchesBody' : 'projects.emptyBody')}
+            />
+          </PanelBody>
+        ) : (
           <Table>
             <TableHead>
               <TableRow>
@@ -124,14 +130,14 @@ export function ProjectsSurface() {
               <TableSkeletonRows columns={3} />
             ) : (
               <TableBody>
-                {filteredProjects.map((project) => (
+                {projects.results.map((project) => (
                   <ProjectRow key={project._id} locale={locale} project={project} />
                 ))}
               </TableBody>
             )}
           </Table>
-        </Panel>
-      )}
+        )}
+      </Panel>
       <TableLoadMore loadedCount={projects.results.length} status={projects.status} onLoadMore={projects.loadMore} />
     </div>
   );

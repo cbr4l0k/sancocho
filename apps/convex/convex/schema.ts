@@ -49,13 +49,20 @@ export default defineSchema({
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
-  projects: defineTable(projectFields).index('by_org', ['organizationId']),
+  projects: defineTable(projectFields)
+    .index('by_org', ['organizationId'])
+    // Serves the organization-scoped project status list without filtering an
+    // already-paginated result set.
+    .index('by_org_status', ['organizationId', 'status']),
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
   fieldDefinitions: defineTable(fieldDefinitionFields)
     .index('by_org_key', ['organizationId', 'key'])
-    .index('by_org', ['organizationId']),
+    .index('by_org', ['organizationId'])
+    // Serves key-or-label search within one organization, including the
+    // deployment-wide built-in scope represented by organizationId undefined.
+    .searchIndex('search_text', { searchField: 'searchText', filterFields: ['organizationId'] }),
 
   eventRecipes: defineTable({
     organizationId: v.id('organizations'),
@@ -143,7 +150,21 @@ export default defineSchema({
     .index('by_field', ['fieldDefinitionId'])
     .index('by_location', ['locationId']),
 
-  locations: defineTable(locationFields).index('by_org', ['organizationId']),
+  locations: defineTable(locationFields)
+    // Serves the unchanged unfiltered organization catalogue list.
+    .index('by_org', ['organizationId'])
+    // Serves the unsearched organization-and-type catalogue list when status
+    // is absent; type cannot be a prefix of the status-first index below.
+    .index('by_org_type', ['organizationId', 'type'])
+    // Serves unsearched organization-and-status lists, with an optional type
+    // equality on the same index; neither case needs a post-index filter.
+    .index('by_org_status_type', ['organizationId', 'status', 'type'])
+    // Serves name search scoped to a tenant and optionally narrowed by the
+    // code-owned type and archival status filters.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['organizationId', 'type', 'status'],
+    }),
 
   eventRelationships: defineTable({
     organizationId: v.id('organizations'),

@@ -136,6 +136,29 @@ test('listProjects requires membership in the requested organization and never l
   expect(page.page.every((project) => project.organizationId === orgA)).toBe(true);
 });
 
+test('listProjects filters status across pages without exposing another tenant', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const member = await provision(t, 'member');
+  const orgA = await owner.client.mutation(createOrganization, { name: 'A', slug: 'projects-filter-a' });
+  const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'projects-filter-b' });
+  await owner.client.mutation(addMember, { organizationId: orgA, userId: member.userId, role: 'viewer' });
+  const active = [
+    await owner.client.mutation(createProject, { organizationId: orgA, name: 'Active one' }),
+    await owner.client.mutation(createProject, { organizationId: orgA, name: 'Active two' }),
+    await owner.client.mutation(createProject, { organizationId: orgA, name: 'Active three' }),
+  ];
+  for (const projectId of active) await owner.client.mutation(updateProject, { projectId, status: 'active' });
+  await owner.client.mutation(createProject, { organizationId: orgA, name: 'Draft' });
+  const foreign = await owner.client.mutation(createProject, { organizationId: orgB, name: 'Foreign active' });
+  await owner.client.mutation(updateProject, { projectId: foreign, status: 'active' });
+
+  const first = await member.client.query(listProjects, { organizationId: orgA, paginationOpts: { numItems: 2, cursor: null }, status: 'active' });
+  const second = await member.client.query(listProjects, { organizationId: orgA, paginationOpts: { numItems: 2, cursor: first.continueCursor }, status: 'active' });
+  expect([...first.page, ...second.page].map((project) => project._id).sort()).toEqual([...active].sort());
+  expect([...first.page, ...second.page].every((project) => project.status === 'active' && project.organizationId === orgA)).toBe(true);
+});
+
 test('project authoring is closed to operators and viewers and open from planner up', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
