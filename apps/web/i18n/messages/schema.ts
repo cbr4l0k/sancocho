@@ -296,7 +296,30 @@ export type MessageSchema = {
     loadMore: string;
     types: Record<LocationType, string>;
   };
-  relationships: { title: string; types: Record<RelationshipType, string> };
+  relationships: {
+    title: string;
+    link: string;
+    actions: string;
+    outgoingTitle: string;
+    incomingTitle: string;
+    outgoingEmpty: string;
+    incomingEmpty: string;
+    managedFromSource: string;
+    thisService: string;
+    createTitle: string;
+    targetProject: string;
+    targetService: string;
+    type: string;
+    selectPlaceholder: string;
+    noTargetServices: string;
+    create: string;
+    remove: string;
+    removeTitle: string;
+    removeWarning: string;
+    removeConfirm: string;
+    duplicate: string;
+    types: Record<RelationshipType, string>;
+  };
   stats: { itemsSelected: string; welcome: string };
   chat: { title: string };
   /** Organization configuration: the settings frame and its section rail. */

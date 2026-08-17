@@ -10,6 +10,7 @@ import { auditActionMessageKey } from '@/i18n/vocab-keys';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
+import { ServiceRelationships } from '@/components/services/service-relationships';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
@@ -96,6 +97,7 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
           <ServiceCoreDetails data={data} />
           <RecipeVersionPanel version={version} />
           <ServiceValues data={data} version={version} />
+          <ServiceRelationships eventId={data.event._id} canEdit={canEdit} />
         </>
       )}
       {canOperate ? <StatusControls status={data.event.status} onTransition={transition} /> : null}
