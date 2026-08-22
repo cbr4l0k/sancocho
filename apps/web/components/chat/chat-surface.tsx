@@ -23,7 +23,7 @@ import { ChatMessageItem } from './chat-message-item';
 import { useChatConversation } from './use-chat-conversation';
 
 /**
- * The chat surface (#32): the application's default route. `backend` is the
+ * The chat surface (#32), reached from the nav at `/{locale}/chat`. `backend` is the
  * seam a later integration issue fills with a real model — every component
  * here, including this one, depends on the `ChatBackend` interface only, so
  * swapping the stub for a real implementation means passing a different

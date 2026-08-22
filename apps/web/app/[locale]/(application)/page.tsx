@@ -14,5 +14,5 @@ import { canonicalLocaleForSegment, defaultLocale, isLocaleSegment } from '@/i18
 export default async function ApplicationIndexPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   const canonical = isLocaleSegment(locale) ? canonicalLocaleForSegment(locale) : defaultLocale;
-  redirect(localeHref(canonical, '/chat'));
+  redirect(localeHref(canonical, '/projects'));
 }
