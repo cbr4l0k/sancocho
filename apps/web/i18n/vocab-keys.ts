@@ -57,6 +57,7 @@ export const auditActionMessageKey = {
   'location.deleted': 'location_deleted',
   'relationship.created': 'relationship_created',
   'relationship.removed': 'relationship_removed',
+  'organization.statisticsBackfilled': 'organization_statisticsBackfilled',
 } as const satisfies Record<AuditAction, string>;
 
 export type AuditActionMessageKey = (typeof auditActionMessageKey)[AuditAction];

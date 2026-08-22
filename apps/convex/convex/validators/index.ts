@@ -88,6 +88,30 @@ export const projectDocValidator = v.object({
   ...projectFields,
 });
 
+/**
+ * Single definition of the eventRecipes table shape, mirroring `projectFields`/
+ * `eventFields` above: `schema.ts` builds the table from it and every public
+ * query builds its `returns` validator from it, so the stored document and the
+ * documented API contract cannot drift. Before this it was declared a second
+ * time (schema.ts had its own inline shape, and `recipes/queries.ts` and
+ * `statistics/queries.ts` each hand-rolled their own copy of the return
+ * shape) — a column added to one would have been silently rejected by the
+ * others at runtime.
+ */
+export const recipeFields = {
+  organizationId: v.id('organizations'),
+  key: v.string(),
+  name: v.string(),
+  description: v.optional(v.string()),
+  status: recipeStatusValidator,
+};
+
+export const recipeDocValidator = v.object({
+  _id: v.id('eventRecipes'),
+  _creationTime: v.number(),
+  ...recipeFields,
+});
+
 /** Shared persisted and returned shape for organization-owned locations. */
 export const locationFields = {
   organizationId: v.id('organizations'),
@@ -286,6 +310,10 @@ export const auditActionValidator = v.union(
   v.literal('location.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
+  // The statistics counter backfill is a deployment-administrative operation
+  // (see statistics/model.ts), not a tenant-facing write, but it is still
+  // destructive and still gets exactly one audit action like everything else.
+  v.literal('organization.statisticsBackfilled'),
 );
 
 /**
@@ -326,6 +354,7 @@ export const auditMetadataKeys = [
   'fieldDefinitionId',
   'key',
   'name',
+  'phase',
   'position',
   'previousRole',
   'previousStatus',

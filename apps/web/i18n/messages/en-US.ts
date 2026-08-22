@@ -534,6 +534,9 @@ const enUS = {
     locationAddressTooLong: 'The location address is too long.',
     locationCoordinatesInvalid: 'Enter valid latitude and longitude coordinates.',
     auditInvalid: 'This change could not be recorded. Please try again.',
+    statisticsWindowInvalid: 'That statistics date range is not valid.',
+    statisticsWindowTooLarge: 'That statistics date range is too wide.',
+    statisticsLimitInvalid: 'That statistics result limit is not valid.',
   },
   nav: {
     chat: 'Chat',
@@ -594,6 +597,7 @@ const enUS = {
       location_deleted: 'Location deleted',
       relationship_created: 'Relationship created',
       relationship_removed: 'Relationship removed',
+      organization_statisticsBackfilled: 'Statistics counters backfilled',
     },
   },
   table: {

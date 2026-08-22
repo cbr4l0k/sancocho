@@ -17,6 +17,7 @@ import type { Role } from '../lib/roles';
 import { assertUsableLocation } from '../locations/model';
 import { requireProjectAccess } from '../projects/model';
 import { getVersionFields } from '../recipes/model';
+import { changeCounter } from '../statistics/model';
 import { isFiniteNumber, type eventFieldValueValidator, type eventStatusValidator } from '../validators';
 
 type EventFieldValue = typeof eventFieldValueValidator.type;
@@ -110,6 +111,9 @@ export async function createEventFromRecipe(
     startsAt: args.startsAt,
     ...(args.endsAt === undefined ? {} : { endsAt: args.endsAt }),
   });
+  await changeCounter(ctx, { organizationId: version.organizationId, category: 'eventStatus', status: 'draft', delta: 1 });
+  await changeCounter(ctx, { organizationId: version.organizationId, category: 'projectEvents', projectId: project._id, delta: 1 });
+  await changeCounter(ctx, { organizationId: version.organizationId, category: 'recipeEvents', recipeId: recipe._id, delta: 1 });
   for (const [fieldDefinitionId, { recipeField, value }] of resolved) {
     // The location mirror is derived from the value beside it and never
     // client-supplied (I4); see the contract on `locationIdFromValue`. Omitting
@@ -388,6 +392,8 @@ export async function changeEventStatus(
   // no-op branch here to skip the write.
   assertEventTransition(event.status, args.status);
   await ctx.db.patch(event._id, { status: args.status });
+  await changeCounter(ctx, { organizationId: event.organizationId, category: 'eventStatus', status: event.status, delta: -1 });
+  await changeCounter(ctx, { organizationId: event.organizationId, category: 'eventStatus', status: args.status, delta: 1 });
   await recordAuditEvent(ctx, {
     organizationId: event.organizationId,
     actorUserId: access.user._id,

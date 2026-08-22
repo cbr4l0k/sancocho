@@ -13,6 +13,7 @@ import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
 import { isFiniteNumber, type projectStatusValidator } from '../validators';
+import { changeCounter } from '../statistics/model';
 
 type ProjectStatus = typeof projectStatusValidator.type;
 
@@ -62,6 +63,7 @@ export async function createProject(
     ...(args.endsAt === undefined ? {} : { endsAt: args.endsAt }),
     status: 'draft',
   });
+  await changeCounter(ctx, { organizationId: args.organizationId, category: 'projectStatus', status: 'draft', delta: 1 });
   await recordAuditEvent(ctx, {
     organizationId: args.organizationId,
     actorUserId: access.user._id,
@@ -153,6 +155,10 @@ export async function updateProject(
   }
 
   await ctx.db.patch(projectId, update);
+  if (update.status !== undefined) {
+    await changeCounter(ctx, { organizationId: project.organizationId, category: 'projectStatus', status: project.status, delta: -1 });
+    await changeCounter(ctx, { organizationId: project.organizationId, category: 'projectStatus', status: update.status, delta: 1 });
+  }
   await recordAuditEvent(ctx, {
     organizationId: project.organizationId,
     actorUserId: access.user._id,
@@ -190,6 +196,8 @@ export async function archiveProject(ctx: MutationCtx, projectId: Id<'projects'>
     return;
   }
   await ctx.db.patch(projectId, { status: 'archived' });
+  await changeCounter(ctx, { organizationId: project.organizationId, category: 'projectStatus', status: project.status, delta: -1 });
+  await changeCounter(ctx, { organizationId: project.organizationId, category: 'projectStatus', status: 'archived', delta: 1 });
   await recordAuditEvent(ctx, {
     organizationId: project.organizationId,
     actorUserId: access.user._id,

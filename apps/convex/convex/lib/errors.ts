@@ -8,6 +8,11 @@ export const errorCodes = [
   'conflict',
   'entityNameInvalid',
   'searchTermTooLong',
+  'statisticsWindowInvalid',
+  'statisticsWindowTooLarge',
+  'statisticsLimitInvalid',
+  'statisticsBackfillCursorInvalid',
+  'statisticsBackfillPhaseComplete',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'projectDescriptionTooLong',

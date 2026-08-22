@@ -44,7 +44,10 @@ export type ConvexErrorMessageKey =
   | 'errors.locationDeleteBlocked'
   | 'errors.locationAddressTooLong'
   | 'errors.locationCoordinatesInvalid'
-  | 'errors.auditInvalid';
+  | 'errors.auditInvalid'
+  | 'errors.statisticsWindowInvalid'
+  | 'errors.statisticsWindowTooLarge'
+  | 'errors.statisticsLimitInvalid';
 
 /** Kept as an alias so existing presentation call sites remain unchanged. */
 export type ConvexErrorPresentation = ConvexErrorMessageKey;
@@ -127,6 +130,15 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedRecipeVersionMissing: 'errors.generic',
   auditEntityIdTooLong: 'errors.auditInvalid',
   auditMetadataInvalid: 'errors.auditInvalid',
+  statisticsWindowInvalid: 'errors.statisticsWindowInvalid',
+  statisticsWindowTooLarge: 'errors.statisticsWindowTooLarge',
+  statisticsLimitInvalid: 'errors.statisticsLimitInvalid',
+  // Both codes are thrown only from `backfillOrganizationCounters`, an
+  // `internalMutation` no web client can call — there is no UI surface for
+  // them to describe, so they fall back to the generic message rather than
+  // getting copy nobody will ever read.
+  statisticsBackfillCursorInvalid: 'errors.generic',
+  statisticsBackfillPhaseComplete: 'errors.generic',
 };
 
 function isErrorCode(code: string): code is ErrorCode {

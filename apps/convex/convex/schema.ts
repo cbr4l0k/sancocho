@@ -6,12 +6,14 @@ import {
   auditEventFields,
   eventFieldValueValidator,
   eventFields,
+  eventStatusValidator,
   fieldConfigValidator,
   fieldDefinitionFields,
   locationFields,
-  recipeStatusValidator,
+  recipeFields,
   recipeVersionStatusValidator,
   projectFields,
+  projectStatusValidator,
   relationshipTypeValidator,
   roleValidator,
 } from './validators';
@@ -64,13 +66,9 @@ export default defineSchema({
     // deployment-wide built-in scope represented by organizationId undefined.
     .searchIndex('search_text', { searchField: 'searchText', filterFields: ['organizationId'] }),
 
-  eventRecipes: defineTable({
-    organizationId: v.id('organizations'),
-    key: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    status: recipeStatusValidator,
-  })
+  // Field shape lives in validators/ so the table and the public `returns`
+  // validator are built from the same definition.
+  eventRecipes: defineTable(recipeFields)
     .index('by_org_key', ['organizationId', 'key'])
     .index('by_org', ['organizationId']),
 
@@ -130,8 +128,60 @@ export default defineSchema({
     .index('by_project', ['projectId'])
     .index('by_project_startsAt', ['projectId', 'startsAt'])
     .index('by_org_startsAt', ['organizationId', 'startsAt'])
+    // Serves `statistics.getUpcomingServices`: a status-restricted, bounded
+    // window read must never fall back to reading every event in the window
+    // and filtering client-side (that reintroduces the exact I6 problem the
+    // query exists to avoid), so status is indexed alongside org and start
+    // time and each included status is queried as its own bounded range.
+    .index('by_org_status_startsAt', ['organizationId', 'status', 'startsAt'])
     .index('by_recipe', ['recipeId'])
     .index('by_recipeVersion', ['recipeVersionId']),
+
+  // Materialized statistics are updated by their source mutations. These
+  // indexes make dashboard totals point reads and breakdowns paginated reads.
+  statisticsCounters: defineTable({
+    organizationId: v.id('organizations'),
+    // Closed set matching statistics/model.ts's `ChangeCounterArgs` discriminated
+    // union exactly: `activeRecipe` and `location` never reach this table (they
+    // are single running totals, kept in `statisticsTotals` below).
+    category: v.union(
+      v.literal('eventStatus'),
+      v.literal('projectStatus'),
+      v.literal('projectEvents'),
+      v.literal('recipeEvents'),
+    ),
+    // Present only for the two status-keyed categories; a `projectEvents` or
+    // `recipeEvents` row is keyed by `projectId`/`recipeId` instead, so it
+    // carries no status at all rather than a meaningless filler value.
+    status: v.optional(v.union(eventStatusValidator, projectStatusValidator)),
+    projectId: v.optional(v.id('projects')),
+    recipeId: v.optional(v.id('eventRecipes')),
+    count: v.number(),
+  })
+    .index('by_org_category_status', ['organizationId', 'category', 'status'])
+    .index('by_org_category', ['organizationId', 'category'])
+    .index('by_org_category_project', ['organizationId', 'category', 'projectId'])
+    .index('by_org_category_recipe', ['organizationId', 'category', 'recipeId']),
+
+  statisticsTotals: defineTable({
+    organizationId: v.id('organizations'),
+    metric: v.union(v.literal('activeRecipe'), v.literal('location')),
+    count: v.number(),
+  }).index('by_org_metric', ['organizationId', 'metric']),
+
+  // One row per (organization, phase) tracking exactly how far
+  // `statistics.backfillOrganizationCounters` has progressed. Its sole job is
+  // making the migration idempotent: a call must present the cursor this row
+  // remembers, and a phase already marked done refuses to run again until
+  // `clear` resets it — so replaying `phase: 'events'` (accidentally or from
+  // a retried client) cannot double-count, and a completed phase cannot be
+  // silently re-applied on top of itself.
+  statisticsBackfillProgress: defineTable({
+    organizationId: v.id('organizations'),
+    phase: v.union(v.literal('events'), v.literal('projects'), v.literal('recipes'), v.literal('locations')),
+    cursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+  }).index('by_org_phase', ['organizationId', 'phase']),
 
   eventFieldValues: defineTable({
     organizationId: v.id('organizations'),

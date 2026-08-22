@@ -14,6 +14,7 @@ import { validateEntityName } from '../lib/names';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import { archivalStatusValidator, isFiniteNumber, type locationTypeValidator } from '../validators';
+import { changeCounter } from '../statistics/model';
 
 type LocationType = typeof locationTypeValidator.type;
 type ArchivalStatus = typeof archivalStatusValidator.type;
@@ -67,6 +68,7 @@ export async function createLocation(
     ...(args.longitude === undefined ? {} : { longitude: args.longitude }),
     status: 'active',
   });
+  await changeCounter(ctx, { organizationId: args.organizationId, category: 'location', delta: 1 });
   await recordAuditEvent(ctx, {
     organizationId: args.organizationId,
     actorUserId: access.user._id,
@@ -211,6 +213,7 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
     metadata: { name: location.name, type: location.type },
   });
   await ctx.db.delete(locationId);
+  await changeCounter(ctx, { organizationId: location.organizationId, category: 'location', delta: -1 });
 }
 
 /**

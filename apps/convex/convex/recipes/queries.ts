@@ -2,10 +2,10 @@ import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 
 import { query } from '../_generated/server';
-import { eventFieldValueValidator, fieldConfigValidator, paginatedResult, recipeStatusValidator, recipeVersionStatusValidator } from '../validators';
+import { eventFieldValueValidator, fieldConfigValidator, paginatedResult, recipeDocValidator, recipeVersionStatusValidator } from '../validators';
 import { getRecipe as getRecipeModel, getRecipeVersion as getRecipeVersionModel, listPublishedRecipes as listPublishedRecipesModel, listRecipes as listRecipesModel } from './model';
 
-const recipeDoc = v.object({ _id: v.id('eventRecipes'), _creationTime: v.number(), organizationId: v.id('organizations'), key: v.string(), name: v.string(), description: v.optional(v.string()), status: recipeStatusValidator });
+const recipeDoc = recipeDocValidator;
 const versionDoc = v.object({ _id: v.id('recipeVersions'), _creationTime: v.number(), organizationId: v.id('organizations'), recipeId: v.id('eventRecipes'), versionNumber: v.number(), status: recipeVersionStatusValidator, publishedAt: v.optional(v.number()) });
 const recipeFieldDoc = v.object({ _id: v.id('recipeFields'), _creationTime: v.number(), organizationId: v.id('organizations'), recipeVersionId: v.id('recipeVersions'), fieldDefinitionId: v.id('fieldDefinitions'), position: v.number(), required: v.boolean(), visible: v.boolean(), defaultValue: v.optional(eventFieldValueValidator), defaultLocationId: v.optional(v.id('locations')), config: fieldConfigValidator });
 const paginatedRecipes = paginatedResult(recipeDoc);
