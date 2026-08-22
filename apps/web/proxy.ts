@@ -17,7 +17,8 @@ function preferredLocale(request: NextRequest) {
 
 /**
  * The application's landing view. Everything operational hangs off a project,
- * so signing in should land on the project list rather than on a placeholder.
+ * so signing in should land on the project list rather than on chat. Chat is a
+ * primary surface reached from the nav, not the landing view.
  *
  * The redirect happens here rather than in the `/[locale]` page because the
  * application layout renders a client shell: by the time a `redirect()` inside

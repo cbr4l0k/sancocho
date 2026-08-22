@@ -70,3 +70,16 @@ export function formatDateTime(locale: CanonicalLocale, milliseconds: number, ti
 export function formatNumber(locale: CanonicalLocale, value: number): string {
   return new Intl.NumberFormat(locale).format(value);
 }
+
+/**
+ * Formats an absolute timestamp as a bare wall-clock time in the viewer's own
+ * time zone, with no date and no zone label — for same-session contexts like a
+ * chat transcript, where "14:32" reads faster than a full `formatDateTime`.
+ */
+export function formatClockTime(locale: CanonicalLocale, milliseconds: number): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: locale === 'es-CO' ? '2-digit' : 'numeric',
+    minute: '2-digit',
+    hour12: locale === 'en-US',
+  }).format(new Date(milliseconds));
+}

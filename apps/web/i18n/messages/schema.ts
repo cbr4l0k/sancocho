@@ -326,7 +326,37 @@ export type MessageSchema = {
     types: Record<RelationshipType, string>;
   };
   stats: { itemsSelected: string; welcome: string };
-  chat: { title: string };
+  chat: {
+    title: string;
+    composerLabel: string;
+    composerPlaceholder: string;
+    composerHint: string;
+    send: string;
+    inFlight: string;
+    errorTurn: string;
+    emptyTitle: string;
+    emptyBody: string;
+    conversationLabel: string;
+    youLabel: string;
+    assistantLabel: string;
+    timestampLabel: string;
+    proposal: {
+      recipeTitle: string;
+      serviceTitle: string;
+      statusValid: string;
+      statusNeedsResolution: string;
+      statusInvalid: string;
+      recipeKeyLabel: string;
+      recipeVersionLabel: string;
+      projectLabel: string;
+      fieldsHeading: string;
+      valuesHeading: string;
+      gapsHeading: string;
+      issuesHeading: string;
+      newFieldBadge: string;
+      requiredBadge: string;
+    };
+  };
   /** Organization configuration: the settings frame and its section rail. */
   settings: {
     title: string;
@@ -353,6 +383,8 @@ export type MessageSchema = {
     notAvailable: string;
     yes: string;
     no: string;
+    scrollToLatest: string;
+    scrollToEarliest: string;
   };
   errors: {
     generic: string;
