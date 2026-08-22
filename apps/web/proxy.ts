@@ -16,8 +16,9 @@ function preferredLocale(request: NextRequest) {
 }
 
 /**
- * The application's landing view. Everything operational hangs off a project,
- * so signing in should land on the project list rather than on a placeholder.
+ * The application's landing view. `docs/web-design.md` §14: chat is the
+ * primary/default surface (#32) — an operator describes what they need in
+ * prose rather than starting from a list.
  *
  * The redirect happens here rather than in the `/[locale]` page because the
  * application layout renders a client shell: by the time a `redirect()` inside
@@ -25,7 +26,7 @@ function preferredLocale(request: NextRequest) {
  * as a soft client-side navigation — a 200 plus a visible flash of empty shell.
  * Redirecting at the proxy is a real 307 before anything renders.
  */
-const landingPath = '/projects';
+const landingPath = '/chat';
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

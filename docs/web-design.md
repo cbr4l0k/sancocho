@@ -520,8 +520,8 @@ screen is a route child that composes its own content from the existing
 primitives; it must not recreate navigation, auth checks, organization
 selection, language controls, or error handling.
 
-The default route is the chat surface (`/{locale}`), with an honest placeholder
-until chat is delivered. Primary surface routes are `/{locale}/recipes`,
+The default route is the chat surface (`/{locale}`, delivered in #32 — see
+`docs/web-chat.md` for its decisions). Primary surface routes are `/{locale}/recipes`,
 `/{locale}/services`, `/{locale}/projects`, `/{locale}/locations`,
 `/{locale}/fields`, and `/{locale}/statistics`; organization settings, including
 the read-only member roster, are at `/{locale}/settings`. Locale is always the

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 
 import {
+  formatClockTime,
   formatDate,
   formatDateTime,
   formatTime,
@@ -29,6 +30,13 @@ test('formats absolute datetimes for each locale', () => {
   const value = Date.UTC(2026, 2, 1, 15, 30);
   expect(formatDateTime('es-CO', value)).not.toBe(formatDateTime('en-US', value));
   expect(formatDateTime('en-US', value, 'America/Bogota')).toContain('GMT');
+});
+
+test('formats a bare wall-clock time without a date or zone label', () => {
+  const value = Date.UTC(2026, 2, 1, 20, 5);
+  expect(formatClockTime('es-CO', value)).not.toContain('2026');
+  expect(formatClockTime('en-US', value)).not.toContain('2026');
+  expect(formatClockTime('es-CO', value)).not.toBe(formatClockTime('en-US', value));
 });
 
 test('accepts a calendar date skipped by Pacific/Apia', () => {
