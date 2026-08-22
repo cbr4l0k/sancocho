@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.git
+.jj
+.claude
+apps/web/.next
+apps/web/out
+**/*.tsbuildinfo
+coverage
+# Never bake local credentials into an image layer.
+**/.env*.local
+apps/web/.clerk
