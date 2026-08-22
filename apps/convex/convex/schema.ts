@@ -6,12 +6,14 @@ import {
   auditEventFields,
   eventFieldValueValidator,
   eventFields,
+  eventStatusValidator,
   fieldConfigValidator,
   fieldDefinitionFields,
   locationFields,
   recipeStatusValidator,
   recipeVersionStatusValidator,
   projectFields,
+  projectStatusValidator,
   relationshipTypeValidator,
   roleValidator,
 } from './validators';
@@ -132,6 +134,38 @@ export default defineSchema({
     .index('by_org_startsAt', ['organizationId', 'startsAt'])
     .index('by_recipe', ['recipeId'])
     .index('by_recipeVersion', ['recipeVersionId']),
+
+  // Materialized statistics are updated by their source mutations. These
+  // indexes make dashboard totals point reads and breakdowns paginated reads.
+  statisticsCounters: defineTable({
+    organizationId: v.id('organizations'),
+    // Closed set matching statistics/model.ts's `ChangeCounterArgs` discriminated
+    // union exactly: `activeRecipe` and `location` never reach this table (they
+    // are single running totals, kept in `statisticsTotals` below).
+    category: v.union(
+      v.literal('eventStatus'),
+      v.literal('projectStatus'),
+      v.literal('projectEvents'),
+      v.literal('recipeEvents'),
+    ),
+    // Present only for the two status-keyed categories; a `projectEvents` or
+    // `recipeEvents` row is keyed by `projectId`/`recipeId` instead, so it
+    // carries no status at all rather than a meaningless filler value.
+    status: v.optional(v.union(eventStatusValidator, projectStatusValidator)),
+    projectId: v.optional(v.id('projects')),
+    recipeId: v.optional(v.id('eventRecipes')),
+    count: v.number(),
+  })
+    .index('by_org_category_status', ['organizationId', 'category', 'status'])
+    .index('by_org_category', ['organizationId', 'category'])
+    .index('by_org_category_project', ['organizationId', 'category', 'projectId'])
+    .index('by_org_category_recipe', ['organizationId', 'category', 'recipeId']),
+
+  statisticsTotals: defineTable({
+    organizationId: v.id('organizations'),
+    metric: v.union(v.literal('activeRecipe'), v.literal('location')),
+    count: v.number(),
+  }).index('by_org_metric', ['organizationId', 'metric']),
 
   eventFieldValues: defineTable({
     organizationId: v.id('organizations'),

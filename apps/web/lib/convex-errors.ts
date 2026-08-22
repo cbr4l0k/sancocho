@@ -44,7 +44,10 @@ export type ConvexErrorMessageKey =
   | 'errors.locationDeleteBlocked'
   | 'errors.locationAddressTooLong'
   | 'errors.locationCoordinatesInvalid'
-  | 'errors.auditInvalid';
+  | 'errors.auditInvalid'
+  | 'errors.statisticsWindowInvalid'
+  | 'errors.statisticsWindowTooLarge'
+  | 'errors.statisticsLimitInvalid';
 
 /** Kept as an alias so existing presentation call sites remain unchanged. */
 export type ConvexErrorPresentation = ConvexErrorMessageKey;
@@ -127,6 +130,9 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedRecipeVersionMissing: 'errors.generic',
   auditEntityIdTooLong: 'errors.auditInvalid',
   auditMetadataInvalid: 'errors.auditInvalid',
+  statisticsWindowInvalid: 'errors.statisticsWindowInvalid',
+  statisticsWindowTooLarge: 'errors.statisticsWindowTooLarge',
+  statisticsLimitInvalid: 'errors.statisticsLimitInvalid',
 };
 
 function isErrorCode(code: string): code is ErrorCode {

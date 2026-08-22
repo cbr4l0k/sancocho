@@ -398,6 +398,9 @@ export type MessageSchema = {
     locationAddressTooLong: string;
     locationCoordinatesInvalid: string;
     auditInvalid: string;
+    statisticsWindowInvalid: string;
+    statisticsWindowTooLarge: string;
+    statisticsLimitInvalid: string;
   };
   nav: {
     chat: string;

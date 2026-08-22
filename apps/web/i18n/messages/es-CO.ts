@@ -509,6 +509,9 @@ const esCO = {
     locationAddressTooLong: 'La dirección de la ubicación es demasiado larga.',
     locationCoordinatesInvalid: 'Ingresa coordenadas de latitud y longitud válidas.',
     auditInvalid: 'No se pudo registrar este cambio. Inténtalo de nuevo.',
+    statisticsWindowInvalid: 'El rango de fechas para las estadísticas no es válido.',
+    statisticsWindowTooLarge: 'El rango de fechas para las estadísticas es demasiado amplio.',
+    statisticsLimitInvalid: 'El límite de resultados para las estadísticas no es válido.',
   },
   nav: {
     chat: 'Chat',
