@@ -10,7 +10,7 @@
 #     -t sancocho-web .
 
 # ── build ──────────────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS build
+FROM docker.io/oven/bun:1-alpine AS build
 WORKDIR /app
 
 # Manifests first so the dependency layer survives ordinary source edits.
@@ -18,7 +18,13 @@ COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/
 COPY apps/convex/package.json apps/convex/
 COPY packages/shared/package.json packages/shared/
-RUN bun install --frozen-lockfile
+# `--linker=hoisted` is load-bearing, not a preference. Bun's default isolated
+# linker builds a symlink store at `node_modules/.bun/<pkg>@<ver>/node_modules/`.
+# Next's output tracing records the resolved real paths but does not carry the
+# whole store into `.next/standalone`, so transitive packages (@swc/helpers is
+# the first to bite) go missing and the image builds cleanly, then dies at
+# startup with MODULE_NOT_FOUND. A hoisted tree traces correctly.
+RUN bun install --frozen-lockfile --linker=hoisted
 
 COPY . .
 
@@ -40,7 +46,7 @@ RUN test -n "$NEXT_PUBLIC_CONVEX_URL" \
 RUN bun run --cwd apps/web build
 
 # ── runtime ────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM docker.io/library/node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
