@@ -73,6 +73,11 @@ export const errorCodes = [
   'seedDisabled',
   'seedBuiltinFieldMissing',
   'seedDemonstrationOrganizationMissing',
+  'seedOrganizationMissing',
+  'seedOrganizationOwnerMissing',
+  'seedLocationMissing',
+  'seedRecipeMissing',
+  'seedRecipeVersionMissing',
   'auditEntityIdTooLong',
   'auditMetadataInvalid',
 ] as const;
