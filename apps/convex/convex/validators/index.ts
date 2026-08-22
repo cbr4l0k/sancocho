@@ -92,6 +92,9 @@ export const projectDocValidator = v.object({
 export const locationFields = {
   organizationId: v.id('organizations'),
   name: v.string(),
+  // Server-derived from `name` through normalizeSearchText; never client-supplied
+  // (I4). Optional only for pre-column rows awaiting the administrative backfill.
+  searchText: v.optional(v.string()),
   type: locationTypeValidator,
   address: v.optional(v.string()),
   latitude: v.optional(v.number()),
@@ -485,6 +488,9 @@ export const fieldDefinitionFields = {
   organizationId: v.optional(v.id('organizations')),
   key: v.string(),
   label: v.string(),
+  // Server-derived from `key` and `label` through normalizeSearchText; never
+  // client-supplied (I4). Optional only for pre-column rows awaiting backfill.
+  searchText: v.optional(v.string()),
   description: v.optional(v.string()),
   status: fieldDefinitionStatusValidator,
   semanticType: v.optional(semanticTypeValidator),

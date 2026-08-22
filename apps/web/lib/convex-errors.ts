@@ -7,6 +7,7 @@ export type ConvexErrorMessageKey =
   | 'errors.unauthenticated'
   | 'errors.conflict'
   | 'errors.entityNameInvalid'
+  | 'errors.searchTermTooLong'
   | 'errors.organizationSlugInvalid'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
@@ -57,6 +58,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   unauthenticated: 'errors.unauthenticated',
   conflict: 'errors.conflict',
   entityNameInvalid: 'errors.entityNameInvalid',
+  searchTermTooLong: 'errors.searchTermTooLong',
   organizationSlugInvalid: 'errors.organizationSlugInvalid',
   projectDescriptionTooLong: 'errors.projectDescriptionTooLong',
   projectArchived: 'errors.projectArchived',

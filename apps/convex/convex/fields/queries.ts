@@ -20,15 +20,15 @@ const fieldDefinitionDocValidator = v.object({
 const paginatedFieldsValidator = paginatedResult(fieldDefinitionDocValidator);
 
 export const listFieldDefinitions = query({
-  args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator },
+  args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator, search: v.optional(v.string()) },
   returns: paginatedFieldsValidator,
-  handler: (ctx, args) => listFieldDefinitionsModel(ctx, args.organizationId, args.paginationOpts),
+  handler: (ctx, args) => listFieldDefinitionsModel(ctx, args.organizationId, args.paginationOpts, args.search === undefined ? {} : { search: args.search }),
 });
 
 export const listBuiltinFieldDefinitions = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: { paginationOpts: paginationOptsValidator, search: v.optional(v.string()) },
   returns: paginatedFieldsValidator,
-  handler: (ctx, args) => listBuiltinFieldDefinitionsModel(ctx, args.paginationOpts),
+  handler: (ctx, args) => listBuiltinFieldDefinitionsModel(ctx, args.paginationOpts, args.search === undefined ? {} : { search: args.search }),
 });
 
 export const getFieldDefinitionsByIds = query({

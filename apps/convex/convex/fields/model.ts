@@ -12,6 +12,7 @@ import {
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
+import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import { maxLongTextValueLength, maxTextValueLength } from './values';
 import {
   fieldConfigValidator,
@@ -78,6 +79,7 @@ export async function createBuiltinFieldDefinition(
     scope: 'builtin',
     key: args.key,
     label,
+    searchText: normalizeSearchText(args.key, label),
     ...(args.description === undefined ? {} : { description: args.description }),
     ...(args.semanticType === undefined ? {} : { semanticType: args.semanticType }),
     config: args.config,
@@ -96,6 +98,7 @@ export async function createFieldDefinition(
     organizationId: args.organizationId,
     key: args.key,
     label,
+    searchText: normalizeSearchText(args.key, label),
     ...(args.description === undefined ? {} : { description: args.description }),
     ...(args.semanticType === undefined ? {} : { semanticType: args.semanticType }),
     config: args.config,
@@ -123,7 +126,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   // client that echoes a field's current key/semanticType/config back must not
   // trip the immutability guard, because nothing about the field's meaning
   // actually changes (I2/I3 gate on change, not on argument presence).
-  const update: FieldDefinitionPatch = {};
+  const update: FieldDefinitionPatch & { searchText?: string } = {};
   const changedFields: string[] = [];
   if (patch.label !== undefined && patch.label !== field.label) {
     update.label = patch.label;
@@ -166,6 +169,9 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   }
   if (update.config !== undefined) {
     assertValidFieldConfig(update.config);
+  }
+  if (update.key !== undefined || update.label !== undefined) {
+    update.searchText = normalizeSearchText(update.key ?? field.key, update.label ?? field.label);
   }
   // Compatibility is judged on the merged pair: changing either half can break it.
   if (update.semanticType !== undefined || update.config !== undefined) {
@@ -220,13 +226,32 @@ export async function deleteFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   await ctx.db.delete(fieldDefinitionId);
 }
 
-export async function listFieldDefinitions(ctx: QueryCtx, organizationId: Id<'organizations'>, paginationOpts: PaginationOptions): Promise<PaginationResult<Doc<'fieldDefinitions'>>> {
+export async function listFieldDefinitions(
+  ctx: QueryCtx,
+  organizationId: Id<'organizations'>,
+  paginationOpts: PaginationOptions,
+  filters: { search?: string },
+): Promise<PaginationResult<Doc<'fieldDefinitions'>>> {
   await requireOrganizationMembership(ctx, organizationId);
+  assertSearchTermLength(filters.search);
+  const term = normalizeSearchTerm(filters.search ?? '');
+  if (term !== '') {
+    return ctx.db.query('fieldDefinitions').withSearchIndex('search_text', (q) => q.search('searchText', term).eq('organizationId', organizationId)).paginate(paginationOpts);
+  }
   return ctx.db.query('fieldDefinitions').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts);
 }
 
-export async function listBuiltinFieldDefinitions(ctx: QueryCtx, paginationOpts: PaginationOptions): Promise<PaginationResult<Doc<'fieldDefinitions'>>> {
+export async function listBuiltinFieldDefinitions(
+  ctx: QueryCtx,
+  paginationOpts: PaginationOptions,
+  filters: { search?: string },
+): Promise<PaginationResult<Doc<'fieldDefinitions'>>> {
   await requireAuthenticatedUser(ctx);
+  assertSearchTermLength(filters.search);
+  const term = normalizeSearchTerm(filters.search ?? '');
+  if (term !== '') {
+    return ctx.db.query('fieldDefinitions').withSearchIndex('search_text', (q) => q.search('searchText', term).eq('organizationId', undefined)).paginate(paginationOpts);
+  }
   return ctx.db.query('fieldDefinitions').withIndex('by_org', (q) => q.eq('organizationId', undefined)).paginate(paginationOpts);
 }
 

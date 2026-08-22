@@ -47,6 +47,7 @@ import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { semanticTypeMessageKey } from '@/i18n/vocab-keys';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { roleAtLeast } from '@/lib/roles';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 
 type FieldDefinition = FunctionReturnType<
   typeof api.fields.queries.listFieldDefinitions
@@ -122,16 +123,22 @@ export function FieldDefinitionsSurface() {
   const { currentOrganization } = useCurrentOrganization();
   const t = useTranslations();
   const locale = useCanonicalLocale();
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
+  const hasActiveSearch = search.trim() !== '';
   const custom = usePaginatedQuery(
     api.fields.queries.listFieldDefinitions,
     currentOrganization === null
       ? 'skip'
-      : { organizationId: currentOrganization.organization._id },
+      : {
+          organizationId: currentOrganization.organization._id,
+          ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
+        },
     { initialNumItems: 25 },
   );
   const builtins = usePaginatedQuery(
     api.fields.queries.listBuiltinFieldDefinitions,
-    {},
+    debouncedSearch === '' ? {} : { search: debouncedSearch },
     { initialNumItems: 25 },
   );
   const createField = useMutation(api.fields.mutations.createFieldDefinition);
@@ -194,6 +201,14 @@ export function FieldDefinitionsSurface() {
           onUpdate={updateField}
         />
       ) : null}
+      <label className="flex max-w-full flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+        {t('fields.search')}
+        <input
+          className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </label>
       <FieldTable
         title={t('fields.customTitle')}
         fields={custom.results}
@@ -206,10 +221,11 @@ export function FieldDefinitionsSurface() {
       />
       {custom.status === 'Exhausted' && custom.results.length === 0 ? (
         <EmptyState
-          title={t('fields.emptyTitle')}
-          description={t('fields.emptyBody')}
+          tone={hasActiveSearch ? 'filtered' : 'empty'}
+          title={t(hasActiveSearch ? 'fields.noMatchesTitle' : 'fields.emptyTitle')}
+          description={t(hasActiveSearch ? 'fields.noMatchesBody' : 'fields.emptyBody')}
           action={
-            canManage ? (
+            !hasActiveSearch && canManage ? (
               <Button
                 variant="secondary"
                 onClick={() => setEditor({ mode: 'create' })}

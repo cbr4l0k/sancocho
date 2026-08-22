@@ -303,6 +303,84 @@ test('lists are paginated and isolated by organization', async () => {
   await expect(owner.client.query(listLocations, { organizationId: orgB, paginationOpts: firstPage })).resolves.toMatchObject({ page: [{ _id: foreign }] });
 });
 
+test('listLocations applies indexed search and filters before pagination', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId } = await makeLocation(t);
+  for (let index = 0; index < 4; index += 1) {
+    await owner.client.mutation(createLocation, { organizationId, name: `Ordinary ${index}`, type: 'depot' });
+  }
+  const beyondFirstPage = await owner.client.mutation(createLocation, { organizationId, name: 'Hotel Marriott Bogotá', type: 'hotel' });
+  const medellin = await owner.client.mutation(createLocation, { organizationId, name: 'Medellín Terminal', type: 'station' });
+  await owner.client.mutation(archiveLocation, { locationId: medellin });
+
+  const ordinaryFirstPage = await owner.client.query(listLocations, { organizationId, paginationOpts: { numItems: 1, cursor: null } });
+  expect(ordinaryFirstPage.page.map((location) => location._id)).not.toContain(beyondFirstPage);
+  const searched = await owner.client.query(listLocations, { organizationId, paginationOpts: { numItems: 1, cursor: null }, search: 'marriott' });
+  expect(searched.page.map((location) => location._id)).toEqual([beyondFirstPage]);
+  await expect(owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, search: 'medellin' })).resolves.toMatchObject({ page: [{ _id: medellin }] });
+  const typed = await owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, type: 'hotel' });
+  expect(typed.page.every((location) => location.type === 'hotel')).toBe(true);
+  const archived = await owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, status: 'archived' });
+  expect(archived.page.map((location) => location._id)).toEqual([medellin]);
+  const composed = await owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, search: 'medellin', type: 'station', status: 'archived' });
+  expect(composed.page.map((location) => location._id)).toEqual([medellin]);
+});
+
+test('listLocations applies status indexes before pagination, including the status-and-type prefix', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId, locationId: depot } = await makeLocation(t);
+  const activeHotelOne = await owner.client.mutation(createLocation, { organizationId, name: 'Active hotel one', type: 'hotel' });
+  const activeHotelTwo = await owner.client.mutation(createLocation, { organizationId, name: 'Active hotel two', type: 'hotel' });
+  const archivedHotel = await owner.client.mutation(createLocation, { organizationId, name: 'Archived hotel', type: 'hotel' });
+  const activeStationOne = await owner.client.mutation(createLocation, { organizationId, name: 'Active station one', type: 'station' });
+  const activeStationTwo = await owner.client.mutation(createLocation, { organizationId, name: 'Active station two', type: 'station' });
+  const archivedStation = await owner.client.mutation(createLocation, { organizationId, name: 'Archived station', type: 'station' });
+  await owner.client.mutation(archiveLocation, { locationId: archivedHotel });
+  await owner.client.mutation(archiveLocation, { locationId: archivedStation });
+
+  // Active rows outnumber one page. A post-index filter would make this page
+  // sequence depend on non-matches ahead of each cursor rather than returning
+  // exactly the status-index range on every page.
+  const first = await owner.client.query(listLocations, { organizationId, paginationOpts: { numItems: 2, cursor: null }, status: 'active' });
+  const second = await owner.client.query(listLocations, { organizationId, paginationOpts: { numItems: 2, cursor: first.continueCursor }, status: 'active' });
+  const third = await owner.client.query(listLocations, { organizationId, paginationOpts: { numItems: 2, cursor: second.continueCursor }, status: 'active' });
+  const active = [...first.page, ...second.page, ...third.page];
+  expect(active.map((location) => location._id).sort()).toEqual([depot, activeHotelOne, activeHotelTwo, activeStationOne, activeStationTwo].sort());
+  expect(active.every((location) => location.status === 'active')).toBe(true);
+
+  // The status-and-type equality must stay in the same index expression: both
+  // archived rows are present, so asserting only type would miss a regression.
+  const hotels = await owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, status: 'active', type: 'hotel' });
+  expect(hotels.page.map((location) => location._id).sort()).toEqual([activeHotelOne, activeHotelTwo].sort());
+  expect(hotels.page.every((location) => location.status === 'active' && location.type === 'hotel')).toBe(true);
+});
+
+test('filtered location lists retain tenant isolation and existing authorization errors', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const member = await provision(t, 'member');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'locations-filtered-a' });
+  const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'locations-filtered-b' });
+  await owner.client.mutation(addMember, { organizationId, userId: member.userId, role: 'viewer' });
+  await owner.client.mutation(createLocation, { organizationId: orgB, name: 'Exclusive Search Needle', type: 'hotel' });
+
+  for (const filters of [
+    { search: 'exclusive' },
+    { type: 'hotel' as LocationType },
+    { status: 'active' as const },
+  ]) {
+    await expect(member.client.query(listLocations, { organizationId, paginationOpts: firstPage, ...filters })).resolves.toMatchObject({ page: [] });
+    await expect(t.query(listLocations, { organizationId, paginationOpts: firstPage, ...filters })).rejects.toMatchObject({ data: { code: unauthenticated } });
+  }
+});
+
+test('blank location searches fall through and excessively long searches are rejected', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId, locationId } = await makeLocation(t);
+  await expect(owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, search: '  —_! ' })).resolves.toMatchObject({ page: [{ _id: locationId }] });
+  await expect(owner.client.query(listLocations, { organizationId, paginationOpts: firstPage, search: 'x'.repeat(101) })).rejects.toMatchObject({ data: { code: 'searchTermTooLong' } });
+});
+
 test('a patch that changes nothing writes neither a document patch nor an audit row', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);

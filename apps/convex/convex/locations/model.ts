@@ -12,11 +12,14 @@ import {
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
-import { isFiniteNumber, type locationTypeValidator } from '../validators';
+import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
+import { archivalStatusValidator, isFiniteNumber, type locationTypeValidator } from '../validators';
 
 type LocationType = typeof locationTypeValidator.type;
+type ArchivalStatus = typeof archivalStatusValidator.type;
 type LocationCoordinates = { latitude?: number; longitude?: number };
 type LocationPatch = LocationCoordinates & { name?: string; type?: LocationType; address?: string };
+type LocationListFilters = { type?: LocationType; status?: ArchivalStatus; search?: string };
 
 /**
  * Location field values reference the live Location entity. Later Location edits
@@ -57,6 +60,7 @@ export async function createLocation(
   const locationId = await ctx.db.insert('locations', {
     organizationId: args.organizationId,
     name,
+    searchText: normalizeSearchText(name),
     type: args.type,
     ...(args.address === undefined ? {} : { address: args.address }),
     ...(args.latitude === undefined ? {} : { latitude: args.latitude }),
@@ -83,9 +87,34 @@ export async function listLocations(
   ctx: QueryCtx,
   organizationId: Id<'organizations'>,
   paginationOpts: PaginationOptions,
+  filters: LocationListFilters,
 ): Promise<PaginationResult<Doc<'locations'>>> {
   await requireOrganizationMembership(ctx, organizationId);
+  assertSearchTermLength(filters.search);
+  const term = normalizeSearchTerm(filters.search ?? '');
+  if (term !== '') {
+    const type = filters.type;
+    const status = filters.status;
+    return ctx.db.query('locations').withSearchIndex('search_text', (q) => {
+      let search = q.search('searchText', term).eq('organizationId', organizationId);
+      if (type !== undefined) search = search.eq('type', type);
+      if (status !== undefined) search = search.eq('status', status);
+      return search;
+    }).paginate(paginationOpts);
+  }
   // Paginated because a tenant's planning-location catalogue is unbounded (I6).
+  if (filters.status !== undefined) {
+    const status = filters.status;
+    if (filters.type !== undefined) {
+      const type = filters.type;
+      return ctx.db.query('locations').withIndex('by_org_status_type', (q) => q.eq('organizationId', organizationId).eq('status', status).eq('type', type)).paginate(paginationOpts);
+    }
+    return ctx.db.query('locations').withIndex('by_org_status_type', (q) => q.eq('organizationId', organizationId).eq('status', status)).paginate(paginationOpts);
+  }
+  if (filters.type !== undefined) {
+    const type = filters.type;
+    return ctx.db.query('locations').withIndex('by_org_type', (q) => q.eq('organizationId', organizationId).eq('type', type)).paginate(paginationOpts);
+  }
   return ctx.db.query('locations').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts);
 }
 
@@ -103,10 +132,11 @@ export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations
   const longitude = patch.longitude === undefined ? location.longitude : patch.longitude;
   validateCoordinates({ ...(latitude === undefined ? {} : { latitude }), ...(longitude === undefined ? {} : { longitude }) });
 
-  const update: LocationPatch = {};
+  const update: LocationPatch & { searchText?: string } = {};
   const changedFields: string[] = [];
   if (name !== undefined && name !== location.name) {
     update.name = name;
+    update.searchText = normalizeSearchText(name);
     changedFields.push('name');
   }
   if (patch.type !== undefined && patch.type !== location.type) {

@@ -7,6 +7,7 @@ export const errorCodes = [
   'unauthenticated',
   'conflict',
   'entityNameInvalid',
+  'searchTermTooLong',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'projectDescriptionTooLong',

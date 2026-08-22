@@ -53,9 +53,10 @@ const enUS = {
     detailsTitle: 'Project dates',
     emptyTitle: 'No projects yet',
     emptyBody: 'Create a project before creating a service.',
+    noMatchesTitle: 'No projects match this status',
+    noMatchesBody: 'Choose another status to see projects.',
     statusFilter: 'Status filter',
     allStatuses: 'All statuses',
-    loadedFilterNotice: 'Filters only the projects already loaded.',
     archive: 'Archive project',
     archiveTitle: 'Archive this project?',
     archiveWarning:
@@ -75,6 +76,7 @@ const enUS = {
   },
   fields: {
     title: 'Fields',
+    search: 'Search all field definitions',
     create: 'Create field',
     builtin: 'Built-in',
     custom: 'Custom',
@@ -125,6 +127,8 @@ const enUS = {
     deleteConfirm: 'Delete field',
     emptyTitle: 'No custom fields yet',
     emptyBody: 'Create a reusable field definition for your recipes.',
+    noMatchesTitle: 'No custom fields match your search',
+    noMatchesBody: 'Adjust or clear the search to see field definitions.',
     builtinsTitle: 'Built-in field definitions',
     customTitle: 'Your field definitions',
     capabilities: {
@@ -364,6 +368,8 @@ const enUS = {
     listTitle: 'Your locations',
     emptyTitle: 'No locations yet',
     emptyBody: 'Create a shared location for recipe defaults and service values.',
+    noMatchesTitle: 'No locations match your filters',
+    noMatchesBody: 'Adjust or clear the search or type filter to see locations.',
     notSet: 'Not set',
     archivedNotice: 'This archived location is retained for existing references and cannot be edited.',
     archive: 'Archive location',
@@ -376,11 +382,9 @@ const enUS = {
     deleteWarning:
       'Deletion can still be refused when any recipe default or service value references this location. Keep the archived location if it is in use.',
     deleteConfirm: 'Delete location',
-    search: 'Search loaded locations',
-    typeFilter: 'Type in loaded locations',
+    search: 'Search locations',
+    typeFilter: 'Type',
     allTypes: 'All types',
-    loadedFilterNotice:
-      'Search and type filtering apply only to locations already loaded. More matching locations may exist.',
     selectedArchived: 'Currently selected archived location',
     loadMore: 'Load more locations',
     types: {
@@ -441,6 +445,7 @@ const enUS = {
     unauthenticated: 'Sign in to continue.',
     conflict: 'This change conflicts with the current data. Refresh and try again.',
     entityNameInvalid: 'Enter a valid name.',
+    searchTermTooLong: 'The search term is too long.',
     organizationSlugInvalid: 'Use a valid organization identifier.',
     projectDescriptionTooLong: 'The project description is too long.',
     projectArchived: 'Archived projects are read-only.',

@@ -52,9 +52,10 @@ const esCO = {
     detailsTitle: 'Fechas del proyecto',
     emptyTitle: 'Aún no hay proyectos',
     emptyBody: 'Crea un proyecto antes de crear un servicio.',
+    noMatchesTitle: 'No hay proyectos con ese estado',
+    noMatchesBody: 'Cambia o quita el filtro de estado para ver proyectos.',
     statusFilter: 'Filtro de estado',
     allStatuses: 'Todos los estados',
-    loadedFilterNotice: 'Filtra solo los proyectos que ya se cargaron.',
     archive: 'Archivar proyecto',
     archiveTitle: '¿Archivar este proyecto?',
     archiveWarning:
@@ -75,6 +76,7 @@ const esCO = {
   },
   fields: {
     title: 'Campos',
+    search: 'Buscar todas las definiciones de campos',
     create: 'Crear campo',
     builtin: 'Incorporado',
     custom: 'Personalizado',
@@ -127,6 +129,8 @@ const esCO = {
     deleteConfirm: 'Eliminar campo',
     emptyTitle: 'Aún no hay campos personalizados',
     emptyBody: 'Crea una definición de campo reutilizable para tus recetas.',
+    noMatchesTitle: 'No hay campos personalizados que coincidan con la búsqueda',
+    noMatchesBody: 'Ajusta o borra la búsqueda para ver las definiciones de campo.',
     builtinsTitle: 'Definiciones de campos incorporados',
     customTitle: 'Tus definiciones de campos',
     capabilities: {
@@ -367,6 +371,8 @@ const esCO = {
     listTitle: 'Tus ubicaciones',
     emptyTitle: 'Aún no hay ubicaciones',
     emptyBody: 'Crea una ubicación compartida para valores predeterminados de receta y valores de servicios.',
+    noMatchesTitle: 'No hay ubicaciones que coincidan con los filtros',
+    noMatchesBody: 'Ajusta o quita la búsqueda o el filtro por tipo para ver ubicaciones.',
     notSet: 'Sin definir',
     archivedNotice: 'Esta ubicación archivada se conserva para referencias existentes y no se puede editar.',
     archive: 'Archivar ubicación',
@@ -379,11 +385,9 @@ const esCO = {
     deleteWarning:
       'La eliminación todavía puede rechazarse si algún valor predeterminado de receta o valor de servicio referencia esta ubicación. Conserva la ubicación archivada si está en uso.',
     deleteConfirm: 'Eliminar ubicación',
-    search: 'Buscar en ubicaciones cargadas',
-    typeFilter: 'Tipo en ubicaciones cargadas',
+    search: 'Buscar ubicaciones',
+    typeFilter: 'Tipo',
     allTypes: 'Todos los tipos',
-    loadedFilterNotice:
-      'La búsqueda y el filtro por tipo solo se aplican a las ubicaciones ya cargadas. Puede haber más coincidencias.',
     selectedArchived: 'Ubicación archivada seleccionada actualmente',
     loadMore: 'Cargar más ubicaciones',
     types: {
@@ -446,6 +450,7 @@ const esCO = {
     unauthenticated: 'Inicia sesión para continuar.',
     conflict: 'Este cambio entra en conflicto con los datos actuales. Actualiza e inténtalo de nuevo.',
     entityNameInvalid: 'Ingresa un nombre válido.',
+    searchTermTooLong: 'El término de búsqueda es demasiado largo.',
     organizationSlugInvalid: 'Usa un identificador de organización válido.',
     projectDescriptionTooLong: 'La descripción del proyecto es demasiado larga.',
     projectArchived: 'Los proyectos archivados son de solo lectura.',

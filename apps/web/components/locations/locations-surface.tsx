@@ -29,6 +29,7 @@ import { LocaleLink } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { validateLocationCoordinates } from '@/lib/location-coordinates';
 import { roleAtLeast } from '@/lib/roles';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 
 type Location = FunctionReturnType<typeof api.locations.queries.listLocations>['page'][number];
 type LocationId = FunctionArgs<typeof api.locations.queries.getLocation>['locationId'];
@@ -49,9 +50,19 @@ const locationTypes = [
 export function LocationsSurface() {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<LocationType | ''>('');
+  const debouncedSearch = useDebouncedValue(search);
+  const hasActiveFilters = search.trim() !== '' || typeFilter !== '';
   const locations = usePaginatedQuery(
     api.locations.queries.listLocations,
-    currentOrganization === null ? 'skip' : { organizationId: currentOrganization.organization._id },
+    currentOrganization === null
+      ? 'skip'
+      : {
+          organizationId: currentOrganization.organization._id,
+          ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
+          ...(typeFilter === '' ? {} : { type: typeFilter }),
+        },
     { initialNumItems: 25 },
   );
   const create = useMutation(api.locations.mutations.createLocation);
@@ -99,8 +110,40 @@ export function LocationsSurface() {
           onUpdate={update}
         />
       )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+          {t('locations.search')}
+          <input
+            className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+          {t('locations.typeFilter')}
+          <select
+            className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+            value={typeFilter}
+            onChange={(event) => {
+              const candidate = locationTypes.find((item) => item === event.target.value);
+              setTypeFilter(candidate ?? '');
+            }}
+          >
+            <option value="">{t('locations.allTypes')}</option>
+            {locationTypes.map((item) => (
+              <option key={item} value={item}>
+                {t(`locations.types.${item}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {locations.status === 'Exhausted' && locations.results.length === 0 ? (
-        <EmptyState title={t('locations.emptyTitle')} description={t('locations.emptyBody')} />
+        <EmptyState
+          tone={hasActiveFilters ? 'filtered' : 'empty'}
+          title={t(hasActiveFilters ? 'locations.noMatchesTitle' : 'locations.emptyTitle')}
+          description={t(hasActiveFilters ? 'locations.noMatchesBody' : 'locations.emptyBody')}
+        />
       ) : (
         <LocationTable
           locations={locations.results}

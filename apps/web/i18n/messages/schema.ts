@@ -79,9 +79,10 @@ export type MessageSchema = {
     detailsTitle: string;
     emptyTitle: string;
     emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
     statusFilter: string;
     allStatuses: string;
-    loadedFilterNotice: string;
     archive: string;
     archiveTitle: string;
     archiveWarning: string;
@@ -95,6 +96,7 @@ export type MessageSchema = {
   };
   fields: {
     title: string;
+    search: string;
     create: string;
     builtin: string;
     custom: string;
@@ -137,6 +139,8 @@ export type MessageSchema = {
     deleteConfirm: string;
     emptyTitle: string;
     emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
     builtinsTitle: string;
     customTitle: string;
     capabilities: Record<SemanticCapability, string>;
@@ -278,6 +282,8 @@ export type MessageSchema = {
     listTitle: string;
     emptyTitle: string;
     emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
     notSet: string;
     archivedNotice: string;
     archive: string;
@@ -291,7 +297,6 @@ export type MessageSchema = {
     search: string;
     typeFilter: string;
     allTypes: string;
-    loadedFilterNotice: string;
     selectedArchived: string;
     loadMore: string;
     types: Record<LocationType, string>;
@@ -332,6 +337,7 @@ export type MessageSchema = {
     unauthenticated: string;
     conflict: string;
     entityNameInvalid: string;
+    searchTermTooLong: string;
     organizationSlugInvalid: string;
     projectDescriptionTooLong: string;
     projectArchived: string;

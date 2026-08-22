@@ -92,14 +92,14 @@ whose denormalized column disagrees.
 | `users` | `by_provider_subject` | Unique `(authProvider, authSubject)`; the identity key |
 | `organizations` | `by_slug` | Unique deployment-wide slug |
 | `organizationMemberships` | `by_org_user`, `by_user` | Unique `(orgId, userId)`; membership lookup and "my organizations" |
-| `projects` | `by_org` | Paginated tenant project list |
-| `fieldDefinitions` | `by_org_key`, `by_org` | Unique key per org; built-ins live at `organizationId: undefined` and are unique globally |
+| `projects` | `by_org`, `by_org_status` | Paginated tenant project list; status-filtered tenant project list |
+| `fieldDefinitions` | `by_org_key`, `by_org`, `search_text` | Unique key per org; paginated tenant field-definition list (built-ins live at `organizationId: undefined` and are unique globally); normalized key-and-label search |
 | `eventRecipes` | `by_org_key`, `by_org` | Unique recipe key per org |
 | `recipeVersions` | `by_recipe_version`, `by_recipe_status` | Server-assigned version numbers; one-draft / one-published rules |
 | `recipeFields` | `by_version_field`, `by_version`, `by_field`, `by_defaultLocation` | Unique field per version; ordered fetch; field-immutability trigger; location-default reference guard |
 | `events` | `by_project`, `by_project_startsAt`, `by_org_startsAt`, `by_recipe`, `by_recipeVersion` | Paginated project timeline and version reference checks |
 | `eventFieldValues` | `by_event_field`, `by_field`, `by_location` | Unique value per `(event, field)`; field and location reference guards |
-| `locations` | `by_org` | Paginated tenant location catalogue |
+| `locations` | `by_org`, `by_org_type`, `by_org_status_type`, `search_text` | Paginated tenant location catalogue; type-filtered catalogue; active locations filtered by type for pickers; normalized location-name search |
 | `eventRelationships` | `by_source_target_type`, `by_target` | Unique `(source, target, type)`; the two directional lists |
 | `auditEvents` | `by_org`, `by_org_entity` | Org-scoped and entity-scoped audit reads, newest first |
 
