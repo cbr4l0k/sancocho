@@ -572,6 +572,7 @@ const esCO = {
       location_deleted: 'Ubicación eliminada',
       relationship_created: 'Relación creada',
       relationship_removed: 'Relación eliminada',
+      organization_statisticsBackfilled: 'Contadores de estadísticas reconstruidos',
     },
   },
   table: {

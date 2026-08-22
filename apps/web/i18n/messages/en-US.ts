@@ -567,6 +567,7 @@ const enUS = {
       location_deleted: 'Location deleted',
       relationship_created: 'Relationship created',
       relationship_removed: 'Relationship removed',
+      organization_statisticsBackfilled: 'Statistics counters backfilled',
     },
   },
   table: {

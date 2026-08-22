@@ -11,6 +11,8 @@ export const errorCodes = [
   'statisticsWindowInvalid',
   'statisticsWindowTooLarge',
   'statisticsLimitInvalid',
+  'statisticsBackfillCursorInvalid',
+  'statisticsBackfillPhaseComplete',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'projectDescriptionTooLong',
