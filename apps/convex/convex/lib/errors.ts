@@ -13,6 +13,8 @@ export const errorCodes = [
   'statisticsLimitInvalid',
   'statisticsBackfillCursorInvalid',
   'statisticsBackfillPhaseComplete',
+  'statisticsFilterWindowInvalid',
+  'statisticsThresholdInvalid',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'projectDescriptionTooLong',

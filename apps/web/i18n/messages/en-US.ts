@@ -537,6 +537,8 @@ const enUS = {
     statisticsWindowInvalid: 'That statistics date range is not valid.',
     statisticsWindowTooLarge: 'That statistics date range is too wide.',
     statisticsLimitInvalid: 'That statistics result limit is not valid.',
+    statisticsFilterWindowInvalid: 'That statistics filter date range is not valid.',
+    statisticsThresholdInvalid: 'That occupancy threshold is not valid.',
   },
   nav: {
     chat: 'Chat',

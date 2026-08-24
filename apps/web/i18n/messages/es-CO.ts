@@ -542,6 +542,8 @@ const esCO = {
     statisticsWindowInvalid: 'El rango de fechas para las estadísticas no es válido.',
     statisticsWindowTooLarge: 'El rango de fechas para las estadísticas es demasiado amplio.',
     statisticsLimitInvalid: 'El límite de resultados para las estadísticas no es válido.',
+    statisticsFilterWindowInvalid: 'El rango de fechas del filtro de estadísticas no es válido.',
+    statisticsThresholdInvalid: 'El umbral de ocupación no es válido.',
   },
   nav: {
     chat: 'Chat',

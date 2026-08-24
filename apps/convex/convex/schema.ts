@@ -134,6 +134,13 @@ export default defineSchema({
     // query exists to avoid), so status is indexed alongside org and start
     // time and each included status is queried as its own bounded range.
     .index('by_org_status_startsAt', ['organizationId', 'status', 'startsAt'])
+    // Mirrors `by_org_status_startsAt` for the project-scoped filter case:
+    // `statistics.getFilteredServiceStatusCounts` needs the identical bounded,
+    // per-status range-read shape when the caller supplies a `projectId`
+    // filter, and a project is already proven to belong to the caller's
+    // organization before this index is ever queried, so no organizationId
+    // column is needed in the key (see statistics/model.ts).
+    .index('by_project_status_startsAt', ['projectId', 'status', 'startsAt'])
     .index('by_recipe', ['recipeId'])
     .index('by_recipeVersion', ['recipeVersionId']),
 
@@ -168,6 +175,48 @@ export default defineSchema({
     metric: v.union(v.literal('activeRecipe'), v.literal('location')),
     count: v.number(),
   }).index('by_org_metric', ['organizationId', 'metric']),
+
+  // Maintained running sums of the numeric values carried by semantic types,
+  // updated wherever `eventFieldValues` is written (statistics/model.ts
+  // `applyEventSemanticDelta`) rather than by scanning that table, which
+  // is the largest in the system (I6; see docs/statistics.md "Semantic
+  // aggregation"). The tracked semantic types are the closed set this literal
+  // union names, matching `semanticTypesForCapability('passengerTotals')` and
+  // `semanticTypesForCapability('accessibilityRequirements')` in
+  // validators/index.ts today — the two must be kept in sync by hand, the
+  // same convention `statisticsCounters.category` already uses against
+  // `ChangeCounterArgs`.
+  //
+  // `category` is a discriminated union like `statisticsCounters.category`:
+  // `total` is the single org-wide running sum (no key column); `eventStatus`
+  // is keyed by the CURRENT status of the events contributing to it, moved
+  // between buckets on every status transition (see `moveSemanticStatusBuckets`
+  // in statistics/model.ts, called from events/model.ts `changeEventStatus`)
+  // because status is mutable, unlike a field value's
+  // project; `project` is keyed by `projectId`, which never changes for an
+  // existing event, so it only ever needs updating at the value-write sites.
+  statisticsSemanticCounters: defineTable({
+    organizationId: v.id('organizations'),
+    semanticType: v.union(v.literal('passenger.count'), v.literal('accessibility.wheelchairCount')),
+    category: v.union(v.literal('total'), v.literal('eventStatus'), v.literal('project')),
+    status: v.optional(eventStatusValidator),
+    projectId: v.optional(v.id('projects')),
+    // Running sum of the numeric values contributing to this bucket.
+    sum: v.number(),
+    // Number of events currently carrying a defined value in this bucket —
+    // the denominator for a mean; distinct from an event count elsewhere
+    // because a recipe's fields are optional and an event may carry no value
+    // for a given semantic type at all.
+    count: v.number(),
+  })
+    // One index per category, each keyed only as deep as that category's
+    // own key column — mirroring `statisticsCounters`, which likewise never
+    // queries `by_org_category_status` for a category that carries no status.
+    // `total` has no key column of its own beyond `category`, so it is looked
+    // up on the shared `organizationId`+`semanticType`+`category` prefix.
+    .index('by_org_semantic_category', ['organizationId', 'semanticType', 'category'])
+    .index('by_org_semantic_category_status', ['organizationId', 'semanticType', 'category', 'status'])
+    .index('by_org_semantic_category_project', ['organizationId', 'semanticType', 'category', 'projectId']),
 
   // One row per (organization, phase) tracking exactly how far
   // `statistics.backfillOrganizationCounters` has progressed. Its sole job is

@@ -475,6 +475,22 @@ export const semanticRegistry = Object.freeze({
 
 export type SemanticType = keyof typeof semanticRegistry;
 
+/**
+ * Every semantic type whose registry entry declares `capability` among its
+ * `capabilities`, computed from the registry itself rather than a
+ * hand-maintained list — so a statistics feature keyed on a capability (e.g.
+ * `passengerTotals`, `accessibilityRequirements`) automatically follows any
+ * future field bound to that capability, and a field whose semantics are
+ * never wired to a capability is automatically excluded. This is what
+ * "compute from semanticType, never by matching on field keys or labels"
+ * means in code: the caller names a capability, never a field key.
+ */
+export function semanticTypesForCapability(capability: SemanticCapability): readonly SemanticType[] {
+  return (Object.keys(semanticRegistry) as SemanticType[]).filter((type) =>
+    (semanticRegistry[type].capabilities as readonly SemanticCapability[]).includes(capability),
+  );
+}
+
 /** Must stay in sync with semanticRegistry keys; the satisfies check below enforces it. */
 export const semanticTypeValidator = v.union(
   v.literal('eventName'),

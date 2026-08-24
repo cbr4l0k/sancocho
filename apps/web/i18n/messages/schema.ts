@@ -433,6 +433,8 @@ export type MessageSchema = {
     statisticsWindowInvalid: string;
     statisticsWindowTooLarge: string;
     statisticsLimitInvalid: string;
+    statisticsFilterWindowInvalid: string;
+    statisticsThresholdInvalid: string;
   };
   nav: {
     chat: string;
