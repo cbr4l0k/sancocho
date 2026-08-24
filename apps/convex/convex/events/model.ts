@@ -129,11 +129,13 @@ export async function createEventFromRecipe(
       ...(locationId === undefined ? {} : { locationId }),
     });
   }
-  // A no-op for organizations with no field bound to a tracked semantic
-  // type; see statistics/model.ts `applyEventSemanticDelta` for the full
-  // contract. One event-level delta call after every value is written —
-  // never per field — is what keeps a semantic counter's `count` meaning
-  // "this many EVENTS carry a value" even when two different field
+  // Cheap even when this organization has no field bound to a tracked
+  // semantic type at all — four targeted, indexed range reads
+  // (`statistics/model.ts` `getTrackedFieldDefinitions`), never a scan of
+  // the organization's field catalogue. See `applyEventSemanticDelta` for
+  // the full contract. One event-level delta call after every value is
+  // written — never per field — is what keeps a semantic counter's `count`
+  // meaning "this many EVENTS carry a value" even when two different field
   // definitions on this event are bound to the same semantic type. The
   // event was just created, so its "before" state is empty.
   await applyEventSemanticDelta(ctx, { organizationId: version.organizationId, projectId: project._id, status: 'draft', eventId, before: {} });
@@ -374,10 +376,10 @@ export async function updateEventFields(
     });
   }
   if (changedFields.length === 0) return;
-  // A no-op for organizations with no field bound to a tracked semantic
-  // type; see statistics/model.ts `applyEventSemanticDelta` for the full
-  // contract. ONE event-level delta call for this whole batch of edits —
-  // never per field — using the snapshot captured before the loop above.
+  // Cheap even when this organization has no field bound to a tracked
+  // semantic type at all — see the identical note in `createEventFromRecipe`
+  // above. ONE event-level delta call for this whole batch of edits — never
+  // per field — using the snapshot captured before the loop above.
   await applyEventSemanticDelta(ctx, { organizationId: event.organizationId, projectId: event.projectId, status: event.status, eventId: event._id, before: beforeSemanticValues, trackedFields });
 
   await recordAuditEvent(ctx, {

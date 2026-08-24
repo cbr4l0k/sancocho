@@ -10,7 +10,7 @@ const issuer = 'https://example.clerk.accounts.dev';
 const page = { numItems: 10, cursor: null };
 const inaccessible = 'notFoundOrInaccessible';
 const textConfig = { kind: 'text' } as const;
-const numberConfig = { kind: 'number' } as const;
+const numberConfig = { kind: 'number', integer: true } as const;
 const backfill = internal.statistics.mutations.backfillOrganizationCounters;
 
 function identity(subject: string) {
@@ -1129,4 +1129,257 @@ test('an event with two different field definitions bound to the same semantic t
     { status: 'draft', sum: 0, count: 0 }, { status: 'planned', sum: 5, count: 1 }, { status: 'confirmed', sum: 0, count: 0 },
     { status: 'active', sum: 0, count: 0 }, { status: 'completed', sum: 0, count: 0 }, { status: 'cancelled', sum: 0, count: 0 },
   ]);
+});
+
+/**
+ * Every other semantic test in this file creates an ORG-SCOPED field. Every
+ * new organization is also born with the deployment-wide BUILT-IN field
+ * definitions already usable (`createOrganization` provisions and publishes
+ * the four starter recipes, which bind `passengerCount`/`wheelchairCount` —
+ * see fields/builtins.ts), and the starter recipes are the actual production
+ * path a real client demo runs on. `getTrackedFieldDefinitions` must resolve
+ * BOTH `organizationId`-scoped fields and the `organizationId: undefined`
+ * builtins, or every semantic statistic on a real, non-test-fixture
+ * organization silently reads zero.
+ */
+test('semantic totals aggregate from deployment-wide built-in field definitions, not just org-scoped ones', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('builtin-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Builtin Co', slug: 'builtin-co' });
+
+  const builtins = await owner.query(api.fields.queries.listBuiltinFieldDefinitions, { paginationOpts: page });
+  const passengerCountField = builtins.page.find((field) => field.key === 'passengerCount');
+  const wheelchairCountField = builtins.page.find((field) => field.key === 'wheelchairCount');
+  if (passengerCountField === undefined || wheelchairCountField === undefined) {
+    throw new Error('test setup: expected the builtin passengerCount/wheelchairCount field definitions to exist');
+  }
+
+  const recipeId = await owner.mutation(api.recipes.mutations.createRecipe, { organizationId, key: 'builtinRecipe', name: 'Builtin recipe' });
+  const recipeVersionId = await owner.mutation(api.recipes.mutations.createInitialDraftVersion, { recipeId });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: passengerCountField._id, required: true, visible: true });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: wheelchairCountField._id, required: false, visible: true });
+  await owner.mutation(api.recipes.mutations.publishRecipeVersion, { recipeVersionId });
+  const projectId = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Builtin project' });
+
+  await owner.mutation(api.events.mutations.createEventFromRecipe, {
+    projectId, recipeVersionId, name: 'Builtin-field run', startsAt: 1,
+    values: [
+      { fieldDefinitionId: passengerCountField._id, value: { kind: 'number', value: 7 } },
+      { fieldDefinitionId: wheelchairCountField._id, value: { kind: 'number', value: 3 } },
+    ],
+  });
+
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId })).resolves.toEqual({
+    total: { value: 7, isTruncated: false }, eventCount: { value: 1, isTruncated: false },
+  });
+  await expect(owner.query(api.statistics.queries.getAccessibilityRequirements, { organizationId })).resolves.toEqual({
+    total: { value: 3, isTruncated: false }, eventCount: { value: 1, isTruncated: false },
+  });
+  // The filtered (project-scoped scan) path must agree — it resolves the
+  // org's tracked fields the same way as the unfiltered/counter path.
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId, projectId })).resolves.toEqual({
+    total: { value: 7, isTruncated: false }, eventCount: { value: 1, isTruncated: false },
+  });
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId })).resolves.toEqual({
+    sampleSize: 1, isTruncated: false, mean: 7, median: 7, max: 7, countAtOrAboveThreshold: null,
+  });
+});
+
+/**
+ * `getOccupancyMetrics` must scope its scan to `projectId` exactly like
+ * `getSemanticTotal` already does (see the `getPassengerTotals, { …,
+ * projectId: project1 }` assertion above) — dropping the filter and scanning
+ * org-wide would silently blend a caller's project into every other
+ * project's occupancy, which reads as a correct-looking but wrong number,
+ * not an error.
+ */
+test('getOccupancyMetrics respects its projectId filter, not the whole organization', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('occupancy-scope-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Occupancy Scope Co', slug: 'occupancy-scope-co' });
+  const paxField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'pax', label: 'Passengers', semanticType: 'passenger.count', config: numberConfig });
+  const recipeId = await owner.mutation(api.recipes.mutations.createRecipe, { organizationId, key: 'occupancyScopeRecipe', name: 'Occupancy scope recipe' });
+  const recipeVersionId = await owner.mutation(api.recipes.mutations.createInitialDraftVersion, { recipeId });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: paxField, required: true, visible: true });
+  await owner.mutation(api.recipes.mutations.publishRecipeVersion, { recipeVersionId });
+  const projectA = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Project A' });
+  const projectB = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Project B' });
+
+  for (const value of [10, 20]) {
+    await owner.mutation(api.events.mutations.createEventFromRecipe, {
+      projectId: projectA, recipeVersionId, name: `A ${value}`, startsAt: value,
+      values: [{ fieldDefinitionId: paxField, value: { kind: 'number', value } }],
+    });
+  }
+  for (const value of [2, 4]) {
+    await owner.mutation(api.events.mutations.createEventFromRecipe, {
+      projectId: projectB, recipeVersionId, name: `B ${value}`, startsAt: value,
+      values: [{ fieldDefinitionId: paxField, value: { kind: 'number', value } }],
+    });
+  }
+
+  // project A: mean of [10, 20] = 15 — must not be pulled toward B's much
+  // smaller values by a filter that silently scanned the whole org.
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId, projectId: projectA })).resolves.toEqual({
+    sampleSize: 2, isTruncated: false, mean: 15, median: 15, max: 20, countAtOrAboveThreshold: null,
+  });
+  // project B: mean of [2, 4] = 3.
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId, projectId: projectB })).resolves.toEqual({
+    sampleSize: 2, isTruncated: false, mean: 3, median: 3, max: 4, countAtOrAboveThreshold: null,
+  });
+  // No `projectId`: combines both projects — [2, 4, 10, 20], mean 9, median
+  // (4 + 10) / 2 = 7. This is also the org-wide (no `projectId`)
+  // `by_org_startsAt` scan branch, otherwise unexercised by any occupancy test.
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId })).resolves.toEqual({
+    sampleSize: 4, isTruncated: false, mean: 9, median: 7, max: 20, countAtOrAboveThreshold: null,
+  });
+});
+
+/**
+ * The identical dangling-row defense `getProjectBreakdown` already has a
+ * test for (see "a dangling breakdown counter row is skipped..." above),
+ * applied to the semantic per-project rollup: `getSemanticByProject`
+ * inherited the `project.organizationId !== organizationId` guard from that
+ * code but had no test of its own proving it actually runs (I1/I9 — a
+ * cross-tenant project document must never be exposed through a stale row).
+ */
+test('a dangling semantic per-project counter row pointing at a foreign project is skipped, not exposed', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('dangling-semantic-owner'));
+  const other = t.withIdentity(identity('dangling-semantic-other'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  await other.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Dangling Semantic Co', slug: 'dangling-semantic-co' });
+  const foreignOrgId = await other.mutation(api.organizations.mutations.createOrganization, { name: 'Foreign Semantic Co', slug: 'dangling-semantic-foreign' });
+
+  // A genuine, healthy per-project semantic row in THIS organization.
+  const paxField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'pax', label: 'Passengers', semanticType: 'passenger.count', config: numberConfig });
+  const recipeId = await owner.mutation(api.recipes.mutations.createRecipe, { organizationId, key: 'danglingSemanticRecipe', name: 'Dangling semantic recipe' });
+  const recipeVersionId = await owner.mutation(api.recipes.mutations.createInitialDraftVersion, { recipeId });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: paxField, required: true, visible: true });
+  await owner.mutation(api.recipes.mutations.publishRecipeVersion, { recipeVersionId });
+  const projectId = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Healthy semantic project' });
+  await owner.mutation(api.events.mutations.createEventFromRecipe, {
+    projectId, recipeVersionId, name: 'Real event', startsAt: 1, values: [{ fieldDefinitionId: paxField, value: { kind: 'number', value: 5 } }],
+  });
+
+  // A dangling counter row for THIS org, pointing at a project id from a
+  // DIFFERENT organization — simulating the same kind of stale reference
+  // `getProjectBreakdown`'s dangling-row test uses, applied here.
+  const foreignProjectId = await t.run(async (ctx) => {
+    const foreignProjectId = await ctx.db.insert('projects', { organizationId: foreignOrgId, name: 'Foreign project', status: 'active' });
+    await ctx.db.insert('statisticsSemanticCounters', { organizationId, semanticType: 'passenger.count', category: 'project', projectId: foreignProjectId, sum: 999, count: 1 });
+    return foreignProjectId;
+  });
+  void foreignProjectId;
+
+  // Neither throws, and the healthy row is the only one returned — the
+  // dangling row (and the foreign project it points at) is silently absent,
+  // never surfaced to a caller who owns nothing wrong in their own org.
+  const paxByProject = await owner.query(api.statistics.queries.getPassengerTotalsByProject, { organizationId, paginationOpts: page });
+  expect(paxByProject.page).toEqual([expect.objectContaining({ project: expect.objectContaining({ _id: projectId }), sum: 5, count: 1 })]);
+});
+
+/**
+ * Every other filter-window test in this file passes a `projectId`, so the
+ * org-wide (no `projectId`) `by_org_status_startsAt` / `by_org_startsAt`
+ * branches of the filtered scans were never actually exercised with a real
+ * date range — only "no filter at all" (routes to the O(1) counters) or
+ * "with a project" were.
+ */
+test('org-wide date-range filters (no projectId) exercise the by_org_* scan branches', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('org-wide-window-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Org Wide Window Co', slug: 'org-wide-window-co' });
+  const paxField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'pax', label: 'Passengers', semanticType: 'passenger.count', config: numberConfig });
+  const recipeId = await owner.mutation(api.recipes.mutations.createRecipe, { organizationId, key: 'orgWideRecipe', name: 'Org wide recipe' });
+  const recipeVersionId = await owner.mutation(api.recipes.mutations.createInitialDraftVersion, { recipeId });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: paxField, required: true, visible: true });
+  await owner.mutation(api.recipes.mutations.publishRecipeVersion, { recipeVersionId });
+  const projectId = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Org wide project' });
+
+  await owner.mutation(api.events.mutations.createEventFromRecipe, {
+    projectId, recipeVersionId, name: 'Inside the window', startsAt: 5_000, values: [{ fieldDefinitionId: paxField, value: { kind: 'number', value: 6 } }],
+  });
+  await owner.mutation(api.events.mutations.createEventFromRecipe, {
+    projectId, recipeVersionId, name: 'Outside the window', startsAt: 9_000, values: [{ fieldDefinitionId: paxField, value: { kind: 'number', value: 40 } }],
+  });
+
+  // No `projectId` at all: this must route through `by_org_status_startsAt` /
+  // `by_org_startsAt`, not the project-scoped indexes.
+  const counts = await owner.query(api.statistics.queries.getFilteredServiceStatusCounts, { organizationId, startsAt: 0, endsAt: 6_000 });
+  expect(counts).toEqual(expect.arrayContaining([{ status: 'draft', count: 1, isTruncated: false }]));
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId, startsAt: 0, endsAt: 6_000 })).resolves.toEqual({
+    total: { value: 6, isTruncated: false }, eventCount: { value: 1, isTruncated: false },
+  });
+  // Widening the window picks up the second event too — proving the window
+  // bound itself, not just the branch selection, is live on this path.
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId, startsAt: 0, endsAt: 9_000 })).resolves.toEqual({
+    total: { value: 46, isTruncated: false }, eventCount: { value: 2, isTruncated: false },
+  });
+});
+
+/**
+ * Truncation at exactly `maxFilteredScan`: every other truncation test in
+ * this file seeds `maxFilteredScan + 1` rows (one PAST the cap). Nothing
+ * asserted the boundary itself — exactly at the cap must still read exact
+ * and `isTruncated: false`, not `true` (an off-by-one `>=` instead of `>`
+ * would falsely report truncation on a perfectly complete read).
+ */
+test('filtered reads report an exact count and isTruncated: false at exactly the cap', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('exact-cap-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Exact Cap Co', slug: 'exact-cap-co' });
+  const paxField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'pax', label: 'Passengers', semanticType: 'passenger.count', config: numberConfig });
+  const recipeId = await owner.mutation(api.recipes.mutations.createRecipe, { organizationId, key: 'exactCapRecipe', name: 'Exact cap recipe' });
+  const recipeVersionId = await owner.mutation(api.recipes.mutations.createInitialDraftVersion, { recipeId });
+  await owner.mutation(api.recipes.fields.mutations.addRecipeField, { recipeVersionId, fieldDefinitionId: paxField, required: false, visible: true });
+  await owner.mutation(api.recipes.mutations.publishRecipeVersion, { recipeVersionId });
+  const projectId = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Exact cap project' });
+  const { recipeId: resolvedRecipeId, recipeFieldId } = await owner.query(api.recipes.queries.getRecipeVersion, { recipeVersionId }).then((result) => ({
+    recipeId: result.version.recipeId,
+    recipeFieldId: result.recipeFields[0]?._id,
+  }));
+  if (recipeFieldId === undefined) throw new Error('test setup: expected exactly one recipe field');
+
+  await t.run(async (ctx) => {
+    for (let i = 0; i < maxFilteredScan; i += 1) {
+      const eventId = await ctx.db.insert('events', {
+        organizationId, projectId, recipeId: resolvedRecipeId, recipeVersionId, name: `Exact cap event ${i}`, status: 'draft', startsAt: i,
+      });
+      await ctx.db.insert('eventFieldValues', { organizationId, eventId, recipeFieldId, fieldDefinitionId: paxField, value: { kind: 'number', value: 1 } });
+    }
+  });
+
+  const counts = await owner.query(api.statistics.queries.getFilteredServiceStatusCounts, { organizationId, projectId });
+  expect(counts).toEqual(expect.arrayContaining([{ status: 'draft', count: maxFilteredScan, isTruncated: false }]));
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId, projectId })).resolves.toEqual({
+    total: { value: maxFilteredScan, isTruncated: false }, eventCount: { value: maxFilteredScan, isTruncated: false },
+  });
+}, 30_000);
+
+/**
+ * `countAtOrAboveThreshold` is deliberately asymmetric with `mean`/`median`/
+ * `max` on an empty sample: those three have no answer for zero services
+ * (you cannot average zero numbers) and are `null`, but "how many of these
+ * services met the bar" has an unambiguous answer even for zero services —
+ * `0` — so it does not follow them into `null`. See the matching comment on
+ * `getOccupancyMetrics`'s return statement in statistics/model.ts.
+ */
+test('getOccupancyMetrics on an empty sample returns null statistics, but a defined threshold count of zero (not null)', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('empty-occupancy-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Empty Occupancy Co', slug: 'empty-occupancy-co' });
+
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId })).resolves.toEqual({
+    sampleSize: 0, isTruncated: false, mean: null, median: null, max: null, countAtOrAboveThreshold: null,
+  });
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId, threshold: 5 })).resolves.toEqual({
+    sampleSize: 0, isTruncated: false, mean: null, median: null, max: null, countAtOrAboveThreshold: 0,
+  });
 });

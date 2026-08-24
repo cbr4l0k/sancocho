@@ -447,30 +447,50 @@ export type SemanticCapability =
 type SemanticDefinition = Readonly<{
   expectedDataType: FieldDataType;
   capabilities: readonly SemanticCapability[];
+  // Only meaningful when `expectedDataType` is `'number'`: a `count` of
+  // discrete things (passengers, luggage pieces, wheelchairs) is never
+  // fractional, so a field bound to one of these types must declare
+  // `integer: true` on its `number` config. Without this, a maintained
+  // running-sum counter (statistics/model.ts `statisticsSemanticCounters`)
+  // accumulating fractional deltas over many add/edit/clear cycles can drift
+  // by IEEE-754 floating-point residue — a permanently nonzero `sum` at
+  // `count: 0` that the live-scan path (which recomputes from the stored
+  // rows every time) would never reproduce, so the maintained and scanned
+  // totals silently disagree forever. Omitted (falls back to `false`
+  // implicitly, i.e. absent) for semantic types with no such invariant.
+  requiresInteger?: true | undefined;
 }>;
 
 /** Code-owned semantics; tenant data may name a type but can never grant capabilities. */
 export const semanticRegistry = Object.freeze({
-  eventName: { expectedDataType: 'text', capabilities: ['eventName'] },
-  eventDescription: { expectedDataType: 'longText', capabilities: ['eventDescription'] },
-  eventDate: { expectedDataType: 'date', capabilities: ['eventDate'] },
-  eventTime: { expectedDataType: 'time', capabilities: ['eventTime'] },
-  eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'] },
+  // `requiresInteger: undefined` is stated explicitly (not merely omitted)
+  // on every entry that doesn't need it, so `semanticRegistry[type]` stays
+  // ONE consistent object shape across every union member — a property only
+  // some entries declared would make TypeScript reject reading it off the
+  // others at all (not just report `undefined`), since `satisfies` (unlike
+  // `as`) preserves each entry's own literal shape rather than unifying them.
+  eventName: { expectedDataType: 'text', capabilities: ['eventName'], requiresInteger: undefined },
+  eventDescription: { expectedDataType: 'longText', capabilities: ['eventDescription'], requiresInteger: undefined },
+  eventDate: { expectedDataType: 'date', capabilities: ['eventDate'], requiresInteger: undefined },
+  eventTime: { expectedDataType: 'time', capabilities: ['eventTime'], requiresInteger: undefined },
+  eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'], requiresInteger: undefined },
   'passenger.count': {
     expectedDataType: 'number',
     capabilities: ['passengerTotals', 'occupancyMetrics', 'capacityValidation'],
+    requiresInteger: true,
   },
-  'transport.origin': { expectedDataType: 'location', capabilities: [] },
-  'transport.destination': { expectedDataType: 'location', capabilities: [] },
-  'aviation.flightNumber': { expectedDataType: 'text', capabilities: ['flightTracking'] },
-  'luggage.count': { expectedDataType: 'number', capabilities: [] },
+  'transport.origin': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined },
+  'transport.destination': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined },
+  'aviation.flightNumber': { expectedDataType: 'text', capabilities: ['flightTracking'], requiresInteger: undefined },
+  'luggage.count': { expectedDataType: 'number', capabilities: [], requiresInteger: true },
   'accessibility.wheelchairCount': {
     expectedDataType: 'number',
     capabilities: ['accessibilityRequirements'],
+    requiresInteger: true,
   },
-  'contact.primary': { expectedDataType: 'text', capabilities: [] },
-  'aviation.terminal': { expectedDataType: 'text', capabilities: [] },
-  'general.notes': { expectedDataType: 'longText', capabilities: [] },
+  'contact.primary': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined },
+  'aviation.terminal': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined },
+  'general.notes': { expectedDataType: 'longText', capabilities: [], requiresInteger: undefined },
 } satisfies Record<string, SemanticDefinition>);
 
 export type SemanticType = keyof typeof semanticRegistry;

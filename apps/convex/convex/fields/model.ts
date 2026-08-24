@@ -360,10 +360,19 @@ function assertValidDescription(description: string | undefined): void {
 }
 
 function assertSemanticCompatibility(semanticType: SemanticType | undefined, config: FieldConfig): void {
+  if (semanticType === undefined) return;
   // Optional chaining so a semantic type later removed from the registry is
   // rejected as invalid input rather than throwing a TypeError.
-  if (semanticType !== undefined && semanticRegistry[semanticType]?.expectedDataType !== config.kind) {
+  const definition = semanticRegistry[semanticType];
+  if (definition?.expectedDataType !== config.kind) {
     return invalidInput('fieldSemanticIncompatible', 'Semantic type is incompatible with the field configuration');
+  }
+  // A semantic type whose values are always a count of discrete things
+  // (`requiresInteger`) needs its `number` config to actually enforce that —
+  // see the doc comment on `SemanticDefinition.requiresInteger` in
+  // validators/index.ts for why a maintained statistics counter depends on it.
+  if (definition.requiresInteger === true && config.kind === 'number' && config.integer !== true) {
+    return invalidInput('fieldSemanticIncompatible', 'This semantic type requires an integer-valued number field (config.integer must be true)');
   }
 }
 

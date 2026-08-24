@@ -355,6 +355,58 @@ test('semantic compatibility is enforced on creation and update, and absent sema
   });
 });
 
+/**
+ * `passenger.count` and `accessibility.wheelchairCount` are counts of
+ * discrete things — never fractional — and a statistics counter maintains a
+ * running sum over their values for the whole lifetime of every event that
+ * carries one (statistics/model.ts `statisticsSemanticCounters`). A field
+ * bound to either type must therefore declare `integer: true` on its
+ * `number` config, or a fractional value could accumulate floating-point
+ * residue into that running sum that a live re-scan would never reproduce.
+ */
+test('a field bound to a counting semantic type must declare an integer number config', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'owner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-integer-semantics' });
+
+  // Creation: a plain (non-integer) number config is refused for both
+  // tracked counting semantic types.
+  await expect(owner.client.mutation(createFieldDefinition, {
+    organizationId, key: 'fractionalPax', label: 'Passengers', semanticType: 'passenger.count', config: { kind: 'number' },
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticIncompatible' } });
+  await expect(owner.client.mutation(createFieldDefinition, {
+    organizationId, key: 'fractionalChairs', label: 'Wheelchairs', semanticType: 'accessibility.wheelchairCount', config: { kind: 'number' },
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticIncompatible' } });
+
+  // `integer: true` is accepted.
+  const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
+    organizationId, key: 'integerPax', label: 'Passengers', semanticType: 'passenger.count', config: { kind: 'number', integer: true },
+  });
+
+  // Update: binding the semantic type onto an existing non-integer config is
+  // refused the same way, matching the creation-time rule (I2/I3's "gate on
+  // change, not on argument presence" convention already used elsewhere).
+  const plainNumberFieldId = await owner.client.mutation(createFieldDefinition, {
+    organizationId, key: 'plainNumber', label: 'Plain number', config: { kind: 'number' },
+  });
+  await expect(owner.client.mutation(updateFieldDefinition, {
+    fieldDefinitionId: plainNumberFieldId, semanticType: 'passenger.count',
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticIncompatible' } });
+
+  // Update: changing an already-integer, already-bound field's config to
+  // drop `integer: true` is refused too — the invariant holds after an edit,
+  // not just at creation.
+  await expect(owner.client.mutation(updateFieldDefinition, {
+    fieldDefinitionId, config: { kind: 'number' },
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticIncompatible' } });
+
+  // A semantic type with no `requiresInteger` flag (e.g. `eventName`, a
+  // `text` type) is entirely unaffected by this rule.
+  await expect(owner.client.mutation(createFieldDefinition, {
+    organizationId, key: 'plainTitle', label: 'Title', semanticType: 'eventName', config: textConfig,
+  })).resolves.not.toBeNull();
+});
+
 test('published and retired references preserve field meaning while allowing presentation edits', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');

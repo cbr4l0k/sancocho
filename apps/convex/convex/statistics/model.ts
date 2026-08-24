@@ -7,8 +7,8 @@ import { requireOrganizationMembership } from '../lib/access';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { isOwner } from '../lib/roles';
 import { assertSeedingEnabled } from '../lib/seedGuard';
-import { semanticTypesForCapability } from '../validators';
-import type { eventFieldValueValidator, eventStatusValidator, projectStatusValidator, SemanticType } from '../validators';
+import { semanticRegistry } from '../validators';
+import type { eventFieldValueValidator, eventStatusValidator, projectStatusValidator, SemanticCapability, SemanticType } from '../validators';
 
 type EventStatus = typeof eventStatusValidator.type;
 type ProjectStatus = typeof projectStatusValidator.type;
@@ -243,38 +243,39 @@ export async function getRecipeBreakdown(ctx: QueryCtx, organizationId: Id<'orga
 export const maxFilteredScan = 500;
 
 /**
- * Semantic types this file maintains counters for, derived from the registry
- * via the capabilities they are bound to (`fields/builtins.ts` binds
- * `passenger.count` → `passengerTotals`/`occupancyMetrics` and
+ * Semantic types this file maintains counters for (`fields/builtins.ts`
+ * binds `passenger.count` → `passengerTotals`/`occupancyMetrics` and
  * `accessibility.wheelchairCount` → `accessibilityRequirements` today) —
  * never a field key or label. `TrackedSemanticType` is a hand-written literal
- * union, not derived from that computation, because it has to be a real
- * TypeScript literal type for `statisticsSemanticCounters.semanticType` and
- * the discriminated `ChangeSemanticCounterArgs` below; the assertion
- * immediately after is what keeps the two from silently drifting apart if
- * the registry ever rebinds a capability to a different (or additional)
- * field.
+ * union, not derived from the registry at runtime, because it has to be a
+ * real TypeScript literal type for `statisticsSemanticCounters.semanticType`
+ * and the discriminated `ChangeSemanticCounterArgs` below.
+ *
+ * The two `AssertHasCapability` lines immediately after are what keep this
+ * union from silently drifting away from the registry: each is a
+ * COMPILE-TIME check (a `tsc` failure the moment `semanticRegistry` no
+ * longer lists the named capability for the named type — see the identical
+ * `AssertSameKeys` pattern in validators/index.ts). This deliberately
+ * replaced an earlier runtime `throw` that ran at module load: this file is
+ * imported by `events/model.ts` (every `createEventFromRecipe`,
+ * `updateEventFields`, `changeEventStatus` call), so a throw here would have
+ * turned a statistics-domain registry mismatch into an events-domain outage
+ * on first invocation after a bad deploy, rather than a build failure caught
+ * before it ever ships. This only proves MEMBERSHIP (the two listed types
+ * really do carry their capability) — it does not machine-check that no
+ * OTHER registry entry also carries the same capability, which is left to
+ * `semanticRegistry` being a small, hand-reviewed, single object literal.
  */
 export type TrackedSemanticType = 'passenger.count' | 'accessibility.wheelchairCount';
 
-const trackedSemanticTypesFromRegistry: readonly SemanticType[] = [
-  ...semanticTypesForCapability('passengerTotals'),
-  ...semanticTypesForCapability('accessibilityRequirements'),
-];
-const trackedSemanticTypes: readonly TrackedSemanticType[] = ['passenger.count', 'accessibility.wheelchairCount'];
-if (
-  trackedSemanticTypesFromRegistry.length !== trackedSemanticTypes.length
-  || trackedSemanticTypesFromRegistry.some((type) => !(trackedSemanticTypes as readonly SemanticType[]).includes(type))
-) {
-  // Loud and immediate (module load, i.e. deploy time), not a silently wrong
-  // dashboard number discovered later: the registry's capability bindings no
-  // longer match this file's hand-written TrackedSemanticType union above.
-  throw new Error('statistics/model.ts TrackedSemanticType is out of sync with the semantic registry capability bindings');
-}
+type AssertHasCapability<Type extends SemanticType, Capability extends SemanticCapability> =
+  Capability extends (typeof semanticRegistry)[Type]['capabilities'][number] ? true : never;
+const _passengerCountHasPassengerTotals: AssertHasCapability<'passenger.count', 'passengerTotals'> = true;
+const _wheelchairCountHasAccessibilityRequirements: AssertHasCapability<'accessibility.wheelchairCount', 'accessibilityRequirements'> = true;
+void _passengerCountHasPassengerTotals;
+void _wheelchairCountHasAccessibilityRequirements;
 
-function isTrackedSemanticType(type: SemanticType | undefined): type is TrackedSemanticType {
-  return type === 'passenger.count' || type === 'accessibility.wheelchairCount';
-}
+const trackedSemanticTypes: readonly TrackedSemanticType[] = ['passenger.count', 'accessibility.wheelchairCount'];
 
 /** `null`/`undefined` and any non-`number` kind (should not occur for a tracked field; see `assertSemanticCompatibility`) both read as "no value". */
 function numericValue(value: EventFieldValue | null | undefined): number | undefined {
@@ -319,34 +320,57 @@ async function changeSemanticCounter(ctx: MutationCtx, args: ChangeSemanticCount
   await ctx.db.patch(counter._id, { sum: counter.sum + deltaSum, count: counter.count + deltaCount });
 }
 
+type TrackedFieldDefinition = { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType };
+
 /**
- * Every field definition in this organization (org-scoped + the
- * deployment-wide builtins) whose semantic type is tracked, resolved ONCE
- * per top-level statistics call rather than per event scanned. This is the
- * I6 fix for the per-event fan-out: instead of reading an event's entire
- * (up to `maxFieldsPerVersion`) set of field values and probing each one's
- * definition, every event-level read below does exactly `K` targeted,
- * indexed point lookups — one per entry this function returns — where `K`
- * is the number of DISTINCT field definitions this organization has ever
- * bound to a tracked semantic type. `K` is bounded by configuration (how
- * many fields an admin has created), not by operational volume (how many
- * events exist or how many fields one recipe version composes), which is
- * the same category of bound `resolveOrganizationOwnerUserId`'s membership
- * roster collect above already relies on.
+ * Every field definition (org-scoped + the deployment-wide builtins) bound
+ * to exactly ONE tracked semantic type — a targeted, indexed range read on
+ * `by_org_semantic`, never a scan of the organization's whole field
+ * catalogue. Bounded by `K`, the number of DISTINCT field definitions ever
+ * bound to THIS semantic type specifically (typically 0-2: the one builtin
+ * plus whatever a tenant has additionally created), not by the
+ * organization's total field count — `fieldDefinitions` is tenant-configured
+ * and this codebase already treats it as unbounded elsewhere
+ * (`fields/model.ts` `listFieldDefinitions` is paginated for exactly this
+ * reason; the I6 exemption is for a bounded CHILD set like one version's
+ * recipe fields, never a whole tenant-owned table).
+ *
+ * Deliberately does NOT filter on `status === 'active'`: an archived field's
+ * historical values must stay part of a semantic total exactly as an
+ * archived field's own value stays readable on `getEvent` (I3) — this scan
+ * path and the maintained counters must never disagree about which values
+ * count just because a field was archived after the fact.
+ */
+async function getTrackedFieldDefinitionsForType(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: Id<'organizations'>,
+  semanticType: TrackedSemanticType,
+): Promise<TrackedFieldDefinition[]> {
+  const [orgFields, builtinFields] = await Promise.all([
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType)).collect(),
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', undefined).eq('semanticType', semanticType)).collect(),
+  ]);
+  return [...orgFields, ...builtinFields].map((field) => ({ fieldDefinitionId: field._id, semanticType }));
+}
+
+/**
+ * Every field definition bound to ANY tracked semantic type — the shape the
+ * WRITE path needs (`applyEventSemanticDelta`, `getEventSemanticValuesBeforeEdit`,
+ * `moveSemanticStatusBuckets`, and the backfill's `events` phase), since a
+ * single event write can touch fields of either tracked type at once. Still
+ * only four targeted range reads total (`{org, builtin} ×
+ * {passenger.count, accessibility.wheelchairCount}`), never a scan of the
+ * field catalogue. Read-only callers that care about exactly one semantic
+ * type (`getSemanticTotal`, `getOccupancyMetrics`) call
+ * `getTrackedFieldDefinitionsForType` directly instead — half the reads,
+ * and they never probe a semantic type the caller didn't ask about.
  */
 async function getTrackedFieldDefinitions(
   ctx: QueryCtx | MutationCtx,
   organizationId: Id<'organizations'>,
-): Promise<{ fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType }[]> {
-  const [orgFields, builtinFields] = await Promise.all([
-    ctx.db.query('fieldDefinitions').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect(),
-    ctx.db.query('fieldDefinitions').withIndex('by_org', (q) => q.eq('organizationId', undefined)).collect(),
-  ]);
-  const tracked: { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType }[] = [];
-  for (const field of [...orgFields, ...builtinFields]) {
-    if (isTrackedSemanticType(field.semanticType)) tracked.push({ fieldDefinitionId: field._id, semanticType: field.semanticType });
-  }
-  return tracked;
+): Promise<TrackedFieldDefinition[]> {
+  const perType = await Promise.all(trackedSemanticTypes.map((semanticType) => getTrackedFieldDefinitionsForType(ctx, organizationId, semanticType)));
+  return perType.flat();
 }
 
 /**
@@ -543,6 +567,19 @@ export type FilteredValue = { value: number; isTruncated: boolean };
  * counter is always exact. With any filter supplied, each status is read as
  * its own bounded, capped range (mirroring `getUpcomingServices`'s per-status
  * shape above), so one status truncating never hides another's exact count.
+ *
+ * NOTE on `maxFilteredScan` here vs. in `getSemanticTotal`/
+ * `getOccupancyMetrics` below: it means a DIFFERENT total bound in each. Here
+ * it caps EACH status independently (`eventStatuses.length` = 6 reads, each
+ * capped at `maxFilteredScan`, so a filtered organization can genuinely
+ * report up to `6 × maxFilteredScan` events combined). In `scanEventsForFilter`
+ * it caps the SINGLE combined scan across every status at once. A truncated
+ * `getFilteredServiceStatusCounts` result and a truncated
+ * `getPassengerTotals`/`getOccupancyMetrics` result for the identical filter
+ * are consequently not guaranteed to describe the same underlying sample of
+ * events — both are honest about their OWN truncation via `isTruncated`, but
+ * do not assume the two query families agree on which (or how many) events
+ * they saw once either one truncates.
  */
 export async function getFilteredServiceStatusCounts(
   ctx: QueryCtx,
@@ -621,7 +658,9 @@ async function getSemanticTotal(
     return { total: { value: sum, isTruncated: false }, eventCount: { value: count, isTruncated: false } };
   }
 
-  const trackedFields = await getTrackedFieldDefinitions(ctx, organizationId);
+  // Only THIS semantic type — half the reads `getTrackedFieldDefinitions`
+  // (the write-path shape, which needs every tracked type at once) would do.
+  const trackedFields = await getTrackedFieldDefinitionsForType(ctx, organizationId, semanticType);
   const { events, isTruncated } = await scanEventsForFilter(ctx, { organizationId, projectId, startsAt, endsAt, cap: maxFilteredScan, order: 'desc' });
   let sum = 0;
   let count = 0;
@@ -748,7 +787,9 @@ export async function getOccupancyMetrics(
     return invalidInput('statisticsThresholdInvalid', 'Occupancy threshold must be a finite, non-negative number');
   }
 
-  const trackedFields = await getTrackedFieldDefinitions(ctx, organizationId);
+  // Occupancy only ever reports on `passenger.count` — never probe
+  // `accessibility.wheelchairCount` fields it will not use.
+  const trackedFields = await getTrackedFieldDefinitionsForType(ctx, organizationId, 'passenger.count');
   const { events, isTruncated } = await scanEventsForFilter(ctx, { organizationId, projectId, startsAt, endsAt, cap: maxFilteredScan, order: 'desc' });
   const sample: number[] = [];
   for (const event of events) {
@@ -764,6 +805,12 @@ export async function getOccupancyMetrics(
     mean: sample.length === 0 ? null : sample.reduce((total, value) => total + value, 0) / sample.length,
     median: sample.length === 0 ? null : medianOf(sample),
     max: sample.length === 0 ? null : (sample[sample.length - 1] ?? null),
+    // Deliberately NOT `sample.length === 0 ? null : …`, unlike the three
+    // statistics above: `mean`/`median`/`max` have no answer for a zero-size
+    // sample (there is nothing to average), but "how many of these services
+    // met the threshold" has an unambiguous answer even when there are zero
+    // services — `0` — so this stays a real number whenever a `threshold`
+    // was supplied at all, `null` only when the caller didn't ask.
     countAtOrAboveThreshold: threshold === undefined ? null : sample.filter((value) => value >= threshold).length,
   };
 }

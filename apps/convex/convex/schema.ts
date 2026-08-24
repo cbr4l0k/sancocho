@@ -62,6 +62,17 @@ export default defineSchema({
   fieldDefinitions: defineTable(fieldDefinitionFields)
     .index('by_org_key', ['organizationId', 'key'])
     .index('by_org', ['organizationId'])
+    // Serves `statistics/model.ts` `getTrackedFieldDefinitionsForType`: a
+    // targeted, indexed read of exactly the (organizationId, semanticType)
+    // pair a caller wants, so resolving which fields are bound to a tracked
+    // semantic type costs O(the number of fields actually bound to it),
+    // never O(every field definition in the organization). Without this,
+    // that lookup was an unrestricted `.collect()` over the whole
+    // organization's field catalogue — reachable from `createEventFromRecipe`,
+    // `updateEventFields`, and `changeEventStatus` (I6: `fieldDefinitions` is
+    // exactly the kind of table `listFieldDefinitions` already paginates for
+    // the same reason — tenant-configured, not a bounded child set).
+    .index('by_org_semantic', ['organizationId', 'semanticType'])
     // Serves key-or-label search within one organization, including the
     // deployment-wide built-in scope represented by organizationId undefined.
     .searchIndex('search_text', { searchField: 'searchText', filterFields: ['organizationId'] }),

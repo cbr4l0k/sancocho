@@ -337,6 +337,19 @@ identical shape per status, off `by_project_status_startsAt` /
 `by_org_status_startsAt`), mirroring `getUpcomingServices`'s already-proven
 "one bounded range read per included bucket" pattern above.
 
+`maxFilteredScan` is consequently not one shared budget across the whole
+filtered-reads surface — it means a DIFFERENT total depending which query
+you call. `getFilteredServiceStatusCounts` caps EACH status independently
+(six reads, each capped), so a heavily filtered organization can genuinely
+report up to `6 × maxFilteredScan` events combined across the response.
+`scanEventsForFilter` (used by `getPassengerTotals`/
+`getAccessibilityRequirements`/`getOccupancyMetrics`) caps the SINGLE
+combined scan across every status at once. Both are honest about their own
+truncation via `isTruncated`, but a truncated result from one query family
+and a truncated result from the other, for the identical filter, are not
+guaranteed to describe the same underlying set of events — do not assume
+otherwise when building a dashboard that reads both side by side.
+
 Every filtered read's return shape carries the signal explicitly —
 `{ value, isTruncated }` for a scalar total (`FilteredValue` in
 `statistics/model.ts`), `{ status, count, isTruncated }` per bucket for the
