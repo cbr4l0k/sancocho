@@ -12,8 +12,7 @@ export type ComingSoonSurface =
   | 'services'
   | 'projects'
   | 'locations'
-  | 'fields'
-  | 'statistics';
+  | 'fields';
 
 const titleKeys: Record<
   ComingSoonSurface,
@@ -23,7 +22,6 @@ const titleKeys: Record<
   | 'nav.projects'
   | 'nav.locations'
   | 'nav.fields'
-  | 'nav.statistics'
 > = {
   chat: 'nav.chat',
   recipes: 'nav.recipes',
@@ -31,7 +29,6 @@ const titleKeys: Record<
   projects: 'nav.projects',
   locations: 'nav.locations',
   fields: 'nav.fields',
-  statistics: 'nav.statistics',
 };
 
 export function ComingSoon({ surface }: { surface: ComingSoonSurface }) {
