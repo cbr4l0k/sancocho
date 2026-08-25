@@ -687,7 +687,6 @@ const enUS = {
     loaded: '{count, plural, =0 {No records loaded} one {# record loaded} other {# records loaded}}',
     loadMore: 'Load more',
     loadingMore: 'Loading…',
-    endOfList: 'End of list',
   },
   dataTable: {
     search: 'Search',

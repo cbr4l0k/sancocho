@@ -538,7 +538,6 @@ export type MessageSchema = {
     loaded: string;
     loadMore: string;
     loadingMore: string;
-    endOfList: string;
   };
   /**
    * Data-table chrome. `loadedScope` is not decoration: sorting and filtering

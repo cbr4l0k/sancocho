@@ -198,6 +198,10 @@ export type TableLoadMoreProps = {
  * backend offers or should. Accumulating pages also keeps every loaded row
  * live: Convex re-pushes updates for pages already fetched, which a page-swap
  * control would throw away on every navigation.
+ *
+ * `Exhausted` renders the count alone. The missing button already says the list
+ * ended; a second "end of list" label restated it in the one place a reader has
+ * no decision left to make.
  */
 export function TableLoadMore({
   status,
@@ -221,9 +225,7 @@ export function TableLoadMore({
       <p className="text-xs text-ink-3" aria-live="polite">
         {t('loaded', { count: loadedCount })}
       </p>
-      {status === 'Exhausted' ? (
-        <p className="text-micro uppercase text-ink-3">{t('endOfList')}</p>
-      ) : (
+      {status === 'Exhausted' ? null : (
         <Button
           variant="ghost"
           size="sm"
