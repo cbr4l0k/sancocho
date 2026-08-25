@@ -1,11 +1,9 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Bento, BentoItem } from '@/components/ui/bento';
-import { PageHeader } from '@/components/ui/page-header';
 import { resolveDateRangeFilter } from '@/lib/statistics-date-range';
 
 import { ProjectBreakdownPanel, RecipeBreakdownPanel } from './breakdown-panels';
@@ -29,7 +27,6 @@ const emptyFilterState: StatisticsFilterState = { projectId: undefined, dateRang
  * row, then 6/6 and 4/4/4 working rows, never more than three modules per row.
  */
 export function StatisticsSurface() {
-  const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
   const [filterState, setFilterState] = useState<StatisticsFilterState>(emptyFilterState);
 
@@ -47,7 +44,6 @@ export function StatisticsSurface() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('statistics.title')} />
       <StatisticsFilters organizationId={organizationId} state={filterState} onChange={setFilterState} dateRangeInvalid={dateRangeInvalid} />
 
       <Bento>

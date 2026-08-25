@@ -12,7 +12,6 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldGroup, FieldLabel, FieldSpanFull } from '@/components/ui/field';
-import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody } from '@/components/ui/panel';
 import { LocaleLink, useLocaleHref } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
@@ -170,7 +169,6 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('services.createTitle')} />
       {canCreate ? null : <p className="text-sm text-ink-3">{t('services.permissionNotice')}</p>}
       <Panel emphasis="focal">
         <PanelBody>

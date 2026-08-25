@@ -12,7 +12,6 @@ import { FieldConfigEditor } from '@/components/fields/field-config-editor';
 import { LocationPicker } from '@/components/locations/location-picker';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { builtinFieldLabel } from '@/i18n/builtin-fields';
 import { LocaleLink } from '@/i18n/locale-link';
@@ -77,7 +76,6 @@ export function DraftRecipeEditorSurface({ recipeId }: { recipeId: RecipeId }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('recipes.editDraft')} />
       {message === null ? null : (
         <p role="alert" className="text-sm text-tone-stop">
           {message}

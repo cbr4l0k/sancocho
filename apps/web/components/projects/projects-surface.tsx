@@ -74,7 +74,6 @@ export function ProjectsSurface() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={t('projects.title')}
         actions={
           canManage && !creating ? (
             <Button variant="primary" onClick={() => setCreating(true)}>

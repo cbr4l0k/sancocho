@@ -70,7 +70,6 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
      * edit form rendered below them opened out of sight. */
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={data.event.name}
         badge={<StatusChip emphasis="loud" kind="service" status={data.event.status} />}
         actions={
           canEdit && !editing ? <Button onClick={() => setEditing(true)}>{t('services.edit')}</Button> : undefined

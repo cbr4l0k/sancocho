@@ -3,40 +3,18 @@
 import { useTranslations } from 'next-intl';
 
 import { EmptyState } from '@/components/ui/empty-state';
-import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody } from '@/components/ui/panel';
 
-export type ComingSoonSurface =
-  | 'chat'
-  | 'recipes'
-  | 'services'
-  | 'projects'
-  | 'locations'
-  | 'fields';
-
-const titleKeys: Record<
-  ComingSoonSurface,
-  | 'nav.chat'
-  | 'nav.recipes'
-  | 'nav.services'
-  | 'nav.projects'
-  | 'nav.locations'
-  | 'nav.fields'
-> = {
-  chat: 'nav.chat',
-  recipes: 'nav.recipes',
-  services: 'nav.services',
-  projects: 'nav.projects',
-  locations: 'nav.locations',
-  fields: 'nav.fields',
-};
-
-export function ComingSoon({ surface }: { surface: ComingSoonSurface }) {
+/**
+ * Placeholder for a nav destination whose surface has not been built yet. It
+ * used to name the surface in a page title; the nav already does that, so what
+ * is left is the same empty state for every one of them.
+ */
+export function ComingSoon() {
   const t = useTranslations();
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t(titleKeys[surface])} />
       <Panel>
         <PanelBody>
           <EmptyState

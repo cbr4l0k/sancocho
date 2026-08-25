@@ -12,7 +12,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
-import { PageHeader } from '@/components/ui/page-header';
 import { Panel } from '@/components/ui/panel';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { createStubChatBackend, type ChatBackend } from '@/lib/chat-backend';
@@ -43,7 +42,6 @@ export function ChatSurface({ backend }: { backend?: ChatBackend }) {
 
   return (
     <div className="flex h-[calc(100dvh-9rem)] min-h-[32rem] flex-col gap-6">
-      <PageHeader title={t('chat.title')} />
       <Panel emphasis="focal" className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1">
           {turns.length === 0 ? (

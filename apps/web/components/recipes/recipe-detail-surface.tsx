@@ -82,7 +82,6 @@ export function RecipeDetailSurface({ recipeId }: { recipeId: RecipeId }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={recipe.name}
         badge={<StatusChip emphasis="loud" kind="recipe" status={recipe.status} />}
         actions={
           canManage && recipe.status !== 'archived' && !editing ? (

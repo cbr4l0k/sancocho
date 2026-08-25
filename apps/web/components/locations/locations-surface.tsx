@@ -90,7 +90,6 @@ export function LocationsSurface() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={t('locations.title')}
         actions={
           canManage && editor === null ? (
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
@@ -188,7 +187,6 @@ export function LocationDetailSurface({ locationId }: { locationId: LocationId }
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={location.name}
         badge={<StatusChip emphasis="loud" kind="archival" status={location.status} />}
         actions={
           canManage && location.status === 'active' && !editing ? (

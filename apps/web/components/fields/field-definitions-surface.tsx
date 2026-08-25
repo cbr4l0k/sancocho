@@ -174,7 +174,6 @@ export function FieldDefinitionsSurface() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={t('fields.title')}
         actions={
           canManage && editor.mode === 'closed' ? (
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>

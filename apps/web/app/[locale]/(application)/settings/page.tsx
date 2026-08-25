@@ -8,7 +8,6 @@ import { api } from '@priamo/convex/api';
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { InviteMemberPanel } from '@/components/organizations/invite-member-panel';
 import { EmptyState } from '@/components/ui/empty-state';
-import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBodyFlush } from '@/components/ui/panel';
 import {
   Table,
@@ -43,7 +42,6 @@ export default function SettingsPage() {
       {isAdmin ? (
         <InviteMemberPanel organizationId={currentOrganization.organization._id} callerRole={currentOrganization.role} />
       ) : null}
-      <PageHeader title={t('organizations.rosterTitle')} />
       <Panel>
         <PanelBodyFlush>
           <Table>

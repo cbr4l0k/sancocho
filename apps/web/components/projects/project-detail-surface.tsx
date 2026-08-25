@@ -81,7 +81,6 @@ export function ProjectDetailSurface({ projectId }: { projectId: ProjectId }) {
      * confirmation sits directly under the header that triggered it. */
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={project.name}
         badge={<StatusChip emphasis="loud" kind="project" status={project.status} />}
         actions={
           canManage && project.status !== 'archived' && !editing ? (

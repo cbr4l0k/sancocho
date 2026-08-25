@@ -54,7 +54,6 @@ export function ServiceListSurface({ initialProjectId }: { initialProjectId?: st
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={t('services.title')}
         actions={
           canCreate ? (
             <Button variant="primary" render={<LocaleLink to={newServiceHref(selectedProject?._id)} />}>
