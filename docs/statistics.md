@@ -159,6 +159,299 @@ an `organization.statisticsBackfilled` audit event (attributed to the
 organization's owner), so the migration leaves the same trail every other
 mutation in this repo does.
 
+## Semantic aggregation (issue #34, reopened scope)
+
+Two new dimensions read `eventFieldValues` by `semanticType` instead of by
+event/project/recipe: `passengerTotals` and `accessibilityRequirements`
+(`statistics/queries.ts` `getPassengerTotals`/`getAccessibilityRequirements`
+plus their `…ByProject`/`…ByStatus` breakdowns). `semanticType` lives on
+`fieldDefinitions`; the values it describes live on `eventFieldValues`, keyed
+by `fieldDefinitionId` — the largest table in the system. A naive
+implementation joining the two on every read is exactly the I6 violation this
+issue exists to prevent, so the mechanism is the same one already established
+for everything else in this file: **maintained counters, updated where
+`eventFieldValues` is written**, in a new `statisticsSemanticCounters` table
+(`schema.ts`). This was the "obvious candidate" the reopening issue named,
+and nothing in the domain argued for anything else — the existing
+architecture already treats "materialize a running fact beside the mutation
+that changes it" as the house style for every other statistic.
+
+The set of tracked semantic types is computed from the registry, not
+hand-matched on a field's key or label: the registry itself decides which
+type(s) carry a given capability (`passengerTotals`, `accessibilityRequirements`)
+— `passenger.count` and `accessibility.wheelchairCount` today. Notably,
+`luggage.count` is numeric but its registry entry declares no capability
+(`capabilities: []`), so it correctly earns no statistic here; the registry
+itself, not this file, is what decided that. `statisticsSemanticCounters.semanticType`
+is still a hand-written literal union (Convex schema fields must be real
+literal types), so `statistics/model.ts` proves the hand-written
+`TrackedSemanticType` union stays in sync with the registry at COMPILE time —
+`AssertHasCapability`, a `tsc`-level check mirroring the `AssertSameKeys`
+pattern already in `validators/index.ts` — rather than at runtime. This
+deliberately replaced an earlier design that asserted the same fact with a
+runtime `throw` at module load: `statistics/model.ts` is imported by
+`events/model.ts` (every `createEventFromRecipe`/`updateEventFields`/
+`changeEventStatus` call), so a registry/union mismatch would have surfaced
+as an events-domain outage on first invocation after a bad deploy, rather
+than a build failure caught before it ever ships. A registry rebinding that
+isn't mirrored in `TrackedSemanticType` now fails `tsc`, full stop — never a
+silently wrong dashboard number, and never a runtime crash reachable from
+event mutations either.
+
+**Why this is safe under I3.** A maintained counter keyed by semantic type is
+only trustworthy if a field's semantic type can never change out from under
+values already summed into it. This is true, and it is enforced one layer
+below the counters, not assumed by them: `fields/model.ts`
+`updateFieldDefinition` (around `apps/convex/convex/fields/model.ts:143-159`)
+treats `semanticType` as one of three `historicalMeaningFields`, and refuses
+to change any of them once `isReferencedByPublishedVersion` is true for that
+field. Separately, `events/model.ts` `createEventFromRecipe` only ever
+creates an `eventFieldValues` row for a field that is part of the event's own
+`recipeVersionId`, and that version must already be `published`
+(`apps/convex/convex/events/model.ts:94`) — so by the time any
+`eventFieldValues` row can exist for a field, that field is already
+referenced by a published version, and its `semanticType` is already frozen.
+There is no window in which a value is summed under one semantic type and
+later silently reinterpreted under another.
+
+Three dimensions are maintained, each updated at the narrowest site that can
+actually keep it correct:
+
+- **`total`** (grand, org-wide) and **`project`** (per-project) are updated
+  only where an `eventFieldValues` row is written — `createEventFromRecipe`'s
+  insert loop, and `updateEventFields`'s insert/patch/delete branches (both
+  in `events/model.ts`, via `applyEventSemanticDelta`). A `projectId` never
+  changes for an existing event, so no other site can ever affect this
+  dimension.
+- **`eventStatus`** is keyed by an event's CURRENT status, which unlike
+  `projectId` genuinely can change after a value is written. A pure status
+  transition writes no `eventFieldValues` row at all, so
+  `applyEventSemanticDelta` never runs for it; `changeEventStatus`
+  additionally calls `moveSemanticStatusBuckets`, which reads the event's own
+  tracked field values and moves each one from its previous status bucket to
+  its new one — the same bidirectional "decrement the old bucket, increment
+  the new one" shape `changeCounter` already uses for the plain event-status
+  counters beside it.
+
+**The delta is computed per EVENT, never per field row — this was a real bug
+caught by review, not a hypothetical.** `count` means "this many *events*
+carry a defined value for this semantic type" (the schema doc comment on
+`statisticsSemanticCounters` says so explicitly), and nothing forbids two
+*different* field definitions on one recipe version being bound to the same
+semantic type (`addRecipeField` only rejects a duplicate `fieldDefinitionId`)
+— "adult passengers" and "child passengers" both bound to `passenger.count`
+is an ordinary tenant modelling choice. An earlier version of this code
+called a per-field delta function once per `eventFieldValues` row written,
+which double-counted exactly that event (`eventCount: 2` for one event, while
+every read that aggregates by event — the filtered scan, the backfill, the
+status-transition mover — reported `1` for the identical data: the filtered
+and unfiltered variants of the same query disagreeing on the same tenant).
+
+The fix, and the shape every write site now uses: `applyEventSemanticDelta`
+takes a `before` snapshot of the event's AGGREGATE value per tracked semantic
+type (summing every tracked field the event carries, computed by
+`getEventSemanticValuesBeforeEdit` ahead of `updateEventFields`'s write loop,
+or the empty aggregate for a brand-new event in `createEventFromRecipe`),
+re-resolves the AFTER aggregate once every write in the batch has landed, and
+applies exactly one delta per semantic type per mutation call — never one per
+field. This is the identical event-level computation
+`moveSemanticStatusBuckets`, the backfill, and every filtered read already
+used; the fix made the live write path agree with them, not the other way
+around. `apps/convex/tests/statistics.test.ts` — "an event with two different
+field definitions bound to the same semantic type counts as ONE event, and
+both values sum" — is a permanent regression test for this, verified against
+the reintroduced bug (see the issue's mutation-testing report).
+
+**Resolving an event's aggregate stays within I6 without depending on how
+many fields the event's recipe version happens to compose.** The naive join
+— collect every `eventFieldValues` row the event has (bounded by
+`maxFieldsPerVersion` = 200, but 200 is still 200) and `db.get` each row's
+field definition — costs up to `2 × 200` reads per event, which is fine for
+one event but not for the up-to-`maxFilteredScan` (500) events a filtered
+read or `occupancyMetrics` may scan: worst case, `500 × 400` = 200,000 reads,
+comfortably over Convex's per-transaction read ceiling. `getTrackedFieldDefinitions`
+fixes this by resolving, ONCE per top-level query (not once per event), the
+small set of field definitions this organization has EVER bound to a tracked
+semantic type — bounded by configuration (how many fields an admin created),
+not by operational volume (how many events exist, or how many fields one
+recipe version composes) — the same category of bound
+`resolveOrganizationOwnerUserId`'s membership-roster collect already relies
+on elsewhere in this file. Every event-level read then does exactly one
+targeted, indexed point lookup (`by_event_field`, `.eq('eventId',
+…).eq('fieldDefinitionId', …)`) per entry that function returns, instead of
+scanning the event's entire field set — `O(scanned events × distinct tracked
+fields)`, not `O(scanned events × fields per recipe version)`.
+
+`backfillOrganizationCounters`'s `events` phase and `clear` phase were
+extended to cover `statisticsSemanticCounters` the same way they already
+cover `statisticsCounters` (the `events` phase resolves `trackedFields` once
+per page, not once per event, for the identical reason), and
+`seed/reset.ts`'s dev-reset sweep now includes the new table too (see "Write
+paths, resets, and dangling counter rows" above — the exact bug that section
+warns about, applied here).
+
+## `occupancyMetrics` without a capacity denominator
+
+Vehicle capacity is an explicit non-goal (no fleet/vehicle management
+anywhere in the domain), so there is no denominator for "how full was this
+service" in the literal sense. `getOccupancyMetrics` instead defines
+occupancy as the **distribution of `passenger.count` across matching
+services**: sample size, mean, median, max, and (given an optional
+`threshold` argument) how many services carried at least that many
+passengers. This is meaningful without a capacity concept — "our median
+service carries 6 passengers, and 3 services this month carried 12+" is a
+real operational answer — and it introduces no vehicles table or fabricated
+capacity field.
+
+This is the one statistic in this file that is **never** a maintained
+counter, filtered or not. A running counter can maintain a sum and a count in
+O(1) (which is exactly what `passengerTotals`'s grand total does), but it
+cannot answer a median or a max without materializing something bounded by
+the whole distribution — there is no incremental update rule for "the middle
+value" the way there is for a sum. `getOccupancyMetrics` is therefore always
+a bounded, capped scan (`scanEventsForFilter`, the same primitive the
+filtered reads below use), reading the `maxFilteredScan` most recent matching
+events (descending `startsAt`, so a truncated sample favors current
+operations over old history) and resolving each one's `passenger.count`
+value through the same targeted semantic lookup (`getTrackedFieldDefinitions`
+/ `resolveTrackedSemanticValues`) the write path resolves its deltas through. `mean` is computed from that identical bounded sample rather than
+from the exact O(1) counter, even though the counter could answer it exactly
+— so a caller reading `mean` and `median` together always describes the same
+set of services, instead of one being an exact org-wide figure and the other
+a sample.
+
+## Filtered reads and the truncation signal (issue #35 dependency)
+
+`#35` needs date-range and project filters, and — a deliberate product
+decision — **filters apply to every headline number that has a real
+project/date dimension, not just to detail views.** A dashboard whose
+filters do not move the big numbers misleads an operator asking "how many
+services are confirmed in September for project X."
+
+Maintained counters answer an organization-wide, all-time question in O(1)
+precisely by giving up the ability to answer an arbitrary range — that
+trade-off is the entire point of counters, and it cannot be patched around.
+So every filtered read abandons counters for a second mechanism: a bounded,
+capped scan (`scanEventsForFilter` in `statistics/model.ts`) reading at most
+`maxFilteredScan` (500) rows off an index scoped to the filter — 
+`by_project_startsAt` when a `projectId` filter is given (already proven to
+belong to the caller's organization — see I1 below), `by_org_startsAt`
+otherwise — with the date range applied as an optional `.gte`/`.lte` on the
+same index. One extra row is read past the cap specifically to detect
+truncation without a second query. `getFilteredServiceStatusCounts` uses the
+identical shape per status, off `by_project_status_startsAt` /
+`by_org_status_startsAt` (a new index added beside the existing
+`by_org_status_startsAt`), mirroring `getUpcomingServices`'s already-proven
+"one bounded range read per included bucket" pattern above.
+
+`maxFilteredScan` is consequently not one shared budget across the whole
+filtered-reads surface — it means a DIFFERENT total depending which query
+you call. `getFilteredServiceStatusCounts` caps EACH status independently
+(six reads, each capped), so a heavily filtered organization can genuinely
+report up to `6 × maxFilteredScan` events combined across the response.
+`scanEventsForFilter` (used by `getPassengerTotals`/
+`getAccessibilityRequirements`/`getOccupancyMetrics`) caps the SINGLE
+combined scan across every status at once. Both are honest about their own
+truncation via `isTruncated`, but a truncated result from one query family
+and a truncated result from the other, for the identical filter, are not
+guaranteed to describe the same underlying set of events — do not assume
+otherwise when building a dashboard that reads both side by side.
+
+Every filtered read's return shape carries the signal explicitly —
+`{ value, isTruncated }` for a scalar total (`FilteredValue` in
+`statistics/model.ts`), `{ status, count, isTruncated }` per bucket for the
+service-status breakdown, `{ isTruncated, sampleSize, … }` for occupancy —
+so the console can honestly render "500+" instead of a wrong number, which
+is worse than an admittedly-incomplete one because it looks exact. Producing
+a truly exact total for an arbitrary range would mean scanning the whole
+range, which is the exact I6 violation this issue exists to prevent.
+
+**The unfiltered headline path is untouched and stays O(1).** Rather than
+changing the seven existing queries' signatures, the filtered
+read is a new, additively-added query alongside each: calling
+`getFilteredServiceStatusCounts`/`getPassengerTotals`/
+`getAccessibilityRequirements` with no `projectId` and no date bounds
+delegates straight to the same maintained counters `getServiceStatusCounts`/
+the semantic `total` counter already answer, wrapped as `isTruncated: false`
+(a maintained counter is exact by construction) — never regressed into a
+scan just to unify the filtered and unfiltered code paths into one function
+body. Every existing query, and every test already driving it, is unchanged.
+
+**Which existing queries did NOT get a filter, and why.** Only queries whose
+answer has a genuine project/date dimension were extended:
+`getFilteredServiceStatusCounts`, `getPassengerTotals`,
+`getAccessibilityRequirements`, and `getOccupancyMetrics` (all keyed off
+`events`, which has both `projectId` and `startsAt`). `getActiveRecipeCount`
+and `getLocationCount` were deliberately left alone: a recipe is not
+associated with a project, and neither a recipe nor a location carries a
+`startsAt` — a "date range" filter on "how many locations exist" has no
+domain meaning to honor, and adding the parameter anyway would be a filter
+that silently does nothing, which is worse than not offering it.
+`getProjectStatusCounts` was left alone for the same reason on the project
+axis (a `projectId` filter on "count of projects by status" is asking to
+filter projects by project) and because `projects` carries no comparable
+`startsAt` for a date filter either. `getProjectBreakdown`/`getRecipeBreakdown`
+and `getUpcomingServices` were left exactly as they already were: the
+breakdowns are already unfiltered-by-design precedent (see above), and
+`getUpcomingServices` already IS a mandatory, capped date-window query with
+its own status contract — extending it with an independent optional filter
+system was judged out of scope for this issue rather than folded in
+speculatively.
+
+**I1 for the `projectId` filter.** A `projectId` filter argument is a
+referenced entity like any other: `assertFilterProjectOwnership` loads it and
+confirms `project.organizationId === organizationId` before any index built
+on the raw id is ever queried, refusing a foreign project with the same
+generic `notFoundOrInaccessible` a missing one gets (I9) — proven by a
+dedicated test that pairs a legitimate `organizationId` with another
+organization's real `projectId`.
+
+## `getTrackedFieldDefinitionsForType` is bounded, not just narrowed
+
+An earlier version of this code (`getTrackedFieldDefinitions`) collected
+EVERY field definition in the organization plus every deployment-wide
+builtin, then filtered to the tracked semantic types in memory. Adding
+`fieldDefinitions.by_org_semantic` (`schema.ts`) and reading it directly per
+semantic type (`getTrackedFieldDefinitionsForType`) turned that into a
+targeted, indexed read — but a targeted read is not the same thing as a
+BOUNDED one: an org could still bind an unbounded number of custom field
+definitions to `passenger.count`/`accessibility.wheelchairCount`, and the
+index would happily return all of them. Since this list is resolved on every
+`createEventFromRecipe`/`updateEventFields`/`changeEventStatus` call, an org
+that did this would eventually push those writes past Convex's
+per-transaction read limit — the failure mode is **service creation
+breaking for that tenant**, not a dashboard getting slow, which is a worse
+place for an unbounded dimension to hide than a read-only query.
+
+The actual guarantee, shipped in full, is two-sided:
+
+- **Creation/update time** (`fields/model.ts` `assertSemanticTypeCapacity`,
+  called from `createFieldDefinition`/`updateFieldDefinition` whenever a
+  field is gaining a binding to a tracked semantic type): refuses to bind a
+  field definition once `maxFieldDefinitionsPerSemanticType`
+  (`validators/index.ts`, currently **25**) field definitions are already
+  bound to that semantic type in this scope, with the stable code
+  `fieldSemanticTypeLimitExceeded`. This is where a real tenant should hit
+  the limit — one clear rejection at configuration time, not a mysterious
+  failure on every later service write.
+- **Read time** (`statistics/model.ts` `getTrackedFieldDefinitionsForType`):
+  the SAME number bounds the read itself — `.take(max + 1)`, never
+  `.collect()` — and throws the identical `fieldSemanticTypeLimitExceeded`
+  if a scope somehow already exceeds it. This exists because the
+  creation-time check cannot retroactively bound rows written before it
+  existed; without it, pre-existing over-cap data would either silently
+  truncate (reporting a wrong total as if it were exact) or silently push
+  every read and write that touches it toward the transaction limit anyway.
+  Both checks read `maxFieldDefinitionsPerSemanticType` from the SAME
+  registry entry, so they can never silently disagree on the number.
+
+25 is real headroom over what a realistic tenant needs (a dozen or so:
+adult/child/infant/staff passenger counts, a couple of accessibility
+variants) while keeping the worst case — a filtered read scanning
+`maxFilteredScan` (500) events, each resolving up to this many field
+definitions — comfortably inside a single transaction's budget
+(500 × 26 = 13,000 targeted point reads).
+
 ## Rejected alternatives
 
 `@convex-dev/aggregate` was rejected because this repository has a small,
@@ -173,3 +466,14 @@ cannot truthfully answer the requested organization-wide status and location
 totals. A hard date range would silently change those totals into window
 totals, and a per-status collect over the full tenant would violate I6 and
 degrade as the tenant grows.
+
+A per-status maintained semantic counter (mirroring `eventStatus` exactly,
+including the bucket-move on transition) was considered for
+`passengerTotals`/`accessibilityRequirements` and, after weighing it against
+the bounded-scan alternative, built anyway — see "Semantic aggregation"
+above. A pure sum-and-count semantic counter with NO status dimension (only
+`total` and `project`) was the fallback design if the status-transition
+bookkeeping had proven too invasive; it was not needed, since
+`moveSemanticStatusBuckets` only touches the one existing status-transition
+call site and reads a bound already established (`updateEventFields` reads
+the identical `eventFieldValues` set for the identical reason).

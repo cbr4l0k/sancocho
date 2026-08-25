@@ -17,7 +17,7 @@ import type { Role } from '../lib/roles';
 import { assertUsableLocation } from '../locations/model';
 import { requireProjectAccess } from '../projects/model';
 import { getVersionFields } from '../recipes/model';
-import { changeCounter } from '../statistics/model';
+import { applyEventSemanticDelta, changeCounter, getEventSemanticValuesBeforeEdit, moveSemanticStatusBuckets } from '../statistics/model';
 import { isFiniteNumber, type eventFieldValueValidator, type eventStatusValidator } from '../validators';
 
 type EventFieldValue = typeof eventFieldValueValidator.type;
@@ -129,6 +129,16 @@ export async function createEventFromRecipe(
       ...(locationId === undefined ? {} : { locationId }),
     });
   }
+  // Cheap even when this organization has no field bound to a tracked
+  // semantic type at all — four targeted, indexed range reads
+  // (`statistics/model.ts` `getTrackedFieldDefinitions`), never a scan of
+  // the organization's field catalogue. See `applyEventSemanticDelta` for
+  // the full contract. One event-level delta call after every value is
+  // written — never per field — is what keeps a semantic counter's `count`
+  // meaning "this many EVENTS carry a value" even when two different field
+  // definitions on this event are bound to the same semantic type. The
+  // event was just created, so its "before" state is empty.
+  await applyEventSemanticDelta(ctx, { organizationId: version.organizationId, projectId: project._id, status: 'draft', eventId, before: {} });
   await recordAuditEvent(ctx, {
     organizationId: version.organizationId,
     actorUserId: access.user._id,
@@ -304,6 +314,10 @@ export async function updateEventFields(
     .withIndex('by_event_field', (q) => q.eq('eventId', event._id))
     .collect();
   const stored = new Map(storedRows.map((row) => [row.fieldDefinitionId, row]));
+  // Captured BEFORE any write below, so `applyEventSemanticDelta` can diff
+  // the event's aggregate value per semantic type across this whole batch of
+  // edits — never per individual field row (see its doc comment for why).
+  const { values: beforeSemanticValues, trackedFields } = await getEventSemanticValuesBeforeEdit(ctx, { organizationId: event.organizationId, eventId: event._id });
   const resolved = await validateEventAgainstRecipe(
     ctx,
     version,
@@ -362,6 +376,11 @@ export async function updateEventFields(
     });
   }
   if (changedFields.length === 0) return;
+  // Cheap even when this organization has no field bound to a tracked
+  // semantic type at all — see the identical note in `createEventFromRecipe`
+  // above. ONE event-level delta call for this whole batch of edits — never
+  // per field — using the snapshot captured before the loop above.
+  await applyEventSemanticDelta(ctx, { organizationId: event.organizationId, projectId: event.projectId, status: event.status, eventId: event._id, before: beforeSemanticValues, trackedFields });
 
   await recordAuditEvent(ctx, {
     organizationId: event.organizationId,
@@ -394,6 +413,11 @@ export async function changeEventStatus(
   await ctx.db.patch(event._id, { status: args.status });
   await changeCounter(ctx, { organizationId: event.organizationId, category: 'eventStatus', status: event.status, delta: -1 });
   await changeCounter(ctx, { organizationId: event.organizationId, category: 'eventStatus', status: args.status, delta: 1 });
+  // A pure status transition writes no `eventFieldValues` row, so
+  // `applyEventSemanticDelta` never runs for it — this is the one other
+  // site that must move a semantic value between status buckets (see its
+  // doc comment in statistics/model.ts).
+  await moveSemanticStatusBuckets(ctx, { organizationId: event.organizationId, eventId: event._id, previousStatus: event.status, newStatus: args.status });
   await recordAuditEvent(ctx, {
     organizationId: event.organizationId,
     actorUserId: access.user._id,

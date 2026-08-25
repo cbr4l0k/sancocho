@@ -19,6 +19,7 @@ export type ConvexErrorMessageKey =
   | 'errors.fieldKeyBuiltin'
   | 'errors.fieldDescriptionTooLong'
   | 'errors.fieldSemanticIncompatible'
+  | 'errors.fieldSemanticTypeLimitExceeded'
   | 'errors.fieldHistoricalFrozen'
   | 'errors.fieldArchived'
   | 'errors.fieldDeleteBlocked'
@@ -47,7 +48,9 @@ export type ConvexErrorMessageKey =
   | 'errors.auditInvalid'
   | 'errors.statisticsWindowInvalid'
   | 'errors.statisticsWindowTooLarge'
-  | 'errors.statisticsLimitInvalid';
+  | 'errors.statisticsLimitInvalid'
+  | 'errors.statisticsFilterWindowInvalid'
+  | 'errors.statisticsThresholdInvalid';
 
 /** Kept as an alias so existing presentation call sites remain unchanged. */
 export type ConvexErrorPresentation = ConvexErrorMessageKey;
@@ -76,6 +79,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   fieldKeyShadowsBuiltin: 'errors.fieldKeyBuiltin',
   fieldDescriptionTooLong: 'errors.fieldDescriptionTooLong',
   fieldSemanticIncompatible: 'errors.fieldSemanticIncompatible',
+  fieldSemanticTypeLimitExceeded: 'errors.fieldSemanticTypeLimitExceeded',
   fieldArchived: 'errors.fieldArchived',
   fieldHistoricalFrozen: 'errors.fieldHistoricalFrozen',
   fieldDeleteBlocked: 'errors.fieldDeleteBlocked',
@@ -133,6 +137,8 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   statisticsWindowInvalid: 'errors.statisticsWindowInvalid',
   statisticsWindowTooLarge: 'errors.statisticsWindowTooLarge',
   statisticsLimitInvalid: 'errors.statisticsLimitInvalid',
+  statisticsFilterWindowInvalid: 'errors.statisticsFilterWindowInvalid',
+  statisticsThresholdInvalid: 'errors.statisticsThresholdInvalid',
   // Both codes are thrown only from `backfillOrganizationCounters`, an
   // `internalMutation` no web client can call — there is no UI surface for
   // them to describe, so they fall back to the generic message rather than

@@ -13,6 +13,8 @@ export const errorCodes = [
   'statisticsLimitInvalid',
   'statisticsBackfillCursorInvalid',
   'statisticsBackfillPhaseComplete',
+  'statisticsFilterWindowInvalid',
+  'statisticsThresholdInvalid',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'projectDescriptionTooLong',
@@ -29,6 +31,7 @@ export const errorCodes = [
   'fieldKeyShadowsBuiltin',
   'fieldDescriptionTooLong',
   'fieldSemanticIncompatible',
+  'fieldSemanticTypeLimitExceeded',
   'fieldArchived',
   'fieldHistoricalFrozen',
   'fieldDeleteBlocked',

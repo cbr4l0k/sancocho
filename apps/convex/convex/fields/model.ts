@@ -177,6 +177,14 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
   if (update.semanticType !== undefined || update.config !== undefined) {
     assertSemanticCompatibility(update.semanticType ?? field.semanticType, update.config ?? field.config);
   }
+  // Only when the semantic type is actually CHANGING to something new — a
+  // field keeping its existing binding is already counted in that bucket,
+  // and re-litigating capacity on every unrelated edit would be wrong.
+  // `fieldDefinitionId` is excluded from the count: this field is being
+  // re-pointed, not added on top of its own prior binding.
+  if (update.semanticType !== undefined) {
+    await assertSemanticTypeCapacity(ctx, field.organizationId, update.semanticType, fieldDefinitionId);
+  }
 
   await ctx.db.patch(fieldDefinitionId, update);
   await recordAuditEvent(ctx, {
@@ -332,6 +340,9 @@ async function assertValidNewField(
   await assertKeyAvailable(ctx, organizationId, args.key);
   assertValidFieldConfig(args.config);
   assertSemanticCompatibility(args.semanticType, args.config);
+  if (args.semanticType !== undefined) {
+    await assertSemanticTypeCapacity(ctx, organizationId, args.semanticType);
+  }
   return label;
 }
 
@@ -360,10 +371,57 @@ function assertValidDescription(description: string | undefined): void {
 }
 
 function assertSemanticCompatibility(semanticType: SemanticType | undefined, config: FieldConfig): void {
+  if (semanticType === undefined) return;
   // Optional chaining so a semantic type later removed from the registry is
   // rejected as invalid input rather than throwing a TypeError.
-  if (semanticType !== undefined && semanticRegistry[semanticType]?.expectedDataType !== config.kind) {
+  const definition = semanticRegistry[semanticType];
+  if (definition?.expectedDataType !== config.kind) {
     return invalidInput('fieldSemanticIncompatible', 'Semantic type is incompatible with the field configuration');
+  }
+  // A semantic type whose values are always a count of discrete things
+  // (`requiresInteger`) needs its `number` config to actually enforce that —
+  // see the doc comment on `SemanticDefinition.requiresInteger` in
+  // validators/index.ts for why a maintained statistics counter depends on it.
+  if (definition.requiresInteger === true && config.kind === 'number' && config.integer !== true) {
+    return invalidInput('fieldSemanticIncompatible', 'This semantic type requires an integer-valued number field (config.integer must be true)');
+  }
+}
+
+/**
+ * Refuses to bind ONE MORE field definition to a semantic type that already
+ * has `maxFieldDefinitionsPerSemanticType` (validators/index.ts) bound to it
+ * in this scope (`organizationId`, or `undefined` for the deployment-wide
+ * builtin scope). A no-op for every semantic type without that property set
+ * (everything except `passenger.count`/`accessibility.wheelchairCount`
+ * today) — this is deliberately narrow, not a general field-count limit.
+ *
+ * This is the CREATE/UPDATE-time half of the guarantee; the READ-time half
+ * (`statistics/model.ts` `getTrackedFieldDefinitionsForType`, which enforces
+ * the identical number defensively on every read) is what actually protects
+ * data that predates this check — this half exists so a tenant hits one
+ * clear, immediate rejection at configuration time instead of a mysterious
+ * failure on every subsequent service write.
+ *
+ * `.take(max + 1)` bounds this to at most `max + 1` documents regardless of
+ * how many fields this org has ever created in total (I6) — it reads only
+ * the rows that share this exact `(organizationId, semanticType)` pair, via
+ * the same `by_org_semantic` index the read-side check uses.
+ */
+async function assertSemanticTypeCapacity(
+  ctx: MutationCtx,
+  organizationId: Id<'organizations'> | undefined,
+  semanticType: SemanticType,
+  excludeFieldDefinitionId?: Id<'fieldDefinitions'>,
+): Promise<void> {
+  const max = semanticRegistry[semanticType]?.maxFieldDefinitionsPerSemanticType;
+  if (max === undefined) return;
+  const existing = await ctx.db
+    .query('fieldDefinitions')
+    .withIndex('by_org_semantic', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType))
+    .take(max + 1);
+  const count = existing.filter((row) => row._id !== excludeFieldDefinitionId).length;
+  if (count >= max) {
+    return invalidInput('fieldSemanticTypeLimitExceeded', `At most ${max} field definitions may be bound to this semantic type`);
   }
 }
 

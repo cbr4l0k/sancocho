@@ -7,10 +7,12 @@ import { requireOrganizationMembership } from '../lib/access';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { isOwner } from '../lib/roles';
 import { assertSeedingEnabled } from '../lib/seedGuard';
-import type { eventStatusValidator, projectStatusValidator } from '../validators';
+import { semanticRegistry } from '../validators';
+import type { eventFieldValueValidator, eventStatusValidator, projectStatusValidator, SemanticCapability, SemanticType } from '../validators';
 
 type EventStatus = typeof eventStatusValidator.type;
 type ProjectStatus = typeof projectStatusValidator.type;
+type EventFieldValue = typeof eventFieldValueValidator.type;
 export type CounterCategory = 'eventStatus' | 'projectStatus' | 'activeRecipe' | 'location' | 'projectEvents' | 'recipeEvents';
 type Counter = Doc<'statisticsCounters'>;
 
@@ -214,6 +216,621 @@ export async function getRecipeBreakdown(ctx: QueryCtx, organizationId: Id<'orga
   return { ...counters, page };
 }
 
+// ===========================================================================
+// Semantic domain metrics (Task 1) and filtered/bounded reads (Task 2).
+// See docs/statistics.md "Semantic aggregation" and "Filtered reads" for the
+// full design rationale; the summary that matters for reading this code:
+//
+// - `passengerTotals` / `accessibilityRequirements` grand totals and their
+//   per-project rollups are MAINTAINED COUNTERS (like everything above),
+//   updated wherever `eventFieldValues` is written — `projectId` never
+//   changes for an existing event, so that dimension needs no other site.
+// - Their per-status rollup is ALSO a maintained counter, but status is
+//   mutable, so it additionally needs updating at the event's own status
+//   transition (`moveSemanticStatusBuckets`, wired into
+//   `events/model.ts changeEventStatus`).
+// - `occupancyMetrics` needs a full distribution (median, max), which a
+//   running counter cannot answer at any cardinality — it is ALWAYS a
+//   bounded, capped scan, never a counter, regardless of filters.
+// - Every FILTERED read (a `projectId` and/or date range supplied) abandons
+//   counters for a bounded, capped scan with an explicit truncation signal,
+//   because a counter cannot answer an arbitrary range — this is the same
+//   `{ value, isTruncated }` contract for a filtered service-status count as
+//   for a filtered semantic total.
+// ===========================================================================
+
+/** The console renders "500+" past this cap, per the reopening decision. */
+export const maxFilteredScan = 500;
+
+/**
+ * Semantic types this file maintains counters for (`fields/builtins.ts`
+ * binds `passenger.count` → `passengerTotals`/`occupancyMetrics` and
+ * `accessibility.wheelchairCount` → `accessibilityRequirements` today) —
+ * never a field key or label. `TrackedSemanticType` is a hand-written literal
+ * union, not derived from the registry at runtime, because it has to be a
+ * real TypeScript literal type for `statisticsSemanticCounters.semanticType`
+ * and the discriminated `ChangeSemanticCounterArgs` below.
+ *
+ * The two `AssertHasCapability` lines immediately after are what keep this
+ * union from silently drifting away from the registry: each is a
+ * COMPILE-TIME check (a `tsc` failure the moment `semanticRegistry` no
+ * longer lists the named capability for the named type — see the identical
+ * `AssertSameKeys` pattern in validators/index.ts). This deliberately
+ * replaced an earlier runtime `throw` that ran at module load: this file is
+ * imported by `events/model.ts` (every `createEventFromRecipe`,
+ * `updateEventFields`, `changeEventStatus` call), so a throw here would have
+ * turned a statistics-domain registry mismatch into an events-domain outage
+ * on first invocation after a bad deploy, rather than a build failure caught
+ * before it ever ships. This only proves MEMBERSHIP (the two listed types
+ * really do carry their capability) — it does not machine-check that no
+ * OTHER registry entry also carries the same capability, which is left to
+ * `semanticRegistry` being a small, hand-reviewed, single object literal.
+ */
+export type TrackedSemanticType = 'passenger.count' | 'accessibility.wheelchairCount';
+
+type AssertHasCapability<Type extends SemanticType, Capability extends SemanticCapability> =
+  Capability extends (typeof semanticRegistry)[Type]['capabilities'][number] ? true : never;
+const _passengerCountHasPassengerTotals: AssertHasCapability<'passenger.count', 'passengerTotals'> = true;
+const _wheelchairCountHasAccessibilityRequirements: AssertHasCapability<'accessibility.wheelchairCount', 'accessibilityRequirements'> = true;
+void _passengerCountHasPassengerTotals;
+void _wheelchairCountHasAccessibilityRequirements;
+
+const trackedSemanticTypes: readonly TrackedSemanticType[] = ['passenger.count', 'accessibility.wheelchairCount'];
+
+/** `null`/`undefined` and any non-`number` kind (should not occur for a tracked field; see `assertSemanticCompatibility`) both read as "no value". */
+function numericValue(value: EventFieldValue | null | undefined): number | undefined {
+  if (value === null || value === undefined || value.kind !== 'number') return undefined;
+  return value.value;
+}
+
+type ChangeSemanticCounterArgs =
+  | { organizationId: Id<'organizations'>; semanticType: TrackedSemanticType; category: 'total'; deltaSum: number; deltaCount: number }
+  | { organizationId: Id<'organizations'>; semanticType: TrackedSemanticType; category: 'eventStatus'; status: EventStatus; deltaSum: number; deltaCount: number }
+  | { organizationId: Id<'organizations'>; semanticType: TrackedSemanticType; category: 'project'; projectId: Id<'projects'>; deltaSum: number; deltaCount: number };
+
+/** Applies a (sum, count) delta beside the source write, mirroring `changeCounter` above. */
+async function changeSemanticCounter(ctx: MutationCtx, args: ChangeSemanticCounterArgs): Promise<void> {
+  if (args.deltaSum === 0 && args.deltaCount === 0) return;
+  if (args.category === 'total') {
+    const { organizationId, semanticType, deltaSum, deltaCount } = args;
+    const counter = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'total')).first();
+    if (counter === null) {
+      await ctx.db.insert('statisticsSemanticCounters', { organizationId, semanticType, category: 'total', sum: deltaSum, count: deltaCount });
+      return;
+    }
+    await ctx.db.patch(counter._id, { sum: counter.sum + deltaSum, count: counter.count + deltaCount });
+    return;
+  }
+  if (args.category === 'project') {
+    const { organizationId, semanticType, projectId, deltaSum, deltaCount } = args;
+    const counter = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category_project', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'project').eq('projectId', projectId)).first();
+    if (counter === null) {
+      await ctx.db.insert('statisticsSemanticCounters', { organizationId, semanticType, category: 'project', projectId, sum: deltaSum, count: deltaCount });
+      return;
+    }
+    await ctx.db.patch(counter._id, { sum: counter.sum + deltaSum, count: counter.count + deltaCount });
+    return;
+  }
+  const { organizationId, semanticType, status, deltaSum, deltaCount } = args;
+  const counter = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category_status', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'eventStatus').eq('status', status)).first();
+  if (counter === null) {
+    await ctx.db.insert('statisticsSemanticCounters', { organizationId, semanticType, category: 'eventStatus', status, sum: deltaSum, count: deltaCount });
+    return;
+  }
+  await ctx.db.patch(counter._id, { sum: counter.sum + deltaSum, count: counter.count + deltaCount });
+}
+
+type TrackedFieldDefinition = { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType };
+
+/**
+ * Every field definition (org-scoped + the deployment-wide builtins) bound
+ * to exactly ONE tracked semantic type — a targeted, indexed range read on
+ * `by_org_semantic`, never a scan of the organization's whole field
+ * catalogue. Bounded by `K`, the number of DISTINCT field definitions ever
+ * bound to THIS semantic type specifically (typically 0-2: the one builtin
+ * plus whatever a tenant has additionally created), not by the
+ * organization's total field count — `fieldDefinitions` is tenant-configured
+ * and this codebase already treats it as unbounded elsewhere
+ * (`fields/model.ts` `listFieldDefinitions` is paginated for exactly this
+ * reason; the I6 exemption is for a bounded CHILD set like one version's
+ * recipe fields, never a whole tenant-owned table).
+ *
+ * Deliberately does NOT filter on `status === 'active'`: an archived field's
+ * historical values must stay part of a semantic total exactly as an
+ * archived field's own value stays readable on `getEvent` (I3) — this scan
+ * path and the maintained counters must never disagree about which values
+ * count just because a field was archived after the fact.
+ */
+async function getTrackedFieldDefinitionsForType(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: Id<'organizations'>,
+  semanticType: TrackedSemanticType,
+): Promise<TrackedFieldDefinition[]> {
+  // Bounded at the SAME number `fields/model.ts` `assertSemanticTypeCapacity`
+  // enforces at field creation/update time (both read
+  // `semanticRegistry[semanticType].maxFieldDefinitionsPerSemanticType`, so
+  // the two checks can never silently disagree). The creation-time check
+  // cannot retroactively bound rows written before it existed — every
+  // `TrackedSemanticType` is guaranteed a real number here (see
+  // `AssertHasCapability` above: both tracked types are registry entries
+  // this file itself requires to declare one), so this `.take(max + 1)`
+  // (never `.collect()`) is the actual bound, and throws a stable code if
+  // pre-existing data somehow exceeds it — a loud, diagnosable failure on
+  // every write and read this organization's tracked semantic data touches,
+  // rather than silently pushing toward Convex's per-transaction read limit.
+  const max = semanticRegistry[semanticType].maxFieldDefinitionsPerSemanticType ?? 0;
+  const [orgFields, builtinFields] = await Promise.all([
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType)).take(max + 1),
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', undefined).eq('semanticType', semanticType)).take(max + 1),
+  ]);
+  if (orgFields.length > max || builtinFields.length > max) {
+    return invalidInput('fieldSemanticTypeLimitExceeded', `More than ${max} field definitions are bound to this semantic type`);
+  }
+  return [...orgFields, ...builtinFields].map((field) => ({ fieldDefinitionId: field._id, semanticType }));
+}
+
+/**
+ * Every field definition bound to ANY tracked semantic type — the shape the
+ * WRITE path needs (`applyEventSemanticDelta`, `getEventSemanticValuesBeforeEdit`,
+ * `moveSemanticStatusBuckets`, and the backfill's `events` phase), since a
+ * single event write can touch fields of either tracked type at once. Still
+ * only four targeted range reads total (`{org, builtin} ×
+ * {passenger.count, accessibility.wheelchairCount}`), never a scan of the
+ * field catalogue. Read-only callers that care about exactly one semantic
+ * type (`getSemanticTotal`, `getOccupancyMetrics`) call
+ * `getTrackedFieldDefinitionsForType` directly instead — half the reads,
+ * and they never probe a semantic type the caller didn't ask about.
+ */
+async function getTrackedFieldDefinitions(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: Id<'organizations'>,
+): Promise<TrackedFieldDefinition[]> {
+  const perType = await Promise.all(trackedSemanticTypes.map((semanticType) => getTrackedFieldDefinitionsForType(ctx, organizationId, semanticType)));
+  return perType.flat();
+}
+
+/**
+ * Resolves the tracked semantic values one event currently carries, via one
+ * targeted, indexed point lookup per entry in `trackedFields` — never a
+ * `.collect()` of the event's own (up to `maxFieldsPerVersion`) field-value
+ * rows. Safe under I3 for the same reason `getTrackedFieldDefinitions`'
+ * caller resolved `trackedFields` from LIVE `fieldDefinitions.semanticType`
+ * is safe: that type is frozen the instant any published version references
+ * the field (`fields/model.ts` `updateFieldDefinition`,
+ * `historicalMeaningFields`), and an `eventFieldValues` row can only exist
+ * for a field whose recipe version was published, so the freeze is already
+ * in effect by the time this function can ever see the row. If two DIFFERENT
+ * field definitions on the same event are bound to the same semantic type,
+ * their values are summed rather than one overwriting the other — this is
+ * also what makes "has a value" (for `count`) mean "the event's aggregate
+ * for this semantic type is defined", consistently across every caller.
+ */
+async function resolveTrackedSemanticValues(
+  ctx: QueryCtx | MutationCtx,
+  eventId: Id<'events'>,
+  trackedFields: readonly { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType }[],
+): Promise<Partial<Record<TrackedSemanticType, number>>> {
+  const values: Partial<Record<TrackedSemanticType, number>> = {};
+  for (const { fieldDefinitionId, semanticType } of trackedFields) {
+    const row = await ctx.db.query('eventFieldValues').withIndex('by_event_field', (q) => q.eq('eventId', eventId).eq('fieldDefinitionId', fieldDefinitionId)).unique();
+    if (row === null) continue;
+    const value = numericValue(row.value);
+    if (value === undefined) continue;
+    values[semanticType] = (values[semanticType] ?? 0) + value;
+  }
+  return values;
+}
+
+/**
+ * Applies whatever delta a batch of `eventFieldValues` writes made to one
+ * event's maintained semantic counters, by comparing the event's AGGREGATE
+ * value per tracked semantic type before the writes to its aggregate value
+ * after — never a per-field-row delta. This is deliberate, not incidental:
+ * `count` means "this many EVENTS carry a defined value for this semantic
+ * type" (see the schema doc comment on `statisticsSemanticCounters`), and an
+ * event can carry TWO different field definitions bound to the same semantic
+ * type (nothing in `addRecipeField` forbids it). A per-field-row delta would
+ * double-count such an event's presence — `count` would disagree with every
+ * other reader of this table (`moveSemanticStatusBuckets`, the backfill, and
+ * every filtered read below all already compute deltas the event-aggregate
+ * way). Called ONCE per mutation call (`createEventFromRecipe`,
+ * `updateEventFields`), after every `eventFieldValues` write for that event
+ * has already landed — never per field.
+ */
+export async function applyEventSemanticDelta(
+  ctx: MutationCtx,
+  args: {
+    organizationId: Id<'organizations'>;
+    projectId: Id<'projects'>;
+    status: EventStatus;
+    eventId: Id<'events'>;
+    before: Partial<Record<TrackedSemanticType, number>>;
+    // Optional: the caller may already hold this from an earlier
+    // `getEventSemanticValuesBeforeEdit` call in the SAME mutation
+    // (`updateEventFields`) and pass it through, so the org's tracked field
+    // definitions are resolved once per mutation call, not twice.
+    trackedFields?: readonly { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType }[];
+  },
+): Promise<void> {
+  const trackedFields = args.trackedFields ?? (await getTrackedFieldDefinitions(ctx, args.organizationId));
+  const after = await resolveTrackedSemanticValues(ctx, args.eventId, trackedFields);
+  for (const semanticType of trackedSemanticTypes) {
+    const beforeValue = args.before[semanticType];
+    const afterValue = after[semanticType];
+    const deltaSum = (afterValue ?? 0) - (beforeValue ?? 0);
+    const deltaCount = (afterValue !== undefined ? 1 : 0) - (beforeValue !== undefined ? 1 : 0);
+    if (deltaSum === 0 && deltaCount === 0) continue;
+    await changeSemanticCounter(ctx, { organizationId: args.organizationId, semanticType, category: 'total', deltaSum, deltaCount });
+    await changeSemanticCounter(ctx, { organizationId: args.organizationId, semanticType, category: 'project', projectId: args.projectId, deltaSum, deltaCount });
+    await changeSemanticCounter(ctx, { organizationId: args.organizationId, semanticType, category: 'eventStatus', status: args.status, deltaSum, deltaCount });
+  }
+}
+
+/**
+ * Resolves an event's tracked semantic values BEFORE a batch of edits is
+ * applied to it — the `before` half `applyEventSemanticDelta` needs.
+ * Exported for `events/model.ts updateEventFields` to call ahead of its
+ * write loop, while the stored rows still reflect the pre-edit state.
+ */
+export async function getEventSemanticValuesBeforeEdit(
+  ctx: MutationCtx,
+  args: { organizationId: Id<'organizations'>; eventId: Id<'events'> },
+): Promise<{
+  values: Partial<Record<TrackedSemanticType, number>>;
+  trackedFields: readonly { fieldDefinitionId: Id<'fieldDefinitions'>; semanticType: TrackedSemanticType }[];
+}> {
+  const trackedFields = await getTrackedFieldDefinitions(ctx, args.organizationId);
+  const values = await resolveTrackedSemanticValues(ctx, args.eventId, trackedFields);
+  return { values, trackedFields };
+}
+
+/**
+ * Moves every tracked semantic value an event carries from its previous
+ * status bucket to its new one. Wired into `events/model.ts
+ * changeEventStatus`, right beside the existing `eventStatus`
+ * `statisticsCounters` maintenance — needed because
+ * `applyEventSemanticDelta` only runs where a VALUE is written, and a pure
+ * status transition (no field write at all) would otherwise leave the old
+ * bucket permanently overcounted and the new one permanently undercounted.
+ * Same I6 bound as `resolveTrackedSemanticValues` (O(K) targeted lookups,
+ * not O(the event's field count)).
+ */
+export async function moveSemanticStatusBuckets(
+  ctx: MutationCtx,
+  args: { organizationId: Id<'organizations'>; eventId: Id<'events'>; previousStatus: EventStatus; newStatus: EventStatus },
+): Promise<void> {
+  const trackedFields = await getTrackedFieldDefinitions(ctx, args.organizationId);
+  const values = await resolveTrackedSemanticValues(ctx, args.eventId, trackedFields);
+  for (const semanticType of trackedSemanticTypes) {
+    const value = values[semanticType];
+    if (value === undefined) continue;
+    await changeSemanticCounter(ctx, { organizationId: args.organizationId, semanticType, category: 'eventStatus', status: args.previousStatus, deltaSum: -value, deltaCount: -1 });
+    await changeSemanticCounter(ctx, { organizationId: args.organizationId, semanticType, category: 'eventStatus', status: args.newStatus, deltaSum: value, deltaCount: 1 });
+  }
+}
+
+
+/** A finite window whose bounds (either may be omitted) are correctly ordered when both are given. */
+function assertValidFilterWindow(startsAt: number | undefined, endsAt: number | undefined): void {
+  if (startsAt !== undefined && !Number.isFinite(startsAt)) return invalidInput('statisticsFilterWindowInvalid', 'Statistics filter window bounds must be finite');
+  if (endsAt !== undefined && !Number.isFinite(endsAt)) return invalidInput('statisticsFilterWindowInvalid', 'Statistics filter window bounds must be finite');
+  if (startsAt !== undefined && endsAt !== undefined && endsAt < startsAt) return invalidInput('statisticsFilterWindowInvalid', 'Statistics filter window must be ordered');
+}
+
+/**
+ * A `projectId` filter is a referenced entity (I1): this proves it belongs to
+ * the caller's own organization — already proven a member of by the caller —
+ * before any index built on that raw id is ever queried, and refuses a
+ * foreign project exactly like a missing one (I9).
+ */
+async function assertFilterProjectOwnership(ctx: QueryCtx, organizationId: Id<'organizations'>, projectId: Id<'projects'> | undefined): Promise<void> {
+  if (projectId === undefined) return;
+  const project = await ctx.db.get(projectId);
+  if (project === null || project.organizationId !== organizationId) return notFoundOrInaccessible();
+}
+
+/**
+ * Bounded event scan shared by every filtered semantic/occupancy read: at
+ * most `cap + 1` rows off `by_project_startsAt` (a `projectId` filter,
+ * already proven above to belong to `organizationId`) or `by_org_startsAt`
+ * (no `projectId` filter) — the one extra row is read specifically to detect
+ * truncation without a second query (I6). Every event status is included:
+ * a cancelled or completed event still carries a real historical value that
+ * a passenger/accessibility total must not silently drop.
+ */
+async function scanEventsForFilter(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; projectId: Id<'projects'> | undefined; startsAt: number | undefined; endsAt: number | undefined; cap: number; order: 'asc' | 'desc' },
+): Promise<{ events: Doc<'events'>[]; isTruncated: boolean }> {
+  const { organizationId, projectId, startsAt, endsAt, cap, order } = args;
+  const rows =
+    projectId === undefined
+      ? await ctx.db
+          .query('events')
+          .withIndex('by_org_startsAt', (q) => {
+            const eq = q.eq('organizationId', organizationId);
+            if (startsAt !== undefined && endsAt !== undefined) return eq.gte('startsAt', startsAt).lte('startsAt', endsAt);
+            if (startsAt !== undefined) return eq.gte('startsAt', startsAt);
+            if (endsAt !== undefined) return eq.lte('startsAt', endsAt);
+            return eq;
+          })
+          .order(order)
+          .take(cap + 1)
+      : await ctx.db
+          .query('events')
+          .withIndex('by_project_startsAt', (q) => {
+            const eq = q.eq('projectId', projectId);
+            if (startsAt !== undefined && endsAt !== undefined) return eq.gte('startsAt', startsAt).lte('startsAt', endsAt);
+            if (startsAt !== undefined) return eq.gte('startsAt', startsAt);
+            if (endsAt !== undefined) return eq.lte('startsAt', endsAt);
+            return eq;
+          })
+          .order(order)
+          .take(cap + 1);
+  const isTruncated = rows.length > cap;
+  return { events: isTruncated ? rows.slice(0, cap) : rows, isTruncated };
+}
+
+export type FilteredValue = { value: number; isTruncated: boolean };
+
+/**
+ * `getServiceStatusCounts` with optional `projectId`/date-range filters,
+ * added rather than changed in place so the existing O(1) unfiltered query
+ * (and every test already driving it) is untouched. With no filter supplied
+ * it delegates straight to the counters above — the unfiltered headline path
+ * stays O(1), never regressed into a scan just to unify the two code paths —
+ * and every row's `isTruncated` is trivially `false` because a maintained
+ * counter is always exact. With any filter supplied, each status is read as
+ * its own bounded, capped range (mirroring `getUpcomingServices`'s per-status
+ * shape above), so one status truncating never hides another's exact count.
+ *
+ * NOTE on `maxFilteredScan` here vs. in `getSemanticTotal`/
+ * `getOccupancyMetrics` below: it means a DIFFERENT total bound in each. Here
+ * it caps EACH status independently (`eventStatuses.length` = 6 reads, each
+ * capped at `maxFilteredScan`, so a filtered organization can genuinely
+ * report up to `6 × maxFilteredScan` events combined). In `scanEventsForFilter`
+ * it caps the SINGLE combined scan across every status at once. A truncated
+ * `getFilteredServiceStatusCounts` result and a truncated
+ * `getPassengerTotals`/`getOccupancyMetrics` result for the identical filter
+ * are consequently not guaranteed to describe the same underlying sample of
+ * events — both are honest about their OWN truncation via `isTruncated`, but
+ * do not assume the two query families agree on which (or how many) events
+ * they saw once either one truncates.
+ */
+export async function getFilteredServiceStatusCounts(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; startsAt?: number; endsAt?: number },
+): Promise<{ status: EventStatus; count: number; isTruncated: boolean }[]> {
+  const { organizationId, projectId, startsAt, endsAt } = args;
+  await requireOrganizationMembership(ctx, organizationId);
+  await assertFilterProjectOwnership(ctx, organizationId, projectId);
+  assertValidFilterWindow(startsAt, endsAt);
+
+  if (projectId === undefined && startsAt === undefined && endsAt === undefined) {
+    const counts = await getServiceStatusCounts(ctx, organizationId);
+    return counts.map((row) => ({ ...row, isTruncated: false }));
+  }
+
+  return Promise.all(
+    eventStatuses.map(async (status) => {
+      const rows =
+        projectId === undefined
+          ? await ctx.db
+              .query('events')
+              .withIndex('by_org_status_startsAt', (q) => {
+                const eq = q.eq('organizationId', organizationId).eq('status', status);
+                if (startsAt !== undefined && endsAt !== undefined) return eq.gte('startsAt', startsAt).lte('startsAt', endsAt);
+                if (startsAt !== undefined) return eq.gte('startsAt', startsAt);
+                if (endsAt !== undefined) return eq.lte('startsAt', endsAt);
+                return eq;
+              })
+              .take(maxFilteredScan + 1)
+          : await ctx.db
+              .query('events')
+              .withIndex('by_project_status_startsAt', (q) => {
+                const eq = q.eq('projectId', projectId).eq('status', status);
+                if (startsAt !== undefined && endsAt !== undefined) return eq.gte('startsAt', startsAt).lte('startsAt', endsAt);
+                if (startsAt !== undefined) return eq.gte('startsAt', startsAt);
+                if (endsAt !== undefined) return eq.lte('startsAt', endsAt);
+                return eq;
+              })
+              .take(maxFilteredScan + 1);
+      const isTruncated = rows.length > maxFilteredScan;
+      return { status, count: isTruncated ? maxFilteredScan : rows.length, isTruncated };
+    }),
+  );
+}
+
+async function readSemanticTotalCounter(ctx: QueryCtx, organizationId: Id<'organizations'>, semanticType: TrackedSemanticType): Promise<{ sum: number; count: number }> {
+  const counter = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'total')).first();
+  return { sum: counter?.sum ?? 0, count: counter?.count ?? 0 };
+}
+
+/**
+ * Grand total (and the event count behind a mean) for one tracked semantic
+ * type, filterable by project and/or date range. Unfiltered reads the
+ * maintained `total` counter — O(1), exact, `isTruncated` always `false`.
+ * Filtered abandons the counter (which cannot answer an arbitrary range) for
+ * `scanEventsForFilter` capped at `maxFilteredScan`, most-recent-first —
+ * the same order `getOccupancyMetrics` scans in, so a truncated sample from
+ * either query describes the SAME set of services, not two different ones —
+ * resolving each scanned event's value through `resolveTrackedSemanticValues`
+ * with `getTrackedFieldDefinitions` resolved once, not once per event, so
+ * the whole read stays within I6 independent of how many fields a recipe
+ * version composes.
+ */
+async function getSemanticTotal(
+  ctx: QueryCtx,
+  semanticType: TrackedSemanticType,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; startsAt?: number; endsAt?: number },
+): Promise<{ total: FilteredValue; eventCount: FilteredValue }> {
+  const { organizationId, projectId, startsAt, endsAt } = args;
+  await requireOrganizationMembership(ctx, organizationId);
+  await assertFilterProjectOwnership(ctx, organizationId, projectId);
+  assertValidFilterWindow(startsAt, endsAt);
+
+  if (projectId === undefined && startsAt === undefined && endsAt === undefined) {
+    const { sum, count } = await readSemanticTotalCounter(ctx, organizationId, semanticType);
+    return { total: { value: sum, isTruncated: false }, eventCount: { value: count, isTruncated: false } };
+  }
+
+  // Only THIS semantic type — half the reads `getTrackedFieldDefinitions`
+  // (the write-path shape, which needs every tracked type at once) would do.
+  const trackedFields = await getTrackedFieldDefinitionsForType(ctx, organizationId, semanticType);
+  const { events, isTruncated } = await scanEventsForFilter(ctx, { organizationId, projectId, startsAt, endsAt, cap: maxFilteredScan, order: 'desc' });
+  let sum = 0;
+  let count = 0;
+  for (const event of events) {
+    const values = await resolveTrackedSemanticValues(ctx, event._id, trackedFields);
+    const value = values[semanticType];
+    if (value !== undefined) {
+      sum += value;
+      count += 1;
+    }
+  }
+  return { total: { value: sum, isTruncated }, eventCount: { value: count, isTruncated } };
+}
+
+export function getPassengerTotals(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; startsAt?: number; endsAt?: number },
+): Promise<{ total: FilteredValue; eventCount: FilteredValue }> {
+  return getSemanticTotal(ctx, 'passenger.count', args);
+}
+
+export function getAccessibilityRequirements(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; startsAt?: number; endsAt?: number },
+): Promise<{ total: FilteredValue; eventCount: FilteredValue }> {
+  return getSemanticTotal(ctx, 'accessibility.wheelchairCount', args);
+}
+
+/** Per-project rollup of one tracked semantic type's values, unfiltered — mirrors `getProjectBreakdown` exactly, including its dangling-row defense. */
+async function getSemanticByProject(
+  ctx: QueryCtx,
+  semanticType: TrackedSemanticType,
+  organizationId: Id<'organizations'>,
+  paginationOpts: PaginationOptions,
+): Promise<PaginationResult<{ project: Doc<'projects'>; sum: number; count: number }>> {
+  await requireOrganizationMembership(ctx, organizationId);
+  const counters = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category_project', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'project')).paginate(paginationOpts);
+  const page: { project: Doc<'projects'>; sum: number; count: number }[] = [];
+  for (const counter of counters.page) {
+    const project = counter.projectId === undefined ? null : await ctx.db.get(counter.projectId);
+    // See the identical dangling-reference note on `getProjectBreakdown` above.
+    if (project === null || project.organizationId !== organizationId) continue;
+    page.push({ project, sum: counter.sum, count: counter.count });
+  }
+  return { ...counters, page };
+}
+
+export function getPassengerTotalsByProject(ctx: QueryCtx, organizationId: Id<'organizations'>, paginationOpts: PaginationOptions) {
+  return getSemanticByProject(ctx, 'passenger.count', organizationId, paginationOpts);
+}
+export function getAccessibilityByProject(ctx: QueryCtx, organizationId: Id<'organizations'>, paginationOpts: PaginationOptions) {
+  return getSemanticByProject(ctx, 'accessibility.wheelchairCount', organizationId, paginationOpts);
+}
+
+/** Per-status rollup of one tracked semantic type's values, unfiltered — mirrors `getServiceStatusCounts` exactly. */
+async function getSemanticByStatus(
+  ctx: QueryCtx,
+  semanticType: TrackedSemanticType,
+  organizationId: Id<'organizations'>,
+): Promise<{ status: EventStatus; sum: number; count: number }[]> {
+  await requireOrganizationMembership(ctx, organizationId);
+  return Promise.all(
+    eventStatuses.map(async (status) => {
+      const counter = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category_status', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType).eq('category', 'eventStatus').eq('status', status)).first();
+      return { status, sum: counter?.sum ?? 0, count: counter?.count ?? 0 };
+    }),
+  );
+}
+
+export function getPassengerTotalsByStatus(ctx: QueryCtx, organizationId: Id<'organizations'>) {
+  return getSemanticByStatus(ctx, 'passenger.count', organizationId);
+}
+export function getAccessibilityByStatus(ctx: QueryCtx, organizationId: Id<'organizations'>) {
+  return getSemanticByStatus(ctx, 'accessibility.wheelchairCount', organizationId);
+}
+
+function medianOf(sorted: readonly number[]): number {
+  const mid = Math.floor(sorted.length / 2);
+  const upper = sorted[mid] ?? 0;
+  if (sorted.length % 2 === 1) return upper;
+  const lower = sorted[mid - 1] ?? 0;
+  return (lower + upper) / 2;
+}
+
+export type OccupancyMetrics = {
+  sampleSize: number;
+  isTruncated: boolean;
+  mean: number | null;
+  median: number | null;
+  max: number | null;
+  countAtOrAboveThreshold: number | null;
+};
+
+/**
+ * Occupancy has no capacity denominator in this domain (no fleet/vehicle
+ * concept — an explicit non-goal), so "occupancy" is defined here as the
+ * DISTRIBUTION of `passenger.count` across services matching the filter:
+ * sample size, mean, median, max, and (when `threshold` is supplied) how
+ * many services carried at least that many passengers. See
+ * docs/statistics.md "occupancyMetrics without a capacity denominator" for
+ * the full reasoning.
+ *
+ * Always a bounded, capped scan — NEVER a maintained counter, filtered or
+ * not — because a running counter can maintain a sum or a count but cannot
+ * answer a median or a max without materializing (something bounded by) the
+ * whole distribution; `mean` is the one statistic here a counter genuinely
+ * could answer in O(1) (see `getPassengerTotals`), but it is computed from
+ * the same bounded sample as the rest so the reported mean and median always
+ * describe the identical set of services, rather than one being exact
+ * (org-wide) and the others a sample when a caller reads them together.
+ * Scans the `maxFilteredScan` MOST RECENT matching events (descending
+ * `startsAt`) so a truncated sample favors current operations over old
+ * history.
+ */
+export async function getOccupancyMetrics(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; startsAt?: number; endsAt?: number; threshold?: number },
+): Promise<OccupancyMetrics> {
+  const { organizationId, projectId, startsAt, endsAt, threshold } = args;
+  await requireOrganizationMembership(ctx, organizationId);
+  await assertFilterProjectOwnership(ctx, organizationId, projectId);
+  assertValidFilterWindow(startsAt, endsAt);
+  if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 0)) {
+    return invalidInput('statisticsThresholdInvalid', 'Occupancy threshold must be a finite, non-negative number');
+  }
+
+  // Occupancy only ever reports on `passenger.count` — never probe
+  // `accessibility.wheelchairCount` fields it will not use.
+  const trackedFields = await getTrackedFieldDefinitionsForType(ctx, organizationId, 'passenger.count');
+  const { events, isTruncated } = await scanEventsForFilter(ctx, { organizationId, projectId, startsAt, endsAt, cap: maxFilteredScan, order: 'desc' });
+  const sample: number[] = [];
+  for (const event of events) {
+    const values = await resolveTrackedSemanticValues(ctx, event._id, trackedFields);
+    const passengerCount = values['passenger.count'];
+    if (passengerCount !== undefined) sample.push(passengerCount);
+  }
+  sample.sort((a, b) => a - b);
+
+  return {
+    sampleSize: sample.length,
+    isTruncated,
+    mean: sample.length === 0 ? null : sample.reduce((total, value) => total + value, 0) / sample.length,
+    median: sample.length === 0 ? null : medianOf(sample),
+    max: sample.length === 0 ? null : (sample[sample.length - 1] ?? null),
+    // Deliberately NOT `sample.length === 0 ? null : …`, unlike the three
+    // statistics above: `mean`/`median`/`max` have no answer for a zero-size
+    // sample (there is nothing to average), but "how many of these services
+    // met the threshold" has an unambiguous answer even when there are zero
+    // services — `0` — so this stays a real number whenever a `threshold`
+    // was supplied at all, `null` only when the caller didn't ask.
+    countAtOrAboveThreshold: threshold === undefined ? null : sample.filter((value) => value >= threshold).length,
+  };
+}
+
 export type BackfillPhase = 'clear' | 'events' | 'projects' | 'recipes' | 'locations';
 type BackfillDataPhase = Exclude<BackfillPhase, 'clear'>;
 
@@ -256,10 +873,28 @@ async function runBackfillDataPhase(
 ): Promise<{ continueCursor: string; isDone: boolean }> {
   if (phase === 'events') {
     const page = await ctx.db.query('events').withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId)).paginate({ numItems: batchSize, cursor });
+    // Resolved once for the whole page, not once per event (I6) — see
+    // `getTrackedFieldDefinitions`'s doc comment for why this is bounded by
+    // configuration rather than by the page's event count.
+    const trackedFields = await getTrackedFieldDefinitions(ctx, organizationId);
     for (const event of page.page) {
       await changeCounter(ctx, { organizationId, category: 'eventStatus', status: event.status, delta: 1 });
       await changeCounter(ctx, { organizationId, category: 'projectEvents', projectId: event.projectId, delta: 1 });
       await changeCounter(ctx, { organizationId, category: 'recipeEvents', recipeId: event.recipeId, delta: 1 });
+      // Legacy `eventFieldValues` rows already exist (they are written by
+      // event creation, independent of any counter); this rebuilds the
+      // maintained semantic counters — grand total, per-project, per-status —
+      // to match them, exactly as the three calls above rebuild the plain
+      // event counters. One delta per semantic type per EVENT (never per
+      // field row) — see `applyEventSemanticDelta`'s doc comment for why.
+      const values = await resolveTrackedSemanticValues(ctx, event._id, trackedFields);
+      for (const semanticType of trackedSemanticTypes) {
+        const value = values[semanticType];
+        if (value === undefined) continue;
+        await changeSemanticCounter(ctx, { organizationId, semanticType, category: 'total', deltaSum: value, deltaCount: 1 });
+        await changeSemanticCounter(ctx, { organizationId, semanticType, category: 'project', projectId: event.projectId, deltaSum: value, deltaCount: 1 });
+        await changeSemanticCounter(ctx, { organizationId, semanticType, category: 'eventStatus', status: event.status, deltaSum: value, deltaCount: 1 });
+      }
     }
     return { continueCursor: page.continueCursor, isDone: page.isDone };
   }
@@ -320,15 +955,27 @@ export async function backfillOrganizationCounters(
 
     const rows = await ctx.db.query('statisticsCounters').withIndex('by_org_category', (q) => q.eq('organizationId', args.organizationId)).take(batchSize);
     for (const row of rows) await ctx.db.delete(row._id);
-    if (rows.length === 0) {
-      const totals = await ctx.db.query('statisticsTotals').withIndex('by_org_metric', (q) => q.eq('organizationId', args.organizationId)).take(batchSize);
-      for (const total of totals) await ctx.db.delete(total._id);
-      const isDone = totals.length === 0;
-      await recordBackfillAudit(ctx, args.organizationId, 'clear', isDone);
-      return { continueCursor: '', isDone };
+    if (rows.length > 0) {
+      await recordBackfillAudit(ctx, args.organizationId, 'clear', false);
+      return { continueCursor: '', isDone: false };
     }
-    await recordBackfillAudit(ctx, args.organizationId, 'clear', false);
-    return { continueCursor: '', isDone: rows.length < batchSize };
+
+    // Same partial-prefix pattern as `statisticsCounters` above (only
+    // `organizationId` supplied, ranging over every `semanticType`/`category`
+    // this org has a row for) — a second drain stage between the plain event
+    // counters and the running totals below.
+    const semanticRows = await ctx.db.query('statisticsSemanticCounters').withIndex('by_org_semantic_category', (q) => q.eq('organizationId', args.organizationId)).take(batchSize);
+    for (const row of semanticRows) await ctx.db.delete(row._id);
+    if (semanticRows.length > 0) {
+      await recordBackfillAudit(ctx, args.organizationId, 'clear', false);
+      return { continueCursor: '', isDone: false };
+    }
+
+    const totals = await ctx.db.query('statisticsTotals').withIndex('by_org_metric', (q) => q.eq('organizationId', args.organizationId)).take(batchSize);
+    for (const total of totals) await ctx.db.delete(total._id);
+    const isDone = totals.length === 0;
+    await recordBackfillAudit(ctx, args.organizationId, 'clear', isDone);
+    return { continueCursor: '', isDone };
   }
 
   const phase = args.phase;

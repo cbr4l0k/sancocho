@@ -512,6 +512,7 @@ const esCO = {
     fieldKeyBuiltin: 'Las claves de campos personalizados no pueden usar una clave incorporada.',
     fieldDescriptionTooLong: 'La descripción puede tener máximo 2.000 caracteres.',
     fieldSemanticIncompatible: 'Elige un tipo semántico compatible con el tipo de dato.',
+    fieldSemanticTypeLimitExceeded: 'Se alcanzó el número máximo de campos para este tipo semántico.',
     fieldHistoricalFrozen:
       'Este campo se usa en una versión publicada o retirada; solo pueden cambiar su etiqueta ' + 'y descripción.',
     fieldArchived: 'Los campos archivados no se pueden editar.',
@@ -542,6 +543,8 @@ const esCO = {
     statisticsWindowInvalid: 'El rango de fechas para las estadísticas no es válido.',
     statisticsWindowTooLarge: 'El rango de fechas para las estadísticas es demasiado amplio.',
     statisticsLimitInvalid: 'El límite de resultados para las estadísticas no es válido.',
+    statisticsFilterWindowInvalid: 'El rango de fechas del filtro de estadísticas no es válido.',
+    statisticsThresholdInvalid: 'El umbral de ocupación no es válido.',
   },
   nav: {
     chat: 'Chat',

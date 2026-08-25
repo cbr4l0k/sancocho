@@ -49,6 +49,7 @@ async function deleteAll<
     | 'fieldDefinitions'
     | 'locations'
     | 'statisticsCounters'
+    | 'statisticsSemanticCounters'
     | 'statisticsTotals'
     | 'statisticsBackfillProgress',
 >(
@@ -74,6 +75,7 @@ export const resetTenantOperations = internalMutation({
     fieldDefinitions: v.number(),
     locations: v.number(),
     statisticsCounters: v.number(),
+    statisticsSemanticCounters: v.number(),
     statisticsTotals: v.number(),
     statisticsBackfillProgress: v.number(),
     auditEvents: v.number(),
@@ -98,6 +100,7 @@ export const resetTenantOperations = internalMutation({
     // slate" tenant, and every reseed generation would silently add onto the
     // last one's counts instead of starting from zero.
     const statisticsCounters = await deleteAll(ctx, 'statisticsCounters');
+    const statisticsSemanticCounters = await deleteAll(ctx, 'statisticsSemanticCounters');
     const statisticsTotals = await deleteAll(ctx, 'statisticsTotals');
     const statisticsBackfillProgress = await deleteAll(ctx, 'statisticsBackfillProgress');
 
@@ -119,6 +122,7 @@ export const resetTenantOperations = internalMutation({
       fieldDefinitions,
       locations,
       statisticsCounters,
+      statisticsSemanticCounters,
       statisticsTotals,
       statisticsBackfillProgress,
       auditEvents,

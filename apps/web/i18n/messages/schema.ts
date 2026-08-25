@@ -404,6 +404,7 @@ export type MessageSchema = {
     fieldKeyBuiltin: string;
     fieldDescriptionTooLong: string;
     fieldSemanticIncompatible: string;
+    fieldSemanticTypeLimitExceeded: string;
     fieldHistoricalFrozen: string;
     fieldArchived: string;
     fieldDeleteBlocked: string;
@@ -433,6 +434,8 @@ export type MessageSchema = {
     statisticsWindowInvalid: string;
     statisticsWindowTooLarge: string;
     statisticsLimitInvalid: string;
+    statisticsFilterWindowInvalid: string;
+    statisticsThresholdInvalid: string;
   };
   nav: {
     chat: string;
