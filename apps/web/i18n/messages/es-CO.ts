@@ -51,7 +51,7 @@ const esCO = {
     revokeConfirm: 'Revocar invitación',
     myPendingTitle: 'Invitaciones para ti',
     myPendingDescription:
-      'Alguien te invitó a unirte a una organización en Sancocho. No se envió ningún correo: la invitación solo aparece aquí, dentro de la aplicación.',
+      'Alguien te invitó a unirte a una organización en Priamo. No se envió ningún correo: la invitación solo aparece aquí, dentro de la aplicación.',
     invitedAs: 'Invitado como:',
     accept: 'Aceptar',
   },
