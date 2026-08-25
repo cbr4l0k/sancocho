@@ -17,6 +17,9 @@ export const errorCodes = [
   'statisticsThresholdInvalid',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
+  'invitationEmailInvalid',
+  'invitationNotPending',
+  'invitationExpired',
   'projectDescriptionTooLong',
   'projectArchived',
   'projectArchiveRequired',

@@ -38,6 +38,10 @@ issue tracker is not a durable substitute.
 | Lifecycle checks are ordered **after** the org comparison in `createRelationship` | A caller must never learn a foreign event's status from a specific error | `relationships/model.ts` |
 | **Operators may change event status**; authoring stays planner+ | Operators exist to *run* events (activate, complete, cancel on the ground) without changing what an event says it is | `events/model.ts` (`operatingRole`), [`authorization.md`](authorization.md) |
 | `by_org_role` index for cheaper owner counting was not added | Owner counting reads the `by_org_user` org prefix, which is also what makes concurrent owner removals conflict. Optimization deferred | `organizations/model.ts` |
+| **Invitations (#56) are addressed to an email, never a user id, and nothing looks a user up by address** | The only way to keep "invite an address with an account" indistinguishable from "invite one without" (I9). Acceptance proves the caller is the recipient by comparing the authenticated caller's own `users.email` — which `auth/model.ts` only ever sets from a provider-*verified* claim — against the invitation's stored (normalized) address; a mismatch returns the same generic error as a missing invitation, before anything about the invitation's lifecycle state is revealed | `invitations/model.ts:acceptInvitation` |
+| Invitation `expired` status settles **asymmetrically**: `createInvitation` writes it, `acceptInvitation` never does | A Convex mutation is one atomic transaction — a status write made right before `acceptInvitation` throws its rejection would be rolled back with everything else in the call, so accept compares `expiresAt` to now directly instead and leaves `status` untouched. `createInvitation` is a success path (no throw after its write), so when its duplicate-address check finds a `pending` row already past `expiresAt`, it settles that row to `expired` and proceeds — which is also what frees the address up for re-inviting instead of reporting a bare `conflict()` against a dead row (found by `invariant-auditor` on #56). No cron sweep exists (I8). Every OTHER reader (the pending-invitation lists) still treats a `pending` row past `expiresAt` as effectively expired rather than trusting `status` alone, since nothing guarantees a `createInvitation` call has run against that address since it lapsed | `invitations/model.ts` |
+| `users.email` normalization happens **at comparison time in the invitations domain, not at storage time in `auth/model.ts`** | `auth/model.ts` stores the provider's email claim verbatim (no case folding), while `organizationInvitations.email` is stored trimmed+lowercased. `invitations/model.ts:normalizeEmailForComparison` folds both sides to the same case wherever an invitation is matched against the caller's own email (`acceptInvitation`, `listMyPendingInvitations`) — found by `invariant-auditor` on #56 as a HIGH defect (a mixed-case IdP claim could see an empty pending-invitations list forever). Normalizing at write time in `auth/model.ts` instead would be the more thorough fix (it would also fix member-roster/display consistency) but changes a shared, deployment-wide table read by every domain and would need a backfill migration for existing rows; the local fix is scoped to this domain and sufficient for correctness here | `invitations/model.ts` |
+| An invitation's role is authorized once, **at creation**, never re-checked at acceptance | If the inviter is later demoted or removed, an outstanding invitation they created still grants its original role when accepted within the (14-day) TTL — including a same-org `owner` grant from an owner who has since lost that rank. Standard practice for invite-style grants elsewhere (e.g. platform org invites): permission is checked at send time, and an admin who offboards someone is expected to also clean up what they sent. No cascade-revoke exists because it requires a new `invitedByUserId` index and couples `organizations/model.ts`'s `removeMember`/`changeMemberRole` to the invitations domain — deliberately deferred rather than added speculatively for a scenario outside #56's test checklist. Found by `invariant-auditor` on #56 (MEDIUM); tracked as a known gap, not fixed, and pinned by an explicit test (`an invitation still grants its role at acceptance even if the inviter was later demoted`) so a future change to this behavior is a deliberate decision, not a silent regression | `invitations/model.ts`, `organizations/model.ts`, `tests/invitations.test.ts` |
 
 ## Fields, recipes and versions
 
@@ -114,10 +118,14 @@ issue tracker is not a durable substitute.
 Deferred deliberately (tracked in issue #18). None of these are bugs discovered late; each was
 a decision to stop rather than guess.
 
-1. **`addMember` has no consent step.** It attaches an existing user id directly, so an admin
-   who learns any user's Convex id can add them, and the added user immediately gains read
-   access to the member roster (names and emails). A verified-email invite flow should replace
-   it as the user-facing path. `organizations/model.ts` carries the note.
+1. **Resolved by #56.** `addMember` still has no consent step and is still callable by any
+   admin, but it is no longer the user-facing path: `invitations.createInvitation` →
+   `invitations.acceptInvitation` (`invitations/model.ts`) is, and it is addressed to an email,
+   never a user id, with membership created only inside the recipient's own `acceptInvitation`
+   call. `addMember` stays public rather than becoming `internalMutation` because ~70 existing
+   test fixtures across every other domain's suite provision memberships through it directly;
+   migrating all of them to route through invitations is a mechanical follow-up, not part of
+   #56. No product surface calls `addMember` anymore. `organizations/model.ts` carries the note.
 2. **Field archival is irreversible, and asymmetric with the location case.** There is no
    unarchive for a field definition, and an archived field cannot be composed into a draft —
    so a clone-then-publish of a version that uses it fails until the field is removed from
@@ -140,6 +148,11 @@ a decision to stop rather than guess.
    backfill — correct at the time, since no real data existed. Any deployment carrying
    recipe-field location defaults written before that commit needs a one-off backfill, or
    `deleteLocation`'s guard will miss them.
+6. **An invitation's role is authorized once, at creation, never re-checked at acceptance
+   (#56).** If the inviter is later demoted or removed, their still-pending invitations keep
+   granting the original role — including `owner` — for up to the 14-day TTL. No cascade-revoke
+   exists; offboarding an admin/owner should include revoking what they invited. See the
+   `invitations/model.ts` row in the table above.
 
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 recipe fields (the plug-in point is documented in `recipes/fields/model.ts`), organization

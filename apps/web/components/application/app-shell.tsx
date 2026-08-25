@@ -10,6 +10,7 @@ import { api } from '@sancocho/convex/api';
 
 import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
 import { CurrentOrganizationProvider, useCurrentOrganization } from '@/components/organizations/current-organization';
+import { PendingInvitationsPanel } from '@/components/organizations/pending-invitations-panel';
 import { Button } from '@/components/ui/button';
 import { EmptyState, UnavailableState } from '@/components/ui/empty-state';
 import { Field, FieldControl, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
@@ -169,35 +170,38 @@ function CreateOrganization() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[88rem] items-center px-6 py-8">
-      <Panel emphasis="focal" className="mx-auto w-full max-w-[34rem]">
-        <PanelHeader>
-          <div>
-            <PanelTitle className="text-display font-extrabold tracking-[-0.025em]">
-              {t('organizations.createTitle')}
-            </PanelTitle>
-            <PanelDescription>{t('organizations.createDescription')}</PanelDescription>
-          </div>
-        </PanelHeader>
-        <PanelBody>
-          <form className="flex flex-col gap-4" onSubmit={submit}>
-            <Field>
-              <FieldLabel required>{t('organizations.nameLabel')}</FieldLabel>
-              <FieldControl required value={name} onChange={(event) => setName(event.target.value)} />
-            </Field>
-            <Field invalid={error === 'invalid'}>
-              <FieldLabel required>{t('organizations.slugLabel')}</FieldLabel>
-              <FieldControl required value={slug} onChange={(event) => setSlug(event.target.value)} />
-              <FieldDescription>{t('organizations.slugDescription')}</FieldDescription>
-              {errorText === null ? null : <FieldError>{errorText}</FieldError>}
-            </Field>
+      <div className="mx-auto flex w-full max-w-[34rem] flex-col">
+        <PendingInvitationsPanel />
+        <Panel emphasis="focal">
+          <PanelHeader>
             <div>
-              <Button variant="primary" type="submit" disabled={submitting}>
-                {t('organizations.createAction')}
-              </Button>
+              <PanelTitle className="text-display font-extrabold tracking-[-0.025em]">
+                {t('organizations.createTitle')}
+              </PanelTitle>
+              <PanelDescription>{t('organizations.createDescription')}</PanelDescription>
             </div>
-          </form>
-        </PanelBody>
-      </Panel>
+          </PanelHeader>
+          <PanelBody>
+            <form className="flex flex-col gap-4" onSubmit={submit}>
+              <Field>
+                <FieldLabel required>{t('organizations.nameLabel')}</FieldLabel>
+                <FieldControl required value={name} onChange={(event) => setName(event.target.value)} />
+              </Field>
+              <Field invalid={error === 'invalid'}>
+                <FieldLabel required>{t('organizations.slugLabel')}</FieldLabel>
+                <FieldControl required value={slug} onChange={(event) => setSlug(event.target.value)} />
+                <FieldDescription>{t('organizations.slugDescription')}</FieldDescription>
+                {errorText === null ? null : <FieldError>{errorText}</FieldError>}
+              </Field>
+              <div>
+                <Button variant="primary" type="submit" disabled={submitting}>
+                  {t('organizations.createAction')}
+                </Button>
+              </div>
+            </form>
+          </PanelBody>
+        </Panel>
+      </div>
     </main>
   );
 }
@@ -285,6 +289,7 @@ function ShellFrame({ children }: ApplicationShellProps) {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[88rem] px-6 py-8 pb-12">
+        <PendingInvitationsPanel />
         {currentOrganization === null ? (
           <Panel emphasis="focal">
             <PanelBody>

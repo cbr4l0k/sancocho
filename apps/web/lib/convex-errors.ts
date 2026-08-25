@@ -9,6 +9,9 @@ export type ConvexErrorMessageKey =
   | 'errors.entityNameInvalid'
   | 'errors.searchTermTooLong'
   | 'errors.organizationSlugInvalid'
+  | 'errors.invitationEmailInvalid'
+  | 'errors.invitationNotPending'
+  | 'errors.invitationExpired'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
@@ -66,6 +69,9 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   entityNameInvalid: 'errors.entityNameInvalid',
   searchTermTooLong: 'errors.searchTermTooLong',
   organizationSlugInvalid: 'errors.organizationSlugInvalid',
+  invitationEmailInvalid: 'errors.invitationEmailInvalid',
+  invitationNotPending: 'errors.invitationNotPending',
+  invitationExpired: 'errors.invitationExpired',
   projectDescriptionTooLong: 'errors.projectDescriptionTooLong',
   projectArchived: 'errors.projectArchived',
   projectArchiveRequired: 'errors.projectArchiveRequired',

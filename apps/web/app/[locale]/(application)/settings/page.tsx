@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { api } from '@sancocho/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
+import { InviteMemberPanel } from '@/components/organizations/invite-member-panel';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBodyFlush } from '@/components/ui/panel';
@@ -20,7 +21,7 @@ import {
   TableRowHeaderCell,
   TableSkeletonRows,
 } from '@/components/ui/table';
-import { roleLabelKey } from '@/lib/roles';
+import { roleAtLeast, roleLabelKey } from '@/lib/roles';
 
 export default function SettingsPage() {
   const { currentOrganization } = useCurrentOrganization();
@@ -33,8 +34,15 @@ export default function SettingsPage() {
 
   if (currentOrganization === null) return null;
 
+  // UI role check only — an affordance, never authorization (I1). The
+  // backend re-proves admin on every invitations mutation regardless.
+  const isAdmin = roleAtLeast(currentOrganization.role, 'admin');
+
   return (
     <div className="flex flex-col gap-6">
+      {isAdmin ? (
+        <InviteMemberPanel organizationId={currentOrganization.organization._id} callerRole={currentOrganization.role} />
+      ) : null}
       <PageHeader title={t('organizations.rosterTitle')} />
       <Panel>
         <PanelBodyFlush>

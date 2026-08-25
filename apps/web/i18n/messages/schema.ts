@@ -57,6 +57,29 @@ export type MessageSchema = {
     memberRole: string;
     noOrganizationTitle: string;
   };
+  invitations: {
+    inviteTitle: string;
+    inviteDescription: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    roleLabel: string;
+    inviteAction: string;
+    pendingListTitle: string;
+    pendingEmpty: string;
+    pendingEmptyBody: string;
+    pendingEmail: string;
+    pendingRole: string;
+    pendingExpires: string;
+    expiredBadge: string;
+    revoke: string;
+    revokeTitle: string;
+    revokeWarning: string;
+    revokeConfirm: string;
+    myPendingTitle: string;
+    myPendingDescription: string;
+    invitedAs: string;
+    accept: string;
+  };
   projects: {
     title: string;
     create: string;
@@ -443,6 +466,9 @@ export type MessageSchema = {
     entityNameInvalid: string;
     searchTermTooLong: string;
     organizationSlugInvalid: string;
+    invitationEmailInvalid: string;
+    invitationNotPending: string;
+    invitationExpired: string;
     projectDescriptionTooLong: string;
     projectArchived: string;
     projectArchiveRequired: string;
