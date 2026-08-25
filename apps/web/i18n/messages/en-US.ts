@@ -52,7 +52,7 @@ const enUS = {
     revokeConfirm: 'Revoke invitation',
     myPendingTitle: 'Invitations for you',
     myPendingDescription:
-      'Someone invited you to join an organization on Sancocho. No email was sent: the invitation only shows up here, inside the application.',
+      'Someone invited you to join an organization on Priamo. No email was sent: the invitation only shows up here, inside the application.',
     invitedAs: 'Invited as:',
     accept: 'Accept',
   },

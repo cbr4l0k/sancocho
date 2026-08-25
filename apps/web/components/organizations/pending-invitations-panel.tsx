@@ -5,7 +5,7 @@ import type { FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { Button } from '@/components/ui/button';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
