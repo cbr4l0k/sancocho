@@ -1,4 +1,4 @@
-# Sancocho — Logistics Operations Platform
+# Priamo — Logistics Operations Platform
 
 Open-source logistics operations platform: TypeScript (strict) + Convex + Clerk backend,
 with a Next.js operations console on top. For logistics companies, transportation
@@ -98,8 +98,8 @@ building a screen.
   `components/ui/` and re-skinned onto our tokens. Compose screens from those primitives.
 - Route pages under `app/[locale]/(application)/` stay thin (await `params`, render a
   surface); the work lives in `'use client'` surface components under `components/<domain>/`.
-- Backend access is the generated API only: `import { api } from '@sancocho/convex/api'`,
-  plus `@sancocho/convex/validators` and `/errors` for shared types. Never hand-write a
+- Backend access is the generated API only: `import { api } from '@priamo/convex/api'`,
+  plus `@priamo/convex/validators` and `/errors` for shared types. Never hand-write a
   backend signature or re-declare a union the backend owns.
 - Tenant lists use `usePaginatedQuery` (mirrors I6) and pass `'skip'` until the current
   organization is known.

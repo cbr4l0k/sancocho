@@ -1,5 +1,5 @@
 {
-  "name": "@sancocho/convex",
+  "name": "@priamo/convex",
   "private": true,
   "type": "module",
   "version": "0.0.0",
@@ -21,7 +21,7 @@
     "codegen": "convex codegen",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "seed:enable": "convex env set SANCOCHO_ENABLE_SEED true",
+    "seed:enable": "convex env set PRIAMO_ENABLE_SEED true",
     "seed": "convex run seed/mutations:seedDemonstrationData"
   },
   "dependencies": {

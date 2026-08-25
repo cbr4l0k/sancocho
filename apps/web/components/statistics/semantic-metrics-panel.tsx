@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 

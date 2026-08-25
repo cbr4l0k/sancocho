@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 import type { ChatProposal, ChatProposalStatus } from '@/lib/chat-backend';
 import { cn } from '@/lib/utils';
-import type { FieldDataType } from '@sancocho/convex/validators';
+import type { FieldDataType } from '@priamo/convex/validators';
 
 /**
  * A neutral, read-only preview of a proposal payload — proof that the stub

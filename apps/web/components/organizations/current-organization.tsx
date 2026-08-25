@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-import type { api } from '@sancocho/convex/api';
+import type { api } from '@priamo/convex/api';
 import type { FunctionReturnType } from 'convex/server';
 
-const organizationCookieName = 'sancocho_organization';
+const organizationCookieName = 'priamo_organization';
 
 export type OrganizationMembership = FunctionReturnType<typeof api.organizations.queries.listMyOrganizations>[number];
 type OrganizationId = FunctionReturnType<typeof api.organizations.mutations.createOrganization>;

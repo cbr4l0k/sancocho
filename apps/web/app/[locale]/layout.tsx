@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: LocaleLayoutProps): Promise<M
   const locale = isLocaleSegment(segment) ? canonicalLocaleForSegment(segment) : 'es-CO';
   const messages = messagesForLocale(locale);
 
-  return { title: 'Sancocho', description: messages.auth.signedOut };
+  return { title: 'Priamo', description: messages.auth.signedOut };
 }
 
 export default async function LocaleLayout({ children, params }: LocaleLayoutProps) {

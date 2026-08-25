@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
 import { CurrentOrganizationProvider, useCurrentOrganization } from '@/components/organizations/current-organization';

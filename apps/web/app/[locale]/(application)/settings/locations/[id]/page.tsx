@@ -1,6 +1,6 @@
 import type { FunctionArgs } from 'convex/server';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { LocationDetailSurface } from '@/components/locations/locations-surface';
 

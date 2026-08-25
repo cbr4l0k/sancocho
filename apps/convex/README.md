@@ -1,4 +1,4 @@
-# @sancocho/convex
+# @priamo/convex
 
 The Convex backend: schema, domain modules, authorization, validation, audit log and seeds.
 
@@ -6,7 +6,7 @@ The Convex backend: schema, domain modules, authorization, validation, audit log
 bun run typecheck   # tsc --noEmit
 bun run test        # vitest run (edge-runtime; NOT bun test)
 bun run codegen     # convex codegen — requires a configured deployment
-bun run seed:enable # convex env set SANCOCHO_ENABLE_SEED true
+bun run seed:enable # convex env set PRIAMO_ENABLE_SEED true
 bun run seed        # convex run seed/mutations:seedDemonstrationData
 ```
 

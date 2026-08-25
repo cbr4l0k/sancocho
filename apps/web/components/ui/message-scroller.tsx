@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Vendored from shadcn/ui (`@shadcn/message-scroller`) and re-skinned onto
- * Sancocho's tokens. The stick-to-bottom scroll behaviour — including the
+ * Priamo's tokens. The stick-to-bottom scroll behaviour — including the
  * "jump to latest" button that only appears once the viewer has scrolled away
  * from the live edge — comes from `@shadcn/react`; every visual decision below
  * is ours. This is what lets the chat surface's streaming-style incremental

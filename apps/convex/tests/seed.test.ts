@@ -23,9 +23,9 @@ const listProjectEvents = api.events.queries.listProjectEvents;
 const listRecipes = api.recipes.queries.listRecipes;
 const addRecipeField = api.recipes.fields.mutations.addRecipeField;
 
-const issuer = 'https://seed.sancocho.internal';
+const issuer = 'https://seed.priamo.internal';
 const subject = 'demonstration-owner';
-const ownerIdentity = { issuer, subject, name: 'Demonstration Owner', email: 'demo-owner@sancocho.invalid', emailVerified: true };
+const ownerIdentity = { issuer, subject, name: 'Demonstration Owner', email: 'demo-owner@priamo.invalid', emailVerified: true };
 
 /**
  * 2026-06-15T15:40:00Z: the demonstration flight's 18:40 local arrival as a
@@ -85,7 +85,7 @@ async function readBuiltins(t: SeedTest): Promise<Doc<'fieldDefinitions'>[]> {
 /** The seeded slice, read straight from the database rather than through a query. */
 async function readDemonstration(t: SeedTest) {
   return t.run(async (ctx) => {
-    const organization = await ctx.db.query('organizations').withIndex('by_slug', (q) => q.eq('slug', 'sancocho-demo')).unique();
+    const organization = await ctx.db.query('organizations').withIndex('by_slug', (q) => q.eq('slug', 'priamo-demo')).unique();
     if (organization === null) throw new Error('Expected demonstration organization');
     const memberships = await ctx.db.query('organizationMemberships').withIndex('by_org_user', (q) => q.eq('organizationId', organization._id)).collect();
     const projects = await ctx.db.query('projects').withIndex('by_org', (q) => q.eq('organizationId', organization._id)).collect();
@@ -321,7 +321,7 @@ test('the seed refuses to write into an organization that already owns the demon
   const t = convexTest(schema, modules);
   const squatter = t.withIdentity({ issuer: 'https://example.clerk.accounts.dev', subject: 'squatter', name: 'Squatter' });
   await squatter.mutation(ensureUser, {});
-  await squatter.mutation(createOrganization, { name: 'Someone Else', slug: 'sancocho-demo' });
+  await squatter.mutation(createOrganization, { name: 'Someone Else', slug: 'priamo-demo' });
 
   // Generic conflict: the seed cannot proceed, and says nothing about who holds
   // the deployment-wide slug (I9).

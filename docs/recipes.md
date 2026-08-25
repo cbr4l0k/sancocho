@@ -10,7 +10,7 @@ A field definition is a reusable unit of information. Two scopes:
 
 | Scope | `organizationId` | Created by | Key uniqueness |
 | --- | --- | --- | --- |
-| `builtin` | absent | `fields.createBuiltinFieldDefinition` (`internalMutation`, seeds only, behind `SANCOCHO_ENABLE_SEED`) | Globally unique across the deployment |
+| `builtin` | absent | `fields.createBuiltinFieldDefinition` (`internalMutation`, seeds only, behind `PRIAMO_ENABLE_SEED`) | Globally unique across the deployment |
 | `organization` | present | `fields.createFieldDefinition` (planner+) | Unique per organization, and may not shadow a built-in key |
 
 Keys are 2–64 character lowerCamelCase identifiers (`/^[a-z][a-zA-Z0-9]*$/`). Both the

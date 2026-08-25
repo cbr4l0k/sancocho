@@ -3,7 +3,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * Vendored from shadcn/ui (`@shadcn/message`) and re-skinned onto Sancocho's
+ * Vendored from shadcn/ui (`@shadcn/message`) and re-skinned onto Priamo's
  * tokens. Purely presentational — no state, no dependency beyond `cn` — so it
  * composes into any conversation surface. `align="end"` is the operator's own
  * turns; `align="start"` is everything the other party said.

@@ -1,6 +1,6 @@
-# Sancocho web
+# Priamo web
 
-The Sancocho web application is a Next.js App Router workspace connected to the
+The Priamo web application is a Next.js App Router workspace connected to the
 existing Convex backend and Clerk. It carries the shared design system and the
 organization workspace.
 
@@ -67,7 +67,7 @@ screen.
   are recorded in `docs/web-design.md`.
 - **Locale routing** will use `/es/...` (default) and `/en/...` in issue #37. This
   shell deliberately does not implement locale segments, middleware, or catalogs.
-- The generated Convex API is imported as `api` from `@sancocho/convex/api`. The
+- The generated Convex API is imported as `api` from `@priamo/convex/api`. The
   workspace package export points directly to Convex's committed generated API,
   so the web app does not hand-write backend function signatures.
 - **Internationalization** uses `next-intl` because it is App Router-native,

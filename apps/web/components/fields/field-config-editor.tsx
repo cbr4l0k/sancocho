@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import type { FieldDataType, fieldConfigValidator } from '@sancocho/convex/validators';
+import type { FieldDataType, fieldConfigValidator } from '@priamo/convex/validators';
 
 import { Button } from '@/components/ui/button';
 import { isValidDateInput, isValidTimeInput, parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';

@@ -4,7 +4,7 @@ import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@sancocho/convex'],
+  transpilePackages: ['@priamo/convex'],
 
   /**
    * Hosts allowed to reach `next dev` through a tunnel (Cloudflare quick
@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
    * together with only the node_modules Next traced as reachable, so the runtime
    * image carries no build toolchain and no dev dependencies.
    *
-   * The tracing root must be the workspace root: `@sancocho/convex` resolves
+   * The tracing root must be the workspace root: `@priamo/convex` resolves
    * above `apps/web`, and without this Next would root the trace at `apps/web`
    * and silently drop those files from the standalone output.
    */

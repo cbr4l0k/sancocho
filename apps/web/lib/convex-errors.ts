@@ -1,4 +1,4 @@
-import type { ErrorCode } from '@sancocho/convex/errors';
+import type { ErrorCode } from '@priamo/convex/errors';
 import { ConvexError } from 'convex/values';
 
 export type ConvexErrorMessageKey =

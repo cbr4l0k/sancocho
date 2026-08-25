@@ -4,7 +4,7 @@ import { useQuery } from 'convex/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';

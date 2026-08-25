@@ -3,7 +3,7 @@
 import { usePaginatedQuery } from 'convex/react';
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';

@@ -22,7 +22,7 @@ Why, in order of weight:
 2. **Nothing here is authoritative data.** Per #33, the assistant never writes directly;
    a proposal only becomes a real Recipe or Service once a human accepts it into the
    existing form and submits the existing mutation. The conversation transcript itself
-   is scratch space for getting there, not a record Sancocho needs to keep — the actual
+   is scratch space for getting there, not a record Priamo needs to keep — the actual
    product artifacts (recipes, services) are what get persisted, through the paths that
    already persist them.
 3. **In-memory is honest about what the stub is.** #32 explicitly forbids network calls

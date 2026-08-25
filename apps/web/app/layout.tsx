@@ -9,7 +9,7 @@ import { defaultLocale, isCanonicalLocale } from '@/i18n/locales';
 import './globals.css';
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  const localeHeader = (await headers()).get('x-sancocho-locale');
+  const localeHeader = (await headers()).get('x-priamo-locale');
   const locale =
     localeHeader !== null && isCanonicalLocale(localeHeader) ? localeHeader : defaultLocale;
 

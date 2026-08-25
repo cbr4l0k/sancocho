@@ -60,7 +60,7 @@ Admins do everything else.
 | `fields.createFieldDefinition`, `updateFieldDefinition`, `archiveFieldDefinition`, `deleteFieldDefinition` | planner | Built-in definitions are not editable through any public door |
 | `fields.listFieldDefinitions` | viewer | |
 | `fields.listBuiltinFieldDefinitions` | authenticated app user | The catalogue is deployment-wide, not tenant data |
-| `fields.createBuiltinFieldDefinition` | internal only | `internalMutation`; reachable from seeds and the CLI, never from a client — and gated on the `SANCOCHO_ENABLE_SEED` deployment opt-in, because it squats a built-in key deployment-wide and permanently |
+| `fields.createBuiltinFieldDefinition` | internal only | `internalMutation`; reachable from seeds and the CLI, never from a client — and gated on the `PRIAMO_ENABLE_SEED` deployment opt-in, because it squats a built-in key deployment-wide and permanently |
 | `recipes.createRecipe`, `updateRecipeMetadata`, `archiveRecipe`, `createInitialDraftVersion`, `clonePublishedVersionToDraft`, `publishRecipeVersion` | planner | |
 | `recipes.getRecipe`, `listRecipes`, `getRecipeVersion` | viewer | |
 | `recipes.fields.addRecipeField`, `updateRecipeField`, `reorderRecipeFields`, `removeRecipeField` | planner | Draft versions only (I2) |

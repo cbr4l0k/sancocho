@@ -13,7 +13,7 @@ export type LocaleSegment = keyof typeof localeSegments;
 export type CanonicalLocale = (typeof localeSegments)[LocaleSegment];
 
 export const defaultLocale: CanonicalLocale = 'es-CO';
-export const localeCookieName = 'sancocho_locale';
+export const localeCookieName = 'priamo_locale';
 
 export function isLocaleSegment(value: string): value is LocaleSegment {
   return Object.hasOwn(localeSegments, value);

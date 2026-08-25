@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import type { FieldDataType } from '@sancocho/convex/validators';
+import type { FieldDataType } from '@priamo/convex/validators';
 
 import { clampConfigToBound, type FieldConfig } from './recipe-field-narrowing';
 

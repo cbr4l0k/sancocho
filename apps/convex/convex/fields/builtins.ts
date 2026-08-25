@@ -40,7 +40,7 @@ export const builtinFields = [
 export type BuiltinFieldKey = (typeof builtinFields)[number]['key'];
 
 /**
- * Product bootstrap deliberately does not assert `SANCOCHO_ENABLE_SEED`: every
+ * Product bootstrap deliberately does not assert `PRIAMO_ENABLE_SEED`: every
  * deployment needs this catalogue before its first organization can operate.
  * The guard remains on the two doors that create arbitrary built-ins
  * (`fields/mutations.ts:createBuiltinFieldDefinition`) and demonstration tenant

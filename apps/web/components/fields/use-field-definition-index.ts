@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 type FieldDefinition = FunctionReturnType<
   typeof api.fields.queries.getFieldDefinitionsByIds

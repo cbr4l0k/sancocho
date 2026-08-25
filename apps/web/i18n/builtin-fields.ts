@@ -1,4 +1,4 @@
-import type { SemanticType } from '@sancocho/convex/validators';
+import type { SemanticType } from '@priamo/convex/validators';
 
 import type { CanonicalLocale } from './locales';
 import { messagesForLocale } from './messages';

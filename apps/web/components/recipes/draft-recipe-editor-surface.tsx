@@ -5,7 +5,7 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { useFieldDefinitionIndex } from '@/components/fields/use-field-definition-index';
 import { FieldConfigEditor } from '@/components/fields/field-config-editor';

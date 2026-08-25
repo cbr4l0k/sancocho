@@ -3,7 +3,7 @@
 import { useQuery } from 'convex/react';
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { Panel, PanelBody, PanelHeader, PanelMetric, PanelTitle } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';

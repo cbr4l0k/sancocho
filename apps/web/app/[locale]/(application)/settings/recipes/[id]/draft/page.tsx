@@ -1,7 +1,7 @@
 import { DraftRecipeEditorSurface } from '@/components/recipes/draft-recipe-editor-surface';
 import type { FunctionArgs } from 'convex/server';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 export default async function DraftRecipePage({
   params,
