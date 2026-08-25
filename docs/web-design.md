@@ -295,10 +295,13 @@ Reasons, in order of weight:
 | `LoadingFirstPage` | Nothing — `TableSkeletonRows` occupies the body instead |
 | `CanLoadMore` | Loaded count + a ghost "Cargar más" button |
 | `LoadingMore` | Loaded count + the same button, disabled, labelled "Cargando…" |
-| `Exhausted` | Loaded count + "Fin de la lista" |
+| `Exhausted` | Loaded count alone — the absent button is the signal |
 
-The count is reported as *rows in hand* (`{n} registros cargados`), never as a
-fraction of an unknown total. The footer is `aria-live="polite"` so the count is
+`Exhausted` deliberately renders no end-of-list label. One lived there and was
+removed: it restated what the missing "Cargar más" button already said, and it
+did so at the one point in the list where the reader has no decision left to
+make. The count is reported as *rows in hand* (`{n} registros cargados`), never
+as a fraction of an unknown total. The footer is `aria-live="polite"` so the count is
 announced after a load. Default page size 25.
 
 **A `Table` that assumes it has the whole dataset is wrong.** Client-side

@@ -692,7 +692,6 @@ const esCO = {
     loaded: '{count, plural, =0 {Sin registros cargados} one {# registro cargado} other {# registros cargados}}',
     loadMore: 'Cargar más',
     loadingMore: 'Cargando…',
-    endOfList: 'Fin de la lista',
   },
   dataTable: {
     search: 'Buscar',
