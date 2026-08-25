@@ -1,2 +1,6 @@
-import { ComingSoon } from '@/components/application/coming-soon';
-export default function StatisticsPage() { return <ComingSoon surface="statistics" />; }
+import { StatisticsSurface } from '@/components/statistics/statistics-surface';
+
+export default async function StatisticsPage({ params }: { params: Promise<{ locale: string }> }) {
+  await params;
+  return <StatisticsSurface />;
+}

@@ -9,8 +9,12 @@ import { cn } from '@/lib/utils';
  * Each tone binds `--chip` once; every colour below is derived from it with
  * `color-mix`. That is why a chip needs no per-tone background or border class,
  * and why adding a tone is a one-line change.
+ *
+ * Exported so other status-coloured marks (the statistics surface's status-tone
+ * bar rows) can bind the same `--chip` variable via this class instead of
+ * hand-rolling a second tone-to-colour table.
  */
-const toneVariable: Record<StatusTone, string> = {
+export const toneVariable: Record<StatusTone, string> = {
   mute: '[--chip:var(--sc-tone-mute)]',
   hold: '[--chip:var(--sc-tone-hold)]',
   go: '[--chip:var(--sc-tone-go)]',
