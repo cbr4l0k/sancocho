@@ -69,7 +69,7 @@ Event → Event Field Values
   full-table-scan for uniqueness. Constraints: `authProvider+authSubject`, org `slug`,
   `orgId+userId`, `orgId+field key`, `orgId+recipe key`, `recipeId+versionNumber`,
   one draft per recipe, `recipeVersionId+fieldDefinitionId`, `eventId+fieldDefinitionId`,
-  relationship `source+target+type`.
+  relationship `source+target+type`, one pending invitation per `orgId+email`.
 - **Temporal semantics**: `datetime` = absolute timestamp (ms); `date` = `YYYY-MM-DD`
   string, never converted to a timestamp; `time` = strict `HH:mm` wall-clock string.
   An Event's canonical `startsAt` is always a complete absolute timestamp.

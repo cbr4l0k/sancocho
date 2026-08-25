@@ -10,6 +10,7 @@ import {
   fieldConfigValidator,
   fieldDefinitionFields,
   locationFields,
+  organizationInvitationFields,
   recipeFields,
   recipeVersionStatusValidator,
   projectFields,
@@ -48,6 +49,22 @@ export default defineSchema({
   })
     .index('by_org_user', ['organizationId', 'userId'])
     .index('by_user', ['userId']),
+
+  // Field shape lives in validators/ so the table and the public `returns`
+  // validator are built from the same definition (issue #56). An invitation
+  // is addressed to `email`, never a user id — nothing here is ever produced
+  // by looking a user up by address (I9).
+  organizationInvitations: defineTable(organizationInvitationFields)
+    // Uniqueness = indexed read-before-write on (org, email, status) inside
+    // `createInvitation`: one open (`pending`) invitation per address per
+    // org. The status column is part of the key so a resolved invitation
+    // (accepted/revoked/expired) never blocks re-inviting the same address.
+    .index('by_org_email_status', ['organizationId', 'email', 'status'])
+    // Serves the org's own pending-invitation list (I6, paginated).
+    .index('by_org_status', ['organizationId', 'status'])
+    // Serves the caller's own pending invitations, keyed by their verified
+    // email (I6, paginated) — the recipient-facing accept surface.
+    .index('by_email_status', ['email', 'status']),
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.

@@ -32,6 +32,34 @@ export const recipeStatusValidator = v.union(
   v.literal('archived'),
 );
 
+/**
+ * `pending` is the only status a caller ever creates; the rest are
+ * server-assigned outcomes (I4). There is no scheduled sweep (I8: no
+ * workflow/cron machinery added speculatively), so `expired` is settled
+ * lazily and asymmetrically:
+ *
+ * - `acceptInvitation` CANNOT persist the transition — a Convex mutation is
+ *   one atomic transaction, and it always throws when an invitation is past
+ *   `expiresAt`, which rolls back any write made in the same call. It
+ *   compares `expiresAt` to now directly instead and leaves `status`
+ *   untouched.
+ * - `createInvitation` CAN — it is a success path with no throw afterward,
+ *   so when a duplicate-address check finds a `pending` row past its own
+ *   `expiresAt`, it settles that row to `expired` before proceeding, which
+ *   is also what frees the address up for a fresh invitation.
+ *
+ * Every OTHER reader of this table (the pending-invitation lists) must still
+ * treat a `pending` row past its own `expiresAt` as effectively expired
+ * rather than trusting `status` alone, since nothing guarantees a
+ * `createInvitation` call has ever run against that address since it lapsed.
+ */
+export const invitationStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('accepted'),
+  v.literal('revoked'),
+  v.literal('expired'),
+);
+
 export const recipeVersionStatusValidator = v.union(
   v.literal('draft'),
   v.literal('published'),
@@ -130,6 +158,33 @@ export const locationDocValidator = v.object({
   _id: v.id('locations'),
   _creationTime: v.number(),
   ...locationFields,
+});
+
+/**
+ * Single definition of the organizationInvitations table shape (issue #56):
+ * `schema.ts` builds the table from it and the public queries build their
+ * `returns` validator from it. `email` is the addressing key — never a user
+ * id — so an invitation to an address with no account is indistinguishable
+ * from one to an address that has one (I9); nothing about this table is ever
+ * resolved by looking a user up by email. `status`, `invitedByUserId` and
+ * `expiresAt` are server-assigned (I4); a caller supplies only `email` and
+ * `role`.
+ */
+export const organizationInvitationFields = {
+  organizationId: v.id('organizations'),
+  // Normalized (trimmed, lowercased) at write time so the uniqueness index
+  // and the recipient's equality check both compare like-for-like.
+  email: v.string(),
+  role: roleValidator,
+  status: invitationStatusValidator,
+  invitedByUserId: v.id('users'),
+  expiresAt: v.number(),
+};
+
+export const organizationInvitationDocValidator = v.object({
+  _id: v.id('organizationInvitations'),
+  _creationTime: v.number(),
+  ...organizationInvitationFields,
 });
 
 /**
@@ -314,6 +369,9 @@ export const auditActionValidator = v.union(
   // (see statistics/model.ts), not a tenant-facing write, but it is still
   // destructive and still gets exactly one audit action like everything else.
   v.literal('organization.statisticsBackfilled'),
+  v.literal('invitation.created'),
+  v.literal('invitation.revoked'),
+  v.literal('invitation.accepted'),
 );
 
 /**
@@ -339,6 +397,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('event'),
   v.literal('location'),
   v.literal('eventRelationship'),
+  v.literal('invitation'),
 );
 
 /**

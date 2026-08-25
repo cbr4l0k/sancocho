@@ -128,10 +128,16 @@ export async function listMyOrganizations(ctx: QueryCtx): Promise<Array<{ organi
 }
 
 /**
- * NOTE (documented gap, see issue #5 close comment): membership is created
- * directly from a user id with no consent step. A verified-email invite flow
- * should replace this as the user-facing path; until then only admins+ can
- * call it and the added user is immediately visible to the roster.
+ * NOTE (issue #56 follow-up): the user-facing path is now
+ * `invitations.createInvitation` → `invitations.acceptInvitation`
+ * (`invitations/model.ts`), which is addressed to an email and requires the
+ * recipient's own consent. This function still attaches an existing user id
+ * directly with no consent step, so it stays deliberately public for internal
+ * bootstrap (seeds) and the ~70 existing test fixtures across every other
+ * domain's test suite that provision memberships this way — migrating all of
+ * them to route through invitations belongs to a dedicated follow-up, not
+ * this issue. Documented on #18 item 1 and `docs/deviations.md`; no product
+ * surface calls this anymore.
  */
 export async function addMember(
   ctx: MutationCtx,
