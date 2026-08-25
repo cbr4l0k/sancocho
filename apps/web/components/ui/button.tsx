@@ -2,6 +2,7 @@
 
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { isValidElement } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -70,10 +71,26 @@ const buttonVariants = cva(
 
 export type ButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants>;
 
-export function Button({ className, variant, size, selected, ...props }: ButtonProps) {
+/**
+ * Base UI assumes the rendered element is a real `<button>` and warns loudly
+ * when it is not, because a non-button silently loses form participation and
+ * keyboard semantics. Our `render` escape hatch is used almost entirely for
+ * links (`render={<LocaleLink />}`), so the assumption has to be inverted
+ * whenever `render` produces something other than a native button — otherwise
+ * every navigational Button logs an error on every render.
+ *
+ * Callers can still override explicitly; `render={<button />}` is detected so
+ * it keeps native semantics.
+ */
+function rendersNativeButton(render: ButtonProps['render']): boolean {
+  return render === undefined || (isValidElement(render) && render.type === 'button');
+}
+
+export function Button({ className, variant, size, selected, nativeButton, ...props }: ButtonProps) {
   return (
     <ButtonPrimitive
       data-slot="button"
+      nativeButton={nativeButton ?? rendersNativeButton(props.render)}
       className={cn(buttonVariants({ variant, size, selected }), className)}
       {...props}
     />

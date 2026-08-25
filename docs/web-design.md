@@ -523,14 +523,24 @@ selection, language controls, or error handling.
 Signing in lands on `/{locale}/projects`: everything operational hangs off a
 project, so the project list is the useful starting point. Chat (`/{locale}/chat`,
 delivered in #32 — see `docs/web-chat.md` for its decisions) is a primary surface
-reached from the nav, not the landing view. Primary surface routes are `/{locale}/recipes`,
-`/{locale}/services`, `/{locale}/projects`, `/{locale}/locations`,
-`/{locale}/fields`, and `/{locale}/statistics`; organization settings, including
-the read-only member roster, are at `/{locale}/settings`. Locale is always the
-short URL segment (`es` or `en`). Every entity detail is deep-linkable using
-`/{locale}/{collection}/{id}`: for example, `/es/services/{id}`,
-`/es/recipes/{id}`, `/es/projects/{id}`, `/es/locations/{id}`, and
-`/es/fields/{id}`. Detail screens inherit the same shell.
+reached from the nav, not the landing view.
+
+The route tree splits along **operational data vs. configuration**, and the nav
+mirrors that split. Operational surfaces sit at the top level —
+`/{locale}/chat`, `/{locale}/projects`, `/{locale}/services`, and
+`/{locale}/statistics`. Configuration lives under settings:
+`/{locale}/settings` (organization, including the read-only member roster),
+`/{locale}/settings/recipes`, `/{locale}/settings/fields`, and
+`/{locale}/settings/locations`. Recipes, Field Definitions and Locations are
+*configuration an operator sets up once*, not daily work, so promoting them to
+the top level alongside Services would have flattened that distinction — the
+one the whole architecture rests on.
+
+Locale is always the short URL segment (`es` or `en`). Entity details are
+deep-linkable beneath their own surface: `/es/projects/{id}`,
+`/es/services/{id}`, `/es/services/new`, `/es/settings/recipes/{id}`,
+`/es/settings/recipes/{id}/draft`, `/es/settings/fields/{id}`, and
+`/es/settings/locations/{id}`. Detail screens inherit the same shell.
 
 The guard order is deliberate: Clerk authentication first, then Convex user
 provisioning, then organization selection. While a signed-in Clerk user is being
