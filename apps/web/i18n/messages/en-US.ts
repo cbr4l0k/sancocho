@@ -507,6 +507,7 @@ const enUS = {
     fieldKeyBuiltin: 'Custom field keys cannot use a built-in field key.',
     fieldDescriptionTooLong: 'The description can contain at most 2,000 characters.',
     fieldSemanticIncompatible: 'Choose a semantic type compatible with the data type.',
+    fieldSemanticTypeLimitExceeded: 'The maximum number of fields for this semantic type has been reached.',
     fieldHistoricalFrozen:
       'This field is used by a published or retired recipe version; only its label ' + 'and description can change.',
     fieldArchived: 'Archived fields cannot be edited.',

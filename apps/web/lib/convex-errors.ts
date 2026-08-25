@@ -19,6 +19,7 @@ export type ConvexErrorMessageKey =
   | 'errors.fieldKeyBuiltin'
   | 'errors.fieldDescriptionTooLong'
   | 'errors.fieldSemanticIncompatible'
+  | 'errors.fieldSemanticTypeLimitExceeded'
   | 'errors.fieldHistoricalFrozen'
   | 'errors.fieldArchived'
   | 'errors.fieldDeleteBlocked'
@@ -78,6 +79,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   fieldKeyShadowsBuiltin: 'errors.fieldKeyBuiltin',
   fieldDescriptionTooLong: 'errors.fieldDescriptionTooLong',
   fieldSemanticIncompatible: 'errors.fieldSemanticIncompatible',
+  fieldSemanticTypeLimitExceeded: 'errors.fieldSemanticTypeLimitExceeded',
   fieldArchived: 'errors.fieldArchived',
   fieldHistoricalFrozen: 'errors.fieldHistoricalFrozen',
   fieldDeleteBlocked: 'errors.fieldDeleteBlocked',

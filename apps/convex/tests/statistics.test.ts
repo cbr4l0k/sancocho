@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { api, internal } from '../convex/_generated/api';
 import schema from '../convex/schema';
 import { maxFilteredScan } from '../convex/statistics/model';
+import { maxTrackedFieldDefinitions } from '../convex/validators';
 import { enableSeedMutations, modules } from './helpers';
 
 const issuer = 'https://example.clerk.accounts.dev';
@@ -1381,5 +1382,102 @@ test('getOccupancyMetrics on an empty sample returns null statistics, but a defi
   });
   await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId, threshold: 5 })).resolves.toEqual({
     sampleSize: 0, isTruncated: false, mean: null, median: null, max: null, countAtOrAboveThreshold: 0,
+  });
+});
+
+/**
+ * `getTrackedFieldDefinitions{ForType}` resolves a field list on every
+ * `createEventFromRecipe`/`updateEventFields`/`changeEventStatus` call.
+ * Without a cap, an org binding an unusually large number of custom fields
+ * to the same tracked semantic type could push those writes past Convex's
+ * per-transaction read limit — service creation would break, not a
+ * dashboard get slow. This proves the cap is enforced at CREATE and UPDATE
+ * time, with a stable code (never message-text matching), and is scoped per
+ * (organization, semanticType) — not a general field-count limit.
+ */
+test('binding more field definitions than maxTrackedFieldDefinitions to one tracked semantic type is refused at creation and update, with a stable code', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('cap-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Cap Co', slug: 'cap-co' });
+
+  for (let i = 0; i < maxTrackedFieldDefinitions; i += 1) {
+    await owner.mutation(api.fields.mutations.createFieldDefinition, {
+      organizationId, key: `pax${i}`, label: `Pax ${i}`, semanticType: 'passenger.count', config: numberConfig,
+    });
+  }
+  // The (maxTrackedFieldDefinitions + 1)th binding to the SAME type is refused.
+  await expect(owner.mutation(api.fields.mutations.createFieldDefinition, {
+    organizationId, key: 'oneTooMany', label: 'One too many', semanticType: 'passenger.count', config: numberConfig,
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticTypeLimitExceeded' } });
+
+  // A DIFFERENT tracked semantic type is entirely unaffected — this is a
+  // per-(organization, semanticType) cap, not a general field-count limit.
+  await expect(owner.mutation(api.fields.mutations.createFieldDefinition, {
+    organizationId, key: 'chairs', label: 'Wheelchairs', semanticType: 'accessibility.wheelchairCount', config: numberConfig,
+  })).resolves.not.toBeNull();
+
+  // Updating an EXISTING (currently unbound) field's semanticType onto the
+  // already-full type is refused the same way — the check runs on update,
+  // not only on creation.
+  // A compatible (number, integer) but so-far-unbound field, so the ONLY
+  // thing standing between it and success is the capacity check itself.
+  const plainField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'plain', label: 'Plain', config: numberConfig });
+  await expect(owner.mutation(api.fields.mutations.updateFieldDefinition, {
+    fieldDefinitionId: plainField, semanticType: 'passenger.count',
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticTypeLimitExceeded' } });
+
+  // Re-saving one of the fields ALREADY in the bucket (unchanged
+  // semanticType) is unaffected — the cap only fires when a binding is
+  // actually gained, not on every edit to an already-counted field.
+  const alreadyBound = await owner.query(api.fields.queries.listFieldDefinitions, { organizationId, paginationOpts: page });
+  const existingBoundField = alreadyBound.page.find((field) => field.key === 'pax0');
+  if (existingBoundField === undefined) throw new Error('test setup: expected pax0 to exist');
+  await expect(owner.mutation(api.fields.mutations.updateFieldDefinition, {
+    fieldDefinitionId: existingBoundField._id, label: 'Pax 0 renamed',
+  })).resolves.toBeNull();
+});
+
+/**
+ * The creation-time cap cannot retroactively bound rows written before it
+ * existed, so the READ side (`getTrackedFieldDefinitionsForType`) defends
+ * itself too: pre-existing data that already exceeds the cap must fail
+ * loudly and diagnosably on read, not silently truncate to the cap (which
+ * would report a wrong, undercounted total as if it were exact) and not
+ * silently blow past it (the exact I6 risk this whole guarantee exists to
+ * close). Seeded directly with `t.run`, bypassing `assertSemanticTypeCapacity`
+ * entirely — the same "insert legacy-shaped rows directly" pattern the
+ * backfill test in this file already uses to simulate pre-existing data.
+ */
+test('a pre-existing field-definition binding count over the cap is refused on read with a stable code', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('read-cap-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Read Cap Co', slug: 'read-cap-co' });
+
+  await t.run(async (ctx) => {
+    for (let i = 0; i < maxTrackedFieldDefinitions + 1; i += 1) {
+      await ctx.db.insert('fieldDefinitions', {
+        scope: 'organization', organizationId, key: `legacyPax${i}`, label: `Legacy Pax ${i}`, status: 'active',
+        semanticType: 'passenger.count', config: { kind: 'number', integer: true },
+      });
+    }
+  });
+
+  // `getOccupancyMetrics` always takes the scan path (never the maintained
+  // counter), so it always resolves tracked field definitions — the
+  // cleanest way to exercise the read-side guard directly.
+  await expect(owner.query(api.statistics.queries.getOccupancyMetrics, { organizationId })).rejects.toMatchObject({
+    data: { code: 'fieldSemanticTypeLimitExceeded' },
+  });
+  // The filtered `getPassengerTotals` path hits the identical guard.
+  const projectId = await owner.mutation(api.projects.mutations.createProject, { organizationId, name: 'Over-cap project' });
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId, projectId })).rejects.toMatchObject({
+    data: { code: 'fieldSemanticTypeLimitExceeded' },
+  });
+  // The UNFILTERED path is unaffected: it reads the maintained counter
+  // directly and never resolves the field list at all.
+  await expect(owner.query(api.statistics.queries.getPassengerTotals, { organizationId })).resolves.toEqual({
+    total: { value: 0, isTruncated: false }, eventCount: { value: 0, isTruncated: false },
   });
 });

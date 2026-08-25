@@ -346,10 +346,26 @@ async function getTrackedFieldDefinitionsForType(
   organizationId: Id<'organizations'>,
   semanticType: TrackedSemanticType,
 ): Promise<TrackedFieldDefinition[]> {
+  // Bounded at the SAME number `fields/model.ts` `assertSemanticTypeCapacity`
+  // enforces at field creation/update time (both read
+  // `semanticRegistry[semanticType].maxFieldDefinitionsPerSemanticType`, so
+  // the two checks can never silently disagree). The creation-time check
+  // cannot retroactively bound rows written before it existed — every
+  // `TrackedSemanticType` is guaranteed a real number here (see
+  // `AssertHasCapability` above: both tracked types are registry entries
+  // this file itself requires to declare one), so this `.take(max + 1)`
+  // (never `.collect()`) is the actual bound, and throws a stable code if
+  // pre-existing data somehow exceeds it — a loud, diagnosable failure on
+  // every write and read this organization's tracked semantic data touches,
+  // rather than silently pushing toward Convex's per-transaction read limit.
+  const max = semanticRegistry[semanticType].maxFieldDefinitionsPerSemanticType ?? 0;
   const [orgFields, builtinFields] = await Promise.all([
-    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType)).collect(),
-    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', undefined).eq('semanticType', semanticType)).collect(),
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', organizationId).eq('semanticType', semanticType)).take(max + 1),
+    ctx.db.query('fieldDefinitions').withIndex('by_org_semantic', (q) => q.eq('organizationId', undefined).eq('semanticType', semanticType)).take(max + 1),
   ]);
+  if (orgFields.length > max || builtinFields.length > max) {
+    return invalidInput('fieldSemanticTypeLimitExceeded', `More than ${max} field definitions are bound to this semantic type`);
+  }
   return [...orgFields, ...builtinFields].map((field) => ({ fieldDefinitionId: field._id, semanticType }));
 }
 

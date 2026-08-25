@@ -459,38 +459,71 @@ type SemanticDefinition = Readonly<{
   // totals silently disagree forever. Omitted (falls back to `false`
   // implicitly, i.e. absent) for semantic types with no such invariant.
   requiresInteger?: true | undefined;
+  // Only meaningful for a type `statistics/model.ts` actually resolves field
+  // definitions for (today: `passenger.count`, `accessibility.wheelchairCount`
+  // — see `TrackedSemanticType` there). `fields/model.ts` enforces this at
+  // field CREATE/UPDATE time (`assertSemanticTypeCapacity`), and
+  // `statistics/model.ts` `getTrackedFieldDefinitionsForType` enforces it
+  // AGAIN defensively on every read (`.take(cap + 1)`, throws if exceeded) —
+  // the creation-time check cannot retroactively bound rows already written
+  // before the cap existed. Both checks read the SAME number from here, so
+  // they can never silently disagree. See the doc comment on
+  // `maxFieldDefinitionsPerSemanticType` in fields/model.ts for why this
+  // specific number was chosen. Omitted for every type this file's
+  // statistics layer never resolves a field list for.
+  maxFieldDefinitionsPerSemanticType?: number | undefined;
 }>;
 
 /** Code-owned semantics; tenant data may name a type but can never grant capabilities. */
+// A tenant can bind at most this many field definitions to
+// `passenger.count` or `accessibility.wheelchairCount` — the only semantic
+// types `statistics/model.ts` `getTrackedFieldDefinitionsForType` resolves a
+// field list for. Without a cap, an org that (deliberately or accidentally)
+// bound an unusually large number of custom fields to the same tracked type
+// could push `createEventFromRecipe`/`updateEventFields`/`changeEventStatus`
+// — which resolve this list on every single write — past Convex's
+// per-transaction read limit; the failure mode is service creation breaking
+// for that tenant, not a dashboard getting slow. 25 is real headroom over
+// what a realistic tenant needs (a dozen or so: adult/child/infant/staff
+// passenger counts, a couple of accessibility variants) while keeping the
+// worst case — a filtered read scanning `maxFilteredScan` (500) events, each
+// resolving up to this many field definitions — comfortably inside a single
+// transaction's budget (500 × 26 = 13,000 targeted point reads).
+export const maxTrackedFieldDefinitions = 25;
+
+/** Code-owned semantics; tenant data may name a type but can never grant capabilities. */
 export const semanticRegistry = Object.freeze({
-  // `requiresInteger: undefined` is stated explicitly (not merely omitted)
-  // on every entry that doesn't need it, so `semanticRegistry[type]` stays
-  // ONE consistent object shape across every union member — a property only
-  // some entries declared would make TypeScript reject reading it off the
-  // others at all (not just report `undefined`), since `satisfies` (unlike
-  // `as`) preserves each entry's own literal shape rather than unifying them.
-  eventName: { expectedDataType: 'text', capabilities: ['eventName'], requiresInteger: undefined },
-  eventDescription: { expectedDataType: 'longText', capabilities: ['eventDescription'], requiresInteger: undefined },
-  eventDate: { expectedDataType: 'date', capabilities: ['eventDate'], requiresInteger: undefined },
-  eventTime: { expectedDataType: 'time', capabilities: ['eventTime'], requiresInteger: undefined },
-  eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'], requiresInteger: undefined },
+  // `requiresInteger: undefined` / `maxFieldDefinitionsPerSemanticType:
+  // undefined` are stated explicitly (not merely omitted) on every entry
+  // that doesn't need them, so `semanticRegistry[type]` stays ONE consistent
+  // object shape across every union member — a property only some entries
+  // declared would make TypeScript reject reading it off the others at all
+  // (not just report `undefined`), since `satisfies` (unlike `as`) preserves
+  // each entry's own literal shape rather than unifying them.
+  eventName: { expectedDataType: 'text', capabilities: ['eventName'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  eventDescription: { expectedDataType: 'longText', capabilities: ['eventDescription'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  eventDate: { expectedDataType: 'date', capabilities: ['eventDate'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  eventTime: { expectedDataType: 'time', capabilities: ['eventTime'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
   'passenger.count': {
     expectedDataType: 'number',
     capabilities: ['passengerTotals', 'occupancyMetrics', 'capacityValidation'],
     requiresInteger: true,
+    maxFieldDefinitionsPerSemanticType: maxTrackedFieldDefinitions,
   },
-  'transport.origin': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined },
-  'transport.destination': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined },
-  'aviation.flightNumber': { expectedDataType: 'text', capabilities: ['flightTracking'], requiresInteger: undefined },
-  'luggage.count': { expectedDataType: 'number', capabilities: [], requiresInteger: true },
+  'transport.origin': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  'transport.destination': { expectedDataType: 'location', capabilities: [], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  'aviation.flightNumber': { expectedDataType: 'text', capabilities: ['flightTracking'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  'luggage.count': { expectedDataType: 'number', capabilities: [], requiresInteger: true, maxFieldDefinitionsPerSemanticType: undefined },
   'accessibility.wheelchairCount': {
     expectedDataType: 'number',
     capabilities: ['accessibilityRequirements'],
     requiresInteger: true,
+    maxFieldDefinitionsPerSemanticType: maxTrackedFieldDefinitions,
   },
-  'contact.primary': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined },
-  'aviation.terminal': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined },
-  'general.notes': { expectedDataType: 'longText', capabilities: [], requiresInteger: undefined },
+  'contact.primary': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  'aviation.terminal': { expectedDataType: 'text', capabilities: [], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  'general.notes': { expectedDataType: 'longText', capabilities: [], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
 } satisfies Record<string, SemanticDefinition>);
 
 export type SemanticType = keyof typeof semanticRegistry;

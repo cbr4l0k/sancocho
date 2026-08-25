@@ -404,6 +404,7 @@ export type MessageSchema = {
     fieldKeyBuiltin: string;
     fieldDescriptionTooLong: string;
     fieldSemanticIncompatible: string;
+    fieldSemanticTypeLimitExceeded: string;
     fieldHistoricalFrozen: string;
     fieldArchived: string;
     fieldDeleteBlocked: string;

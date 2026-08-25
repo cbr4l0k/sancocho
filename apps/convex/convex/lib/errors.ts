@@ -31,6 +31,7 @@ export const errorCodes = [
   'fieldKeyShadowsBuiltin',
   'fieldDescriptionTooLong',
   'fieldSemanticIncompatible',
+  'fieldSemanticTypeLimitExceeded',
   'fieldArchived',
   'fieldHistoricalFrozen',
   'fieldDeleteBlocked',

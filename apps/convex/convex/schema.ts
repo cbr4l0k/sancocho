@@ -191,10 +191,10 @@ export default defineSchema({
   // updated wherever `eventFieldValues` is written (statistics/model.ts
   // `applyEventSemanticDelta`) rather than by scanning that table, which
   // is the largest in the system (I6; see docs/statistics.md "Semantic
-  // aggregation"). The tracked semantic types are the closed set this literal
-  // union names, matching `semanticTypesForCapability('passengerTotals')` and
-  // `semanticTypesForCapability('accessibilityRequirements')` in
-  // validators/index.ts today — the two must be kept in sync by hand, the
+  // aggregation"). The tracked semantic types are the closed set this
+  // literal union names, matching `statistics/model.ts`'s hand-written
+  // `TrackedSemanticType` — kept in sync with the registry's capability
+  // bindings by a COMPILE-TIME check there (`AssertHasCapability`), the
   // same convention `statisticsCounters.category` already uses against
   // `ChangeCounterArgs`.
   //

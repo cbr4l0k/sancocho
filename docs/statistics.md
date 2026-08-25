@@ -177,19 +177,26 @@ architecture already treats "materialize a running fact beside the mutation
 that changes it" as the house style for every other statistic.
 
 The set of tracked semantic types is computed from the registry, not
-hand-matched on a field's key or label: `semanticTypesForCapability` in
-`validators/index.ts` filters `semanticRegistry` for whichever type(s) declare
-a given capability (`passengerTotals`, `accessibilityRequirements`) —
-`passenger.count` and `accessibility.wheelchairCount` today. Notably,
+hand-matched on a field's key or label: the registry itself decides which
+type(s) carry a given capability (`passengerTotals`, `accessibilityRequirements`)
+— `passenger.count` and `accessibility.wheelchairCount` today. Notably,
 `luggage.count` is numeric but its registry entry declares no capability
 (`capabilities: []`), so it correctly earns no statistic here; the registry
 itself, not this file, is what decided that. `statisticsSemanticCounters.semanticType`
 is still a hand-written literal union (Convex schema fields must be real
-literal types), so `statistics/model.ts` asserts at module load that the
-hand-written `TrackedSemanticType` union exactly equals what the registry
-computes — a future capability rebinding that isn't mirrored here fails
-immediately and loudly (a thrown error at deploy time), not as a silently
-wrong dashboard number discovered later.
+literal types), so `statistics/model.ts` proves the hand-written
+`TrackedSemanticType` union stays in sync with the registry at COMPILE time —
+`AssertHasCapability`, a `tsc`-level check mirroring the `AssertSameKeys`
+pattern already in `validators/index.ts` — rather than at runtime. This
+deliberately replaced an earlier design that asserted the same fact with a
+runtime `throw` at module load: `statistics/model.ts` is imported by
+`events/model.ts` (every `createEventFromRecipe`/`updateEventFields`/
+`changeEventStatus` call), so a registry/union mismatch would have surfaced
+as an events-domain outage on first invocation after a bad deploy, rather
+than a build failure caught before it ever ships. A registry rebinding that
+isn't mirrored in `TrackedSemanticType` now fails `tsc`, full stop — never a
+silently wrong dashboard number, and never a runtime crash reachable from
+event mutations either.
 
 **Why this is safe under I3.** A maintained counter keyed by semantic type is
 only trustworthy if a field's semantic type can never change out from under
@@ -399,23 +406,51 @@ generic `notFoundOrInaccessible` a missing one gets (I9) — proven by a
 dedicated test that pairs a legitimate `organizationId` with another
 organization's real `projectId`.
 
-## Known limitation: `getTrackedFieldDefinitions`'s bound assumes a small field catalogue
+## `getTrackedFieldDefinitionsForType` is bounded, not just narrowed
 
-`getTrackedFieldDefinitions` collects EVERY field definition in the organization
-plus every deployment-wide builtin, then filters to the tracked semantic
-types in memory — not a targeted read of only the tracked ones. This is
-bounded by configuration size (how many fields an admin has created), not by
-operational volume, which is the right category of bound, but nothing in the
-codebase enforces a cap on field definitions per organization
-(`maxFieldsPerVersion` caps fields per RECIPE VERSION, not per org). A tenant
-with an unusually large field catalogue would pay a correspondingly larger
-read cost on every statistics call AND on every `createEventFromRecipe`/
-`updateEventFields` write (since `applyEventSemanticDelta` calls it too) —
-a single-tenant performance/availability concern, not a cross-tenant leak.
-The straightforward fix — an index on `fieldDefinitions` keyed by
-`(organizationId, semanticType)`, read directly for just the two tracked
-types — was identified but deferred rather than rushed into this change set;
-tracked as follow-up work, not shipped as "done."
+An earlier version of this code (`getTrackedFieldDefinitions`) collected
+EVERY field definition in the organization plus every deployment-wide
+builtin, then filtered to the tracked semantic types in memory. Adding
+`fieldDefinitions.by_org_semantic` (`schema.ts`) and reading it directly per
+semantic type (`getTrackedFieldDefinitionsForType`) turned that into a
+targeted, indexed read — but a targeted read is not the same thing as a
+BOUNDED one: an org could still bind an unbounded number of custom field
+definitions to `passenger.count`/`accessibility.wheelchairCount`, and the
+index would happily return all of them. Since this list is resolved on every
+`createEventFromRecipe`/`updateEventFields`/`changeEventStatus` call, an org
+that did this would eventually push those writes past Convex's
+per-transaction read limit — the failure mode is **service creation
+breaking for that tenant**, not a dashboard getting slow, which is a worse
+place for an unbounded dimension to hide than a read-only query.
+
+The actual guarantee, shipped in full, is two-sided:
+
+- **Creation/update time** (`fields/model.ts` `assertSemanticTypeCapacity`,
+  called from `createFieldDefinition`/`updateFieldDefinition` whenever a
+  field is gaining a binding to a tracked semantic type): refuses to bind a
+  field definition once `maxFieldDefinitionsPerSemanticType`
+  (`validators/index.ts`, currently **25**) field definitions are already
+  bound to that semantic type in this scope, with the stable code
+  `fieldSemanticTypeLimitExceeded`. This is where a real tenant should hit
+  the limit — one clear rejection at configuration time, not a mysterious
+  failure on every later service write.
+- **Read time** (`statistics/model.ts` `getTrackedFieldDefinitionsForType`):
+  the SAME number bounds the read itself — `.take(max + 1)`, never
+  `.collect()` — and throws the identical `fieldSemanticTypeLimitExceeded`
+  if a scope somehow already exceeds it. This exists because the
+  creation-time check cannot retroactively bound rows written before it
+  existed; without it, pre-existing over-cap data would either silently
+  truncate (reporting a wrong total as if it were exact) or silently push
+  every read and write that touches it toward the transaction limit anyway.
+  Both checks read `maxFieldDefinitionsPerSemanticType` from the SAME
+  registry entry, so they can never silently disagree on the number.
+
+25 is real headroom over what a realistic tenant needs (a dozen or so:
+adult/child/infant/staff passenger counts, a couple of accessibility
+variants) while keeping the worst case — a filtered read scanning
+`maxFilteredScan` (500) events, each resolving up to this many field
+definitions — comfortably inside a single transaction's budget
+(500 × 26 = 13,000 targeted point reads).
 
 ## Rejected alternatives
 
