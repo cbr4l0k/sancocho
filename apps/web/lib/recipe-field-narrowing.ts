@@ -1,4 +1,4 @@
-import type { fieldConfigValidator } from '@sancocho/convex/validators';
+import type { fieldConfigValidator } from '@priamo/convex/validators';
 
 export type FieldConfig = typeof fieldConfigValidator.type;
 

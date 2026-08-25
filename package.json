@@ -1,5 +1,5 @@
 {
-  "name": "sancocho",
+  "name": "priamo",
   "private": true,
   "workspaces": [
     "apps/*",

@@ -1,4 +1,4 @@
-import type { fieldConfigValidator } from '@sancocho/convex/validators';
+import type { fieldConfigValidator } from '@priamo/convex/validators';
 import type { EventFieldValue } from './field-value-form';
 type FieldConfig = typeof fieldConfigValidator.type;
 /** Client feedback only; events/model.ts remains the authoritative validation gate. */

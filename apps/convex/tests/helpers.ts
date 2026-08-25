@@ -13,7 +13,7 @@ export const modules = import.meta.glob([
 // declared locally because this package carries no Node type dependency.
 declare const process: { env: Record<string, string | undefined> };
 
-export const seedOptInVariable = 'SANCOCHO_ENABLE_SEED';
+export const seedOptInVariable = 'PRIAMO_ENABLE_SEED';
 
 /**
  * Call at module scope in any test file that drives an irreversible provisioning

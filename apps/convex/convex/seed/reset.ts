@@ -13,7 +13,7 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
  * (archive rather than delete; never remove a published version or a referenced
  * field). Those rules protect an operating tenant's history; they are exactly
  * what makes a dev deployment impossible to re-seed. So this bypasses them
- * knowingly, in one place, behind the same `SANCOCHO_ENABLE_SEED` opt-in as the
+ * knowingly, in one place, behind the same `PRIAMO_ENABLE_SEED` opt-in as the
  * rest of `seed/`, rather than weakening any model.
  *
  * What it does NOT touch: users, organizations, memberships, and projects. A

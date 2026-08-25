@@ -47,7 +47,7 @@ export function proxy(request: NextRequest) {
   if (firstSegment !== undefined && isLocaleSegment(firstSegment)) {
     const canonicalLocale = canonicalLocaleForSegment(firstSegment);
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-sancocho-locale', canonicalLocale);
+    requestHeaders.set('x-priamo-locale', canonicalLocale);
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.cookies.set(localeCookieName, canonicalLocale, {
       path: '/',

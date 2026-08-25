@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';

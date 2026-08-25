@@ -5,8 +5,8 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState, type FormEvent } from 'react';
 
-import { api } from '@sancocho/convex/api';
-import type { locationTypeValidator } from '@sancocho/convex/validators';
+import { api } from '@priamo/convex/api';
+import type { locationTypeValidator } from '@priamo/convex/validators';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { Button } from '@/components/ui/button';

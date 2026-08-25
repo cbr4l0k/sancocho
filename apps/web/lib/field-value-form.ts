@@ -1,4 +1,4 @@
-import type { eventFieldValueValidator } from '@sancocho/convex/validators';
+import type { eventFieldValueValidator } from '@priamo/convex/validators';
 
 import { parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';
 import { timestampFromParts, timestampToParts } from '@/lib/timestamps';

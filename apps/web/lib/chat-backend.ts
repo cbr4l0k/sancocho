@@ -1,4 +1,4 @@
-import type { FieldDataType } from '@sancocho/convex/validators';
+import type { FieldDataType } from '@priamo/convex/validators';
 
 import type { CanonicalLocale } from '@/i18n/locales';
 

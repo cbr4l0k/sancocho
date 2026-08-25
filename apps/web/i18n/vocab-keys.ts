@@ -1,4 +1,4 @@
-import type { auditActionValidator, SemanticType } from '@sancocho/convex/validators';
+import type { auditActionValidator, SemanticType } from '@priamo/convex/validators';
 
 type AuditAction = typeof auditActionValidator.type;
 

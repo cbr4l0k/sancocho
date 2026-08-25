@@ -1,4 +1,4 @@
-# Web design — Sancocho operations console
+# Web design — Priamo operations console
 
 The visual decision record for `apps/web`. Everything here is settled: an
 implementer building a product screen should be able to work from this document
@@ -13,7 +13,7 @@ demonstration page at `/[locale]`. It deliberately builds **no product screens**
 
 **A calm operations console, not a dashboard.**
 
-Sancocho coordinates ground transport for events: people read it at 05:00 in an
+Priamo coordinates ground transport for events: people read it at 05:00 in an
 operations room, at density, under time pressure. The interface is clean, dark,
 and modern: a neutral near-black ground, generously rounded cards and pill
 controls, strong type hierarchy, generous breathing room, and colour used
@@ -243,7 +243,7 @@ Two independent channels:
 
 Every map is `as const satisfies Record<Union, StatusToken>` where the union is
 derived from the backend validator (`typeof eventStatusValidator.type`, imported
-with `import type` from `@sancocho/convex/validators`). A status added in
+with `import type` from `@priamo/convex/validators`). A status added in
 `apps/convex/convex/validators/index.ts` fails `tsc` in `lib/status.ts` — it
 cannot ship as an uncoloured chip.
 

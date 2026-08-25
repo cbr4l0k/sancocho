@@ -7,7 +7,7 @@ import { isValidElement } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * Vendored from shadcn/ui and re-skinned onto Sancocho's tokens. The headless
+ * Vendored from shadcn/ui and re-skinned onto Priamo's tokens. The headless
  * behaviour (disabled semantics that survive `render`, composite-widget focus
  * handling) is Base UI's; every visual decision below is ours.
  *

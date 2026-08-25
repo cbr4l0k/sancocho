@@ -7,7 +7,7 @@
 > snapshot-timing contract in §7, updated in place), the reason is recorded in
 > [`deviations.md`](deviations.md).
 
-Implementation-affecting decisions for the sancocho backend foundation. Invariants
+Implementation-affecting decisions for the priamo backend foundation. Invariants
 I1–I9 and domain conventions live in `CLAUDE.md`; issue scopes live in GitHub issues
 #2–#16. This document settles *how* those are realized and records any adjustments
 forced by current Convex/Clerk APIs. Later stages cite this file rather than

@@ -4,7 +4,7 @@ import { useQuery, usePaginatedQuery } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';

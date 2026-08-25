@@ -3,10 +3,10 @@ import type esCO from './es-CO';
 
 const enUS = {
   auth: {
-    connecting: 'Connecting to Sancocho…',
-    signedOut: 'You are not signed in. The Sancocho connection is ready when you are.',
-    signedOutTitle: 'Welcome to Sancocho',
-    profilePending: 'Connected to Convex. Your Sancocho user profile is not set up yet.',
+    connecting: 'Connecting to Priamo…',
+    signedOut: 'You are not signed in. The Priamo connection is ready when you are.',
+    signedOutTitle: 'Welcome to Priamo',
+    profilePending: 'Connected to Convex. Your Priamo user profile is not set up yet.',
     connected: 'Connected to Convex.',
     signIn: 'Sign in',
     signUp: 'Create account',
@@ -513,10 +513,10 @@ const enUS = {
     inFlight: 'Typing…',
     errorTurn: 'Could not get a reply. Please try again.',
     emptyTitle: 'Start a conversation',
-    emptyBody: 'Tell Sancocho what you need and it will propose a recipe or a service to review.',
-    conversationLabel: 'Conversation with Sancocho',
+    emptyBody: 'Tell Priamo what you need and it will propose a recipe or a service to review.',
+    conversationLabel: 'Conversation with Priamo',
     youLabel: 'You',
-    assistantLabel: 'Sancocho',
+    assistantLabel: 'Priamo',
     timestampLabel: 'Sent at {time}',
     proposal: {
       recipeTitle: 'Recipe proposal',
@@ -629,7 +629,7 @@ const enUS = {
     settings: 'Settings',
     account: 'Account',
     label: 'Main navigation',
-    application: 'Sancocho',
+    application: 'Priamo',
   },
   shell: {
     comingSoonTitle: 'Available in a future stage',

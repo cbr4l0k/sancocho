@@ -15,7 +15,7 @@ declare const process: { env: Record<string, string | undefined> };
  * `convex run --prod seed/mutations:seedDemonstrationData` must therefore be
  * refused rather than trusted, so the target deployment has to say yes first:
  *
- *   bunx convex env set SANCOCHO_ENABLE_SEED true      (see package.json `seed:enable`)
+ *   bunx convex env set PRIAMO_ENABLE_SEED true      (see package.json `seed:enable`)
  *
  * Convex reads `process.env` from the DEPLOYMENT's environment variables, not
  * the developer's shell, which is what makes the opt-in per-deployment.
@@ -25,7 +25,7 @@ declare const process: { env: Record<string, string | undefined> };
  * same irreversible effect — a built-in key, once created, squats that key in
  * every tenant's namespace forever — and it must be guarded by the same switch.
  */
-export const seedOptInVariable = 'SANCOCHO_ENABLE_SEED';
+export const seedOptInVariable = 'PRIAMO_ENABLE_SEED';
 
 export function assertSeedingEnabled(): void {
   if (process.env[seedOptInVariable] !== 'true') {

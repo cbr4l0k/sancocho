@@ -175,7 +175,7 @@ test('the reset and the seed both refuse without the deployment opt-in', async (
   await tenant(t);
   // `enableSeedMutations` sets the flag for each test; drop it to prove the guard
   // is what permits these, not `internalMutation` alone.
-  delete process.env.SANCOCHO_ENABLE_SEED;
+  delete process.env.PRIAMO_ENABLE_SEED;
   await expect(t.mutation(resetTenantOperations, {})).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
   await expect(t.mutation(seedBogotaOperations, { organizationSlug: slug })).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
 });

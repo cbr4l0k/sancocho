@@ -1,6 +1,6 @@
 import type { FunctionArgs } from 'convex/server';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { ProjectDetailSurface } from '@/components/projects/project-detail-surface';
 

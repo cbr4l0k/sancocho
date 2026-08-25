@@ -3,7 +3,7 @@
 import { usePaginatedQuery } from 'convex/react';
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { InviteMemberPanel } from '@/components/organizations/invite-member-panel';

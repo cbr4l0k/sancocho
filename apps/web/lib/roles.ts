@@ -1,4 +1,4 @@
-import type { roleValidator } from '@sancocho/convex/validators';
+import type { roleValidator } from '@priamo/convex/validators';
 
 export type Role = typeof roleValidator.type;
 

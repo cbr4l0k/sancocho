@@ -45,10 +45,10 @@ type SeedOwner = typeof seedOwnerValidator.type;
  * `grantDemoMembership` below.
  */
 const defaultSeedOwner: SeedOwner = {
-  issuer: 'https://seed.sancocho.internal',
+  issuer: 'https://seed.priamo.internal',
   subject: 'demonstration-owner',
   name: 'Demonstration Owner',
-  email: 'demo-owner@sancocho.invalid',
+  email: 'demo-owner@priamo.invalid',
 };
 
 /**
@@ -57,7 +57,7 @@ const defaultSeedOwner: SeedOwner = {
  * is a fourth door onto the same irreversible effect and asserts the same switch.
  */
 
-const demonstrationOrganization = { name: 'Sancocho Demonstration', slug: 'sancocho-demo' };
+const demonstrationOrganization = { name: 'Priamo Demonstration', slug: 'priamo-demo' };
 const demonstrationRecipe = { key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer' };
 const demonstrationProjectName = 'Airport Arrival Transfers';
 const demonstrationEventName = 'LH441 arrival transfer';

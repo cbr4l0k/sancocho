@@ -1,6 +1,6 @@
 # Deployment
 
-How to get sancocho in front of real users. Written as a runbook: follow it top to
+How to get priamo in front of real users. Written as a runbook: follow it top to
 bottom the first time, and use the checklist at the end for every deploy after.
 
 ## What runs where
@@ -13,23 +13,23 @@ Only the console is hosted by you. The other two pieces are managed services.
 | Clerk auth | Clerk | Production instance needs your own domain |
 | Next.js console | Your host (DigitalOcean) | The container image from `apps/web/Dockerfile` |
 
-"Deploy sancocho" therefore means: push the backend to Convex, point the console at
+"Deploy priamo" therefore means: push the backend to Convex, point the console at
 production Clerk and Convex, and run the console container somewhere.
 
 ## Domains
 
-The worked example uses `sancocho.sybil-lat.org` for the console. Clerk derives its
+The worked example uses `priamo.sybil-lat.org` for the console. Clerk derives its
 own subdomains beneath whatever application domain you give it, so the choice of
 console subdomain determines all the rest.
 
 | Record | Host | Points to |
 | --- | --- | --- |
-| CNAME | `sancocho` | your host's app hostname |
-| CNAME | `clerk.sancocho` | Clerk Frontend API |
-| CNAME | `accounts.sancocho` | Clerk Account Portal |
-| CNAME | `clkmail.sancocho` | Clerk mail |
-| CNAME | `clk._domainkey.sancocho` | Clerk DKIM 1 |
-| CNAME | `clk2._domainkey.sancocho` | Clerk DKIM 2 |
+| CNAME | `priamo` | your host's app hostname |
+| CNAME | `clerk.priamo` | Clerk Frontend API |
+| CNAME | `accounts.priamo` | Clerk Account Portal |
+| CNAME | `clkmail.priamo` | Clerk mail |
+| CNAME | `clk._domainkey.priamo` | Clerk DKIM 1 |
+| CNAME | `clk2._domainkey.priamo` | Clerk DKIM 2 |
 
 Copy Clerk's targets verbatim — the mail and DKIM values carry an instance-specific
 hash. Convex needs no DNS record; `giant-avocet-654.convex.cloud` is fine and is one
@@ -39,7 +39,7 @@ DNS propagation is the only step here with real waiting in it. Start it first.
 
 ## 1. Clerk production instance
 
-1. Create the production instance with application domain `sancocho.sybil-lat.org`.
+1. Create the production instance with application domain `priamo.sybil-lat.org`.
 2. Add the five CNAMEs above and wait for Clerk to verify them.
 3. **Create a JWT template named `convex`.** This is the step that gets missed.
    `apps/convex/convex/auth.config.ts` pins `applicationID: 'convex'`, and JWT
@@ -49,7 +49,7 @@ DNS propagation is the only step here with real waiting in it. Start it first.
 4. Note the production **publishable key** (`pk_live_…`) and **secret key**
    (`sk_live_…`).
 
-The production issuer will be `https://clerk.sancocho.sybil-lat.org`.
+The production issuer will be `https://clerk.priamo.sybil-lat.org`.
 
 ## 2. Convex production
 
@@ -58,14 +58,14 @@ Deploy the backend and tell it which issuer to trust:
 ```bash
 cd apps/convex
 bunx convex deploy                                    # pushes to giant-avocet-654
-bunx convex env set CLERK_JWT_ISSUER_DOMAIN https://clerk.sancocho.sybil-lat.org --prod
+bunx convex env set CLERK_JWT_ISSUER_DOMAIN https://clerk.priamo.sybil-lat.org --prod
 ```
 
 `auth.config.ts` throws when that variable is unset, so a missing value fails the
 push rather than silently matching no issuer. That is deliberate — do not work
 around it.
 
-Leave `SANCOCHO_ENABLE_SEED` **unset** on production. Section 5 covers the one case
+Leave `PRIAMO_ENABLE_SEED` **unset** on production. Section 5 covers the one case
 that needs it, and why it is not left on.
 
 ## 3. Build the console image
@@ -76,11 +76,11 @@ does nothing at all. A production console needs a production build.
 
 ```bash
 # from the repo root — the build context must be the root, not apps/web,
-# because the console imports @sancocho/convex as a workspace package
+# because the console imports @priamo/convex as a workspace package
 podman build -f apps/web/Dockerfile \
   --build-arg NEXT_PUBLIC_CONVEX_URL=https://giant-avocet-654.convex.cloud \
   --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_... \
-  -t sancocho-web:prod .
+  -t priamo-web:prod .
 ```
 
 The Dockerfile fails fast with a readable message if either build arg is missing,
@@ -139,16 +139,16 @@ the phase reports `isDone`. Each call processes at most 100 indexed rows, so it 
 safe on large tenants. Run it in a maintenance window: normal writes must not race
 a rebuild that resets its destination rows.
 
-> **The backfill is gated by `SANCOCHO_ENABLE_SEED`, and so is the destructive
+> **The backfill is gated by `PRIAMO_ENABLE_SEED`, and so is the destructive
 > tenant reset.** Turning the flag on to run a backfill also opens
 > `seed/reset:resetTenantOperations`, which hard-deletes an organization's events,
 > recipes, and locations. Enable it, run the backfill, and turn it off again in the
 > same sitting:
 >
 > ```bash
-> bunx convex env set SANCOCHO_ENABLE_SEED true --prod
+> bunx convex env set PRIAMO_ENABLE_SEED true --prod
 > # ... run the backfill ...
-> bunx convex env remove SANCOCHO_ENABLE_SEED --prod
+> bunx convex env remove PRIAMO_ENABLE_SEED --prod
 > ```
 >
 > Leaving it on is not a small risk. It also permits seeding, which consumes the
@@ -159,7 +159,7 @@ a rebuild that resets its destination rows.
 
 Run through this after every production deploy.
 
-- [ ] `https://sancocho.sybil-lat.org/api/health` returns `200 {"status":"ok"}`.
+- [ ] `https://priamo.sybil-lat.org/api/health` returns `200 {"status":"ok"}`.
 - [ ] `/` returns `307` to a locale (`/es/projects` from a Spanish browser,
       `/en/projects` from an English one — both are correct; the client's browser
       language decides what they see).

@@ -4,10 +4,10 @@ import { useMutation, usePaginatedQuery } from 'convex/react';
 import { useTranslations } from 'next-intl';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
-import { semanticRegistry } from '@sancocho/convex/validators';
-import type { FieldDataType, SemanticType } from '@sancocho/convex/validators';
+import { semanticRegistry } from '@priamo/convex/validators';
+import type { FieldDataType, SemanticType } from '@priamo/convex/validators';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import {

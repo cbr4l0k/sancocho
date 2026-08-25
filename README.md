@@ -1,4 +1,4 @@
-# sancocho
+# priamo
 
 Backend foundation for a logistics operations platform: TypeScript (strict) + Convex +
 Clerk. It targets logistics companies, transportation coordinators, event organizers and
@@ -57,8 +57,8 @@ account, no Clerk account, no running backend. `convex/_generated` is committed,
 test suite runs against convex-test's in-memory runtime.
 
 ```bash
-git clone https://github.com/cbr4l0k/sancocho.git
-cd sancocho
+git clone https://github.com/cbr4l0k/priamo.git
+cd priamo
 bun install
 bun run typecheck
 bun run test
@@ -130,12 +130,12 @@ local path is untested for `--prod`-style workflows here.
 | Variable | Lives in | Required for | Notes |
 | --- | --- | --- | --- |
 | `CLERK_JWT_ISSUER_DOMAIN` | Convex deployment env (`convex env set`) | Every push, `codegen`, and all auth | Read by `convex/auth.config.ts`, which throws when it is unset or empty |
-| `SANCOCHO_ENABLE_SEED` | Convex deployment env | The three seed mutations and `fields.createBuiltinFieldDefinition` | Must be exactly the string `true`; see [Seeding](#seeding) |
+| `PRIAMO_ENABLE_SEED` | Convex deployment env | The three seed mutations and `fields.createBuiltinFieldDefinition` | Must be exactly the string `true`; see [Seeding](#seeding) |
 | `CONVEX_DEPLOYMENT`, `CONVEX_URL`, `CONVEX_SITE_URL` | `apps/convex/.env.local` | CLI deployment targeting | Written by the CLI; gitignored; never edited by hand |
 | `CONVEX_AGENT_MODE=anonymous` | Shell, for `convex dev` only | The local no-account deployment | Beta |
 
 There are no other environment variables. The application reads nothing from `process.env`
-except `CLERK_JWT_ISSUER_DOMAIN` (in `auth.config.ts`) and `SANCOCHO_ENABLE_SEED` (in
+except `CLERK_JWT_ISSUER_DOMAIN` (in `auth.config.ts`) and `PRIAMO_ENABLE_SEED` (in
 `seed/mutations.ts`).
 
 ### Clerk configuration
@@ -156,18 +156,18 @@ field catalogue. Every write goes through the same domain functions the public A
 publish validation, server-assigned version numbers and the typed-value gate all really run.
 
 Seeding is guarded per deployment because it is irreversible in two ways: it consumes the
-deployment-wide-unique organization slug (`sancocho-demo`, and there is no
+deployment-wide-unique organization slug (`priamo-demo`, and there is no
 `deleteOrganization`), and built-in field keys are squatted for every tenant in the
 deployment and freeze on first publish.
 
 ```bash
 cd apps/convex
-bun run seed:enable   # convex env set SANCOCHO_ENABLE_SEED true
+bun run seed:enable   # convex env set PRIAMO_ENABLE_SEED true
 bun run seed          # convex run seed/mutations:seedDemonstrationData
 ```
 
 Without the opt-in, the mutation throws
-`Seeding is disabled on this deployment; set SANCOCHO_ENABLE_SEED=true to allow it`. Re-runs
+`Seeding is disabled on this deployment; set PRIAMO_ENABLE_SEED=true to allow it`. Re-runs
 are idempotent (the second run stops at the recipe's indexed org/key lookup).
 
 To make the demo usable by a human who can actually sign in, pass a real identity — the

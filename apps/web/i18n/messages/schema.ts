@@ -8,8 +8,8 @@ import type {
   recipeVersionStatusValidator,
   relationshipTypeValidator,
   roleValidator,
-} from '@sancocho/convex/validators';
-import type { SemanticCapability } from '@sancocho/convex/validators';
+} from '@priamo/convex/validators';
+import type { SemanticCapability } from '@priamo/convex/validators';
 import type { AuditActionMessageKey, SemanticTypeMessageKey } from '../vocab-keys';
 export type TranslationShape<Value> = Value extends string
   ? string

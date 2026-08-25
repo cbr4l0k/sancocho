@@ -472,7 +472,7 @@ test('backfillOrganizationCounters refuses to run without the deployment opt-in'
   // `enableSeedMutations` sets the flag for every test in this file; drop it
   // to prove the guard is what permits this, not `internalMutation` alone —
   // the same proof `bogotaSeed.test.ts` runs for the other two backfills.
-  delete process.env.SANCOCHO_ENABLE_SEED;
+  delete process.env.PRIAMO_ENABLE_SEED;
   await expect(t.mutation(backfill, { organizationId, phase: 'clear', cursor: null })).rejects.toMatchObject({ data: { code: 'seedDisabled' } });
 });
 

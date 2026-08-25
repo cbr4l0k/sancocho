@@ -5,7 +5,7 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 import { auditActionMessageKey } from '@/i18n/vocab-keys';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';

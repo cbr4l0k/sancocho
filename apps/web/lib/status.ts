@@ -4,7 +4,7 @@ import type {
   projectStatusValidator,
   recipeStatusValidator,
   recipeVersionStatusValidator,
-} from '@sancocho/convex/validators';
+} from '@priamo/convex/validators';
 
 /**
  * Status presentation, mapped by key.

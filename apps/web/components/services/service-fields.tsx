@@ -3,7 +3,7 @@
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 import { LocationPicker } from '@/components/locations/location-picker';
 import { Field, FieldControl, FieldLabel, FieldSpanFull } from '@/components/ui/field';

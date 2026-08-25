@@ -2,10 +2,10 @@ import type { MessageSchema } from './schema';
 
 const esCO = {
   auth: {
-    connecting: 'Conectando con Sancocho…',
-    signedOut: 'No has iniciado sesión. La conexión con Sancocho estará lista cuando tú lo estés.',
-    signedOutTitle: 'Bienvenido a Sancocho',
-    profilePending: 'La conexión con Convex está lista. Tu perfil de usuario de Sancocho todavía no está configurado.',
+    connecting: 'Conectando con Priamo…',
+    signedOut: 'No has iniciado sesión. La conexión con Priamo estará lista cuando tú lo estés.',
+    signedOutTitle: 'Bienvenido a Priamo',
+    profilePending: 'La conexión con Convex está lista. Tu perfil de usuario de Priamo todavía no está configurado.',
     connected: 'Conexión con Convex establecida.',
     signIn: 'Iniciar sesión',
     signUp: 'Crear cuenta',
@@ -518,10 +518,10 @@ const esCO = {
     inFlight: 'Escribiendo…',
     errorTurn: 'No se pudo obtener una respuesta. Inténtalo de nuevo.',
     emptyTitle: 'Empieza una conversación',
-    emptyBody: 'Cuéntale a Sancocho qué necesitas y te propondrá una receta o un servicio para revisar.',
-    conversationLabel: 'Conversación con Sancocho',
+    emptyBody: 'Cuéntale a Priamo qué necesitas y te propondrá una receta o un servicio para revisar.',
+    conversationLabel: 'Conversación con Priamo',
     youLabel: 'Tú',
-    assistantLabel: 'Sancocho',
+    assistantLabel: 'Priamo',
     timestampLabel: 'Enviado a las {time}',
     proposal: {
       recipeTitle: 'Propuesta de receta',
@@ -634,7 +634,7 @@ const esCO = {
     settings: 'Ajustes',
     account: 'Cuenta',
     label: 'Navegación principal',
-    application: 'Sancocho',
+    application: 'Priamo',
   },
   shell: {
     comingSoonTitle: 'Disponible en una próxima etapa',

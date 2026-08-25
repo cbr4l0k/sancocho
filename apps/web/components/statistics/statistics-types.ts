@@ -1,6 +1,6 @@
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
-import { api } from '@sancocho/convex/api';
+import { api } from '@priamo/convex/api';
 
 /**
  * Types shared across the statistics surface's sub-panels, derived from the
