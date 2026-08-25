@@ -65,7 +65,7 @@ bunx convex env set CLERK_JWT_ISSUER_DOMAIN https://clerk.priamo.sybil-lat.org -
 push rather than silently matching no issuer. That is deliberate — do not work
 around it.
 
-Leave `PRIAMO_ENABLE_SEED` **unset** on production. Section 5 covers the one case
+Leave `PRIAMO_ENABLE_SEED` **unset** on production. Section 6 covers the one case
 that needs it, and why it is not left on.
 
 ## 3. Build the console image
@@ -94,19 +94,75 @@ Behind a proxy that only listens on the host loopback, add `--network=host` to t
 build. That is a local-network workaround, not something the Dockerfile depends on;
 a CI or cloud build with direct egress does not need it.
 
-## 4. Run it
+## 4. Push the image to DigitalOcean Container Registry
+
+App Platform can build from the repo instead — `dockerfile_path: apps/web/Dockerfile`
+with the source directory left at the repo root — but pushing a registry image is
+preferable: you deploy the exact image you tested, and you control the build args
+directly rather than depending on how the platform forwards them.
+
+Create the registry once, then authenticate. The registry name is globally unique
+and becomes part of every image path:
+
+```bash
+doctl auth init                # once per machine; prompts for an API token
+doctl registry create priamo   # once per account
+doctl registry login
+```
+
+**Podman reads a different credentials file than `doctl` writes.** `doctl registry
+login` writes `~/.docker/config.json`; podman prefers
+`$XDG_RUNTIME_DIR/containers/auth.json` and only falls back to the Docker one. If a
+push returns `401` under podman despite a successful `doctl registry login`,
+authenticate podman directly — DOCR accepts a DigitalOcean API token as **both**
+username and password:
+
+```bash
+podman login registry.digitalocean.com -u <do-api-token> -p <do-api-token>
+```
+
+Tag with the commit, not only a moving tag. Deploying the exact image you tested is
+the whole reason to prefer the registry, and `:prod` alone gives that up — it also
+leaves you unable to say which build is running:
+
+```bash
+SHA=$(git rev-parse --short HEAD)
+REG=registry.digitalocean.com/priamo/priamo-web
+
+podman tag priamo-web:prod "$REG:$SHA"
+podman tag priamo-web:prod "$REG:prod"
+podman push "$REG:$SHA"
+podman push "$REG:prod"
+```
+
+Build on the architecture App Platform runs, `linux/amd64`. From an ARM machine add
+`--platform linux/amd64` to the build in section 3: the registry accepts an arm64
+image happily and the container then fails to start, which surfaces late and reads
+as an application bug rather than an image built for the wrong platform.
+
+### Registry storage
+
+The free tier is **one repository and 500 MiB**. This image lands in the low
+hundreds of MB, so a single tag fits and several do not; Basic is 5 GiB.
+
+**Overwriting a tag does not reclaim its space.** The replaced manifest is retained
+as an untagged layer until garbage collection runs, so pushing `:prod` a few times
+exhausts the quota with what looks like one image:
+
+```bash
+doctl registry garbage-collection start
+```
+
+## 5. Run it
 
 The image serves on port 3000 as a non-root user and exposes `/api/health`, which
 answers `200 {"status":"ok"}`. Point the platform's health check there — **not** at
 `/`, which answers `307` to the negotiated locale and reads as unhealthy.
 
-On DigitalOcean App Platform, either push the image to DigitalOcean Container
-Registry and deploy from there, or build from the repo with `dockerfile_path:
-apps/web/Dockerfile` and the source directory left at the repo root. The registry
-path is preferable: you deploy the exact image you tested, and you control the build
-args directly rather than depending on how the platform forwards them.
+On DigitalOcean App Platform, create the service from the image pushed in section
+4 and set `CLERK_SECRET_KEY` as a runtime secret.
 
-## 5. The statistics backfill — required for any pre-existing data
+## 6. The statistics backfill — required for any pre-existing data
 
 **Read this before showing anyone the dashboard.**
 
@@ -155,7 +211,7 @@ a rebuild that resets its destination rows.
 > deployment-wide-unique organization slug and permanently squats built-in field
 > keys for every tenant — none of which can be undone.
 
-## 6. Verification checklist
+## 7. Verification checklist
 
 Run through this after every production deploy.
 
