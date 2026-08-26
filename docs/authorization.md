@@ -70,6 +70,7 @@ Admins do everything else.
 | `events.createEventFromRecipe`, `updateEventCoreFields`, `updateEventFields` | planner | Authoring an event is planner work |
 | `events.changeEventStatus` | **operator** | Deliberately one step lower: operators run events (activate, complete, cancel) without changing what an event says it is |
 | `events.getEvent`, `listProjectEvents` | viewer | |
+| `events.listOrganizationEvents` | viewer | `projectId`, when given, is cross-checked against `organizationId` |
 | `relationships.createRelationship`, `removeRelationship` | planner | Same floor as event authoring; gated by the same writability rules |
 | `relationships.listOutgoingRelationships`, `listIncomingRelationships` | viewer | |
 | `audit.listOrganizationAuditEvents`, `listEntityAuditEvents` | admin | Administrative visibility; planners, operators and viewers cannot read the log |

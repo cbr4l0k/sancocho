@@ -38,6 +38,8 @@ export type ConvexErrorMessageKey =
   | 'errors.eventRecipeUnavailable'
   | 'errors.eventFieldsInvalid'
   | 'errors.eventDatesInvalid'
+  | 'errors.eventBeforeProjectWindow'
+  | 'errors.eventAfterProjectWindow'
   | 'errors.eventProjectReadOnly'
   | 'errors.eventProjectUnavailable'
   | 'errors.eventReadOnly'
@@ -119,6 +121,11 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   eventStartInvalid: 'errors.eventDatesInvalid',
   eventEndInvalid: 'errors.eventDatesInvalid',
   eventDateRangeInvalid: 'errors.eventDatesInvalid',
+  // Named separately from the generic date error: "outside the project's
+  // window" is a different mistake from "these two times are inverted", and
+  // collapsing them makes the fix unguessable.
+  eventBeforeProjectWindow: 'errors.eventBeforeProjectWindow',
+  eventAfterProjectWindow: 'errors.eventAfterProjectWindow',
   eventProjectReadOnly: 'errors.eventProjectReadOnly',
   eventProjectUnavailable: 'errors.eventProjectUnavailable',
   eventReadOnly: 'errors.eventReadOnly',

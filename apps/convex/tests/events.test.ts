@@ -31,6 +31,7 @@ const updateEventFields = api.events.mutations.updateEventFields;
 const changeEventStatus = api.events.mutations.changeEventStatus;
 const getEvent = api.events.queries.getEvent;
 const listProjectEvents = api.events.queries.listProjectEvents;
+const listOrganizationEvents = api.events.queries.listOrganizationEvents;
 
 const issuer = 'https://example.clerk.accounts.dev';
 const inaccessible = 'notFoundOrInaccessible';
@@ -438,6 +439,219 @@ test('core event fields are validated on the merged pair, trimmed, and clearable
   await expect(owner.client.mutation(updateEventCoreFields, { eventId, endsAt: null })).resolves.toBeNull();
 
   await expect(createEvent([requiredCode], { startsAt: 30, endsAt: 30 })).resolves.toBeDefined();
+});
+
+test('an event must fall inside its project window, on creation and on every later edit', async () => {
+  const { t, owner, organizationId, versionId, requiredCode } = await fixture();
+  // A project that runs 1000..2000 — the operational envelope its services live
+  // inside. A project with no dates (the fixture's own) constrains nothing.
+  const projectId = await owner.client.mutation(createProject, {
+    organizationId,
+    name: 'Windowed project',
+    startsAt: 1000,
+    endsAt: 2000,
+  });
+  const create = (overrides: { startsAt?: number; endsAt?: number } = {}) =>
+    owner.client.mutation(createEventFromRecipe, {
+      projectId,
+      recipeVersionId: versionId,
+      name: 'Arrival',
+      startsAt: overrides.startsAt ?? 1200,
+      ...(overrides.endsAt === undefined ? {} : { endsAt: overrides.endsAt }),
+      values: [requiredCode],
+    });
+
+  await expect(create({ startsAt: 999 })).rejects.toMatchObject({ data: { code: 'eventBeforeProjectWindow' } });
+  await expect(create({ startsAt: 2001 })).rejects.toMatchObject({ data: { code: 'eventAfterProjectWindow' } });
+  await expect(create({ startsAt: 1200, endsAt: 2001 })).rejects.toMatchObject({
+    data: { code: 'eventAfterProjectWindow' },
+  });
+  // Both boundaries are inclusive: a service may start exactly when the project
+  // does and end exactly when it ends.
+  await expect(create({ startsAt: 1000, endsAt: 2000 })).resolves.toBeDefined();
+
+  const eventId = await create({ startsAt: 1200, endsAt: 1800 });
+  const storedEvent = () => t.run(async (ctx) => ctx.db.get(eventId));
+
+  // Editing is gated by the same rule, on the MERGED pair: moving one end out of
+  // the window is as much a violation as writing both outside it.
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: 900 })).rejects.toMatchObject({
+    data: { code: 'eventBeforeProjectWindow' },
+  });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, endsAt: 2500 })).rejects.toMatchObject({
+    data: { code: 'eventAfterProjectWindow' },
+  });
+  expect(await storedEvent()).toMatchObject({ startsAt: 1200, endsAt: 1800 });
+
+  // Clearing the end leaves the start as the event's last instant, so the same
+  // rule still applies to it and nothing escapes the window through the gap.
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, endsAt: null })).resolves.toBeNull();
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: 2001 })).rejects.toMatchObject({
+    data: { code: 'eventAfterProjectWindow' },
+  });
+  await expect(owner.client.mutation(updateEventCoreFields, { eventId, startsAt: 1900 })).resolves.toBeNull();
+
+  // A half-open window constrains only the end it declares.
+  const openEndedId = await owner.client.mutation(createProject, {
+    organizationId,
+    name: 'Open ended project',
+    startsAt: 1000,
+  });
+  const inOpenEnded = (startsAt: number) =>
+    owner.client.mutation(createEventFromRecipe, {
+      projectId: openEndedId,
+      recipeVersionId: versionId,
+      name: 'Arrival',
+      startsAt,
+      values: [requiredCode],
+    });
+  await expect(inOpenEnded(999)).rejects.toMatchObject({ data: { code: 'eventBeforeProjectWindow' } });
+  await expect(inOpenEnded(999_999)).resolves.toBeDefined();
+});
+
+test('the organization-wide service list interleaves projects, narrows by filter, and carries each row’s fields', async () => {
+  const { owner, organizationId, projectId, versionId, definitions, requiredCode, createEvent } = await fixture();
+  const otherProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Second project' });
+
+  const first = await createEvent([requiredCode], { name: 'Earliest', startsAt: 100 });
+  const third = await createEvent([requiredCode], { name: 'Latest', startsAt: 900 });
+  const second = await owner.client.mutation(createEventFromRecipe, {
+    projectId: otherProjectId,
+    recipeVersionId: versionId,
+    name: 'Middle',
+    startsAt: 500,
+    values: [requiredCode, { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 4 } }],
+  });
+
+  const listed = await owner.client.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage });
+  // Ordered by start time across every project — which is the whole point of
+  // the screen this serves.
+  expect(listed.page.map((row) => row.event._id)).toEqual([first, second, third]);
+  expect(listed.page.map((row) => row.projectName)).toEqual(['Event project', 'Second project', 'Event project']);
+
+  // Each row carries every visible field its own version composes, valued or
+  // not, so the table can offer a column per field and edit it in place.
+  const middle = listed.page[1];
+  expect(middle?.fields.map((field) => field.key).sort()).toEqual(
+    ['at', 'code', 'day', 'eventNotes', 'extras', 'pickup', 'seats', 'tier', 'venue', 'vip'].sort(),
+  );
+  expect(middle?.fields.find((field) => field.key === 'seats')?.value).toEqual({ kind: 'number', value: 4 });
+  expect(middle?.fields.find((field) => field.key === 'vip')?.value).toBeUndefined();
+  // The immutable snapshot travels with the value, so an editor validates
+  // against the rules this event was created under (I3).
+  expect(middle?.fields.find((field) => field.key === 'seats')?.config).toMatchObject({ kind: 'number', max: 10 });
+
+  // Filters narrow what is FETCHED, so they mean "all matching services".
+  const byProject = await owner.client.query(listOrganizationEvents, {
+    organizationId,
+    projectId: otherProjectId,
+    paginationOpts: firstPage,
+  });
+  expect(byProject.page.map((row) => row.event._id)).toEqual([second]);
+
+  await owner.client.mutation(changeEventStatus, { eventId: third, status: 'planned' });
+  const byStatus = await owner.client.query(listOrganizationEvents, {
+    organizationId,
+    status: 'planned',
+    paginationOpts: firstPage,
+  });
+  expect(byStatus.page.map((row) => row.event._id)).toEqual([third]);
+  const byBoth = await owner.client.query(listOrganizationEvents, {
+    organizationId,
+    projectId,
+    status: 'planned',
+    paginationOpts: firstPage,
+  });
+  expect(byBoth.page.map((row) => row.event._id)).toEqual([third]);
+
+  // Paginated, like every unbounded tenant list (I6).
+  const page = await owner.client.query(listOrganizationEvents, {
+    organizationId,
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  expect(page.page).toHaveLength(2);
+  expect(page.isDone).toBe(false);
+  const rest = await owner.client.query(listOrganizationEvents, {
+    organizationId,
+    paginationOpts: { numItems: 2, cursor: page.continueCursor },
+  });
+  expect(rest.page.map((row) => row.event._id)).toEqual([third]);
+
+});
+
+test('a location value on a listed service is named, not returned as a bare reference', async () => {
+  const { owner, organizationId, projectId, versionId, locationId, definitions, requiredCode } = await fixture();
+  await owner.client.mutation(createEventFromRecipe, {
+    projectId,
+    recipeVersionId: versionId,
+    name: 'Pickup',
+    startsAt: 1000,
+    values: [requiredCode, { fieldDefinitionId: definitions.venue, value: { kind: 'location', locationId } }],
+  });
+
+  const listed = await owner.client.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage });
+  const venue = listed.page[0]?.fields.find((field) => field.key === 'venue');
+  expect(venue?.value).toEqual({ kind: 'location', locationId });
+  expect(venue?.locationName).toBe('Main venue');
+
+  // The single-event door names it the same way, so the detail screen and the
+  // table agree instead of one of them printing an id.
+  const detail = await owner.client.query(getEvent, { eventId: listed.page[0]!.event._id });
+  expect(detail.values.find((value) => value.key === 'venue')?.locationName).toBe('Main venue');
+});
+
+test('the organization-wide service list is tenant-isolated on both of its ids (I1, I9)', async () => {
+  const { t, owner, organizationId, projectId } = await fixture();
+  const outsider = await provision(t, 'events-outsider');
+  const outsiderOrgId = await outsider.client.mutation(createOrganization, {
+    name: 'Outside',
+    slug: 'events-outside',
+  });
+
+  // An unauthenticated caller gets nothing, and a member of another
+  // organization cannot read this one's list by knowing its id.
+  await expect(t.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({
+    data: { code: unauthenticated },
+  });
+  await expect(
+    outsider.client.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  // Knowing a project id from another tenant grants nothing either, and the
+  // refusal does not distinguish "not yours" from "does not exist" (I9).
+  await expect(
+    outsider.client.query(listOrganizationEvents, {
+      organizationId: outsiderOrgId,
+      projectId,
+      paginationOpts: firstPage,
+    }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  // The two ids are checked against EACH OTHER, not just against the caller.
+  // A member of both organizations can reach either on its own, so the only
+  // thing standing between org A's list and org B's project is that cross-check.
+  const both = await provision(t, 'events-two-orgs');
+  const secondOrgId = await both.client.mutation(createOrganization, { name: 'Second', slug: 'events-second' });
+  await owner.client.mutation(addMember, { organizationId, userId: both.userId, role: 'planner' });
+  const secondProjectId = await both.client.mutation(createProject, {
+    organizationId: secondOrgId,
+    name: 'Second org project',
+  });
+  await expect(
+    both.client.query(listOrganizationEvents, { organizationId, projectId: secondProjectId, paginationOpts: firstPage }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+  // Each id is genuinely reachable on its own, which is what makes the pairing
+  // the thing under test rather than either membership.
+  await expect(
+    both.client.query(listOrganizationEvents, { organizationId, projectId, paginationOpts: firstPage }),
+  ).resolves.toBeDefined();
+  await expect(
+    both.client.query(listOrganizationEvents, {
+      organizationId: secondOrgId,
+      projectId: secondProjectId,
+      paginationOpts: firstPage,
+    }),
+  ).resolves.toBeDefined();
 });
 
 test('historical integrity: an event keeps validating against its own version after that version is retired (I3)', async () => {

@@ -7,7 +7,11 @@ import { api } from '@priamo/convex/api';
 
 import { LocationPicker } from '@/components/locations/location-picker';
 import { Field, FieldControl, FieldLabel, FieldSpanFull } from '@/components/ui/field';
+import { formatDateTime } from '@/i18n/formats';
+import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
+import { datetimeDateBounds, fieldInputBounds } from '@/lib/field-input-bounds';
 import type { FieldValueFormState } from '@/lib/field-value-form';
+import type { ProjectWindow } from '@/lib/project-window';
 import type { TimestampParts } from '@/lib/timestamps';
 import { cn } from '@/lib/utils';
 
@@ -29,16 +33,30 @@ type OrganizationId = FunctionArgs<typeof api.locations.queries.listLocations>['
 /** Base UI styles `Field.Control`; multi-line and native selects need their own height. */
 const controlClass = 'text-sm normal-case tracking-normal';
 
+/**
+ * `min`/`max` for the date half of a datetime pair.
+ *
+ * The picker is bounded to the days a value may fall on — for a service, the
+ * days its project spans — so an out-of-range date takes deliberate effort
+ * rather than being the default a blank calendar offers. Day granularity cannot
+ * express the hours at each edge of the window; the submit-time check
+ * (`projectWindowProblem`) and the server (`validateEventWithinProjectWindow`)
+ * are what actually decide.
+ */
+export type DateBounds = { min?: string | undefined; max?: string | undefined };
+
 export function ServiceDateTime({
   label,
   value,
   onChange,
   required = false,
+  bounds,
 }: {
   label: string;
   value: TimestampParts;
   onChange: (value: TimestampParts) => void;
   required?: boolean;
+  bounds?: DateBounds | undefined;
 }) {
   return (
     <Field>
@@ -48,6 +66,8 @@ export function ServiceDateTime({
           type="date"
           required={required}
           className={cn(controlClass, 'flex-1')}
+          {...(bounds?.min === undefined ? {} : { min: bounds.min })}
+          {...(bounds?.max === undefined ? {} : { max: bounds.max })}
           value={value.date}
           onChange={(event) => onChange({ ...value, date: event.target.value })}
         />
@@ -60,6 +80,33 @@ export function ServiceDateTime({
         />
       </div>
     </Field>
+  );
+}
+
+/**
+ * States the window the service must fall inside, in words.
+ *
+ * The bounded pickers alone leave the rule implicit — a greyed-out calendar
+ * says "no" without saying why — so the span is spelled out beside them. It
+ * renders nothing when the project declares no dates, because then there is no
+ * rule to state.
+ */
+export function ProjectWindowHint({ project }: { project: ProjectWindow }) {
+  const t = useTranslations();
+  const locale = useCanonicalLocale();
+  if (project.startsAt === undefined && project.endsAt === undefined) return null;
+  const start = project.startsAt === undefined ? undefined : formatDateTime(locale, project.startsAt);
+  const end = project.endsAt === undefined ? undefined : formatDateTime(locale, project.endsAt);
+  return (
+    <FieldSpanFull>
+      <p className="text-xs text-ink-3">
+        {start !== undefined && end !== undefined
+          ? t('services.projectWindow', { start, end })
+          : start === undefined
+            ? t('services.projectWindowOpenStart', { end: end ?? '' })
+            : t('services.projectWindowOpenEnd', { start })}
+      </p>
+    </FieldSpanFull>
   );
 }
 
@@ -169,6 +216,7 @@ export function ServiceDynamicField({
         value={value}
         onChange={(next) => onChange({ kind: 'datetime', ...next })}
         required={required}
+        bounds={datetimeDateBounds(field.config)}
       />
     );
 
@@ -181,6 +229,7 @@ export function ServiceDynamicField({
             render={<textarea rows={3} />}
             required={required}
             className={cn(controlClass, 'h-auto py-2 leading-relaxed')}
+            {...fieldInputBounds(field.config)}
             value={value.value}
             onChange={(event) => onChange({ kind: 'longText', value: event.target.value })}
           />
@@ -210,6 +259,7 @@ export function ServiceDynamicField({
                   ? 'time'
                   : 'text'
           }
+          {...fieldInputBounds(field.config)}
           value={value.value}
           onChange={(event) => onChange({ kind: value.kind, value: event.target.value })}
         />
