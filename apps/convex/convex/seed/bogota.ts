@@ -1,16 +1,16 @@
-import type { UserIdentity } from 'convex/server';
 import { v } from 'convex/values';
 
-import { internalMutation, type MutationCtx } from '../_generated/server';
+import { internalMutation } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
 import { changeEventStatus, createEventFromRecipe } from '../events/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
-import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import { invalidInput } from '../lib/errors';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { createProject } from '../projects/model';
 import { provisionStarterRecipes } from '../recipes/builtins';
 import type { eventFieldValueValidator } from '../validators';
+import { resolveSeedOwnerContext } from './identity';
 
 /**
  * A Bogotá (BOG) demonstration: real El Dorado terminals, real venues, and the
@@ -208,48 +208,13 @@ const defaultProject = {
   endsAt: bogota(2026, 8, 19, 16, 0),
 };
 
-/**
- * Runs the seed as the organization's own owner, so every model below applies
- * its ordinary role and ownership checks instead of receiving an exception.
- */
-function withOwnerIdentity(ctx: MutationCtx, issuer: string, subject: string): MutationCtx {
-  const identity: UserIdentity = { tokenIdentifier: `${issuer}|${subject}`, issuer, subject };
-  return {
-    db: ctx.db,
-    auth: { getUserIdentity: async () => identity },
-    storage: ctx.storage,
-    scheduler: ctx.scheduler,
-    runQuery: ctx.runQuery,
-    runMutation: ctx.runMutation,
-    meta: ctx.meta,
-  };
-}
-
 export const seedBogotaOperations = internalMutation({
   args: { organizationSlug: v.string(), projectName: v.optional(v.string()) },
   returns: v.object({ locations: v.number(), services: v.number(), projectName: v.string() }),
   handler: async (ctx, args) => {
     assertSeedingEnabled();
 
-    const organization = await ctx.db
-      .query('organizations')
-      .withIndex('by_slug', (q) => q.eq('slug', args.organizationSlug))
-      .unique();
-    if (organization === null) {
-      return invalidInput('seedOrganizationMissing', `No organization has the slug ${args.organizationSlug}`);
-    }
-
-    const memberships = await ctx.db
-      .query('organizationMemberships')
-      .withIndex('by_org_user', (q) => q.eq('organizationId', organization._id))
-      .collect();
-    const ownerMembership = memberships.find((membership) => membership.role === 'owner');
-    if (ownerMembership === undefined) {
-      return invalidInput('seedOrganizationOwnerMissing', 'The organization has no owner to seed as');
-    }
-    const owner = await ctx.db.get(ownerMembership.userId);
-    if (owner === null) return notFoundOrInaccessible();
-    const seeded = withOwnerIdentity(ctx, owner.authProvider, owner.authSubject);
+    const { organization, seeded } = await resolveSeedOwnerContext(ctx, args.organizationSlug);
 
     // The catalogue and starter recipes are prerequisites, and both are
     // idempotent, so this doubles as the repair path after a reset.

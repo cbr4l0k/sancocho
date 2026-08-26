@@ -51,6 +51,8 @@ import type * as relationships_model from "../relationships/model.js";
 import type * as relationships_mutations from "../relationships/mutations.js";
 import type * as relationships_queries from "../relationships/queries.js";
 import type * as seed_bogota from "../seed/bogota.js";
+import type * as seed_cordillera from "../seed/cordillera.js";
+import type * as seed_identity from "../seed/identity.js";
 import type * as seed_mutations from "../seed/mutations.js";
 import type * as seed_reset from "../seed/reset.js";
 import type * as statistics_model from "../statistics/model.js";
@@ -108,6 +110,8 @@ declare const fullApi: ApiFromModules<{
   "relationships/mutations": typeof relationships_mutations;
   "relationships/queries": typeof relationships_queries;
   "seed/bogota": typeof seed_bogota;
+  "seed/cordillera": typeof seed_cordillera;
+  "seed/identity": typeof seed_identity;
   "seed/mutations": typeof seed_mutations;
   "seed/reset": typeof seed_reset;
   "statistics/model": typeof statistics_model;

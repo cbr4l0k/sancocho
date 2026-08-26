@@ -90,6 +90,9 @@ export const errorCodes = [
   'seedLocationMissing',
   'seedRecipeMissing',
   'seedRecipeVersionMissing',
+  'seedServiceMissing',
+  'seedFieldConflict',
+  'seedRecipeConflict',
   'auditEntityIdTooLong',
   'auditMetadataInvalid',
 ] as const;
