@@ -90,9 +90,30 @@ Runtime environment the container still needs:
 
 - `CLERK_SECRET_KEY=sk_live_…`
 
-Behind a proxy that only listens on the host loopback, add `--network=host` to the
-build. That is a local-network workaround, not something the Dockerfile depends on;
-a CI or cloud build with direct egress does not need it.
+### Podman: `ConnectionRefused` on every tarball
+
+**Podman passes the host's proxy environment into the build; Docker does not.** If
+`HTTP_PROXY`/`HTTPS_PROXY` point at a loopback address — any local proxy on
+`127.0.0.1` — the build inherits them, and inside the container's network namespace
+that address is the *container*, where nothing is listening. Step 7 then fails with
+a wall of `error: ConnectionRefused downloading tarball …`, one line per dependency,
+while the identical `docker build` succeeds. It reads as a podman bug and is not
+one; `NO_PROXY=localhost,127.0.0.1` does not help, because the proxy address is the
+destination here, not the thing being bypassed.
+
+When the host has direct egress — it does if `docker build` works — turn the
+injection off:
+
+```bash
+podman build --http-proxy=false -f apps/web/Dockerfile \
+  --build-arg NEXT_PUBLIC_CONVEX_URL=… \
+  --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=… \
+  -t priamo-web:prod .
+```
+
+If the proxy really is the only route out, use `--network=host` instead, so the
+loopback address reaches the host's proxy. Neither flag is something the Dockerfile
+depends on; a CI or cloud build with direct egress needs neither.
 
 ## 4. Push the image to DigitalOcean Container Registry
 
