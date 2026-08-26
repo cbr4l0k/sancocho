@@ -154,6 +154,36 @@ reinterpreted.
 
 `listProjectEvents` is paginated over `by_project_startsAt`.
 
+`listOrganizationEvents` is the organization-wide list the console's Services screen is built
+on: every project's events in one page, ordered by start time. `projectId` and `status` are
+optional narrowings, and each combination picks its own index (`by_org_startsAt`,
+`by_org_status_startsAt`, `by_project_startsAt`, `by_project_status_startsAt`) rather than
+filtering an already-paginated page (I6). When `projectId` is supplied, the project is proven
+through `requireProjectAccess` **and** cross-checked against `organizationId`, so neither id
+can be used to reach the other's tenant (I1); the refusal is the generic one (I9).
+
+Each returned row carries more than the event document, because the screen it serves is
+column-configurable and edits rows in place: the owning project's name, status and window,
+and **every visible field the event's own version composes** — valued or not — with that
+field's immutable `config` snapshot beside it. Repeated lookups (project, version fields,
+field definitions, locations) are memoized across the page. `location` values are joined to
+their location's name, here and in `getEvent`, so a client never has to render a bare id.
+
+## Project window
+
+An Event's `startsAt`/`endsAt` must fall inside its Project's own `startsAt`/`endsAt` window.
+Each bound is enforced only when the project declares it, both boundaries are inclusive, and
+an open-ended event is judged by its start (`endsAt ?? startsAt` is its last instant). The
+codes are `eventBeforeProjectWindow` and `eventAfterProjectWindow`, deliberately distinct
+from `eventDateRangeInvalid` — "outside the project" is a different mistake from "these two
+times are inverted". Creation and every core-field edit go through the same check, and the
+edit checks the *merged* pair, so moving one end out of the window is refused exactly as
+writing both outside it is.
+
+The rule is **write-time and not retroactive**: narrowing a project's window later cannot
+reject already-stored events without scanning every event in the project (I6), so
+`updateProject` leaves history alone and this gate governs everything written from then on.
+
 ## Temporal semantics
 
 | Concept | Representation | Rule |

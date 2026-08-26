@@ -245,6 +245,8 @@ export type MessageSchema = {
     listTitle: string;
     emptyTitle: string;
     emptyBody: string;
+    emptyOrgTitle: string;
+    emptyOrgBody: string;
     status: string;
     statusFilter: string;
     allStatuses: string;
@@ -252,10 +254,13 @@ export type MessageSchema = {
     notSet: string;
     createTitle: string;
     create: string;
-    chooseProject: string;
-    chooseProjectHint: string;
     chooseRecipe: string;
     project: string;
+    projectFilter: string;
+    allProjects: string;
+    projectWindow: string;
+    projectWindowOpenStart: string;
+    projectWindowOpenEnd: string;
     recipe: string;
     selectPlaceholder: string;
     chooseRecipeHint: string;
@@ -284,6 +289,12 @@ export type MessageSchema = {
     endsAt: string;
     fieldInvalid: string;
     loadMore: string;
+    actions: string;
+    editRow: string;
+    saveRow: string;
+    cancelRow: string;
+    rowReadOnly: string;
+    recipeColumnsNotice: string;
     statuses: Record<EventStatus, string>;
   };
   locations: {
@@ -495,6 +506,8 @@ export type MessageSchema = {
     eventRecipeUnavailable: string;
     eventFieldsInvalid: string;
     eventDatesInvalid: string;
+    eventBeforeProjectWindow: string;
+    eventAfterProjectWindow: string;
     eventProjectReadOnly: string;
     eventProjectUnavailable: string;
     eventReadOnly: string;

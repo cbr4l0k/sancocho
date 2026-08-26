@@ -9,20 +9,21 @@ import { api } from '@priamo/convex/api';
 import { auditActionMessageKey } from '@/i18n/vocab-keys';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
-import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
+import { ProjectWindowHint, ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { ServiceRelationships } from '@/components/services/service-relationships';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { StatusChip } from '@/components/ui/status-chip';
-import { formatDate, formatDateTime, formatNumber, formatTime } from '@/i18n/formats';
+import { formatDateTime } from '@/i18n/formats';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
+import { formatFieldValue } from '@/lib/field-value-format';
+import { projectWindowDateBounds, projectWindowProblem } from '@/lib/project-window';
 import {
   emptyFieldValueFormState,
   fromEventFieldValue,
   toEventFieldValue,
-  type EventFieldValue,
   type FieldValueFormState,
 } from '@/lib/field-value-form';
 import { roleAtLeast } from '@/lib/roles';
@@ -34,6 +35,7 @@ import { timestampFromParts, timestampToParts, type TimestampParts } from '@/lib
 type EventId = FunctionArgs<typeof api.events.queries.getEvent>['eventId'];
 type EventData = FunctionReturnType<typeof api.events.queries.getEvent>;
 type RecipeVersionData = FunctionReturnType<typeof api.recipes.queries.getRecipeVersion>;
+type ProjectData = FunctionReturnType<typeof api.projects.queries.getProject>;
 
 export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
   const t = useTranslations();
@@ -86,6 +88,7 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
           key={data.event._id}
           data={data}
           version={version}
+          project={project}
           onClose={() => setEditing(false)}
           onMessage={setMessage}
           updateCore={updateCore}
@@ -168,7 +171,9 @@ function ServiceValues({ data, version }: { data: EventData; version: RecipeVers
                   {item?.label ?? t('common.notAvailable')}
                 </p>
                 <p className="text-sm text-ink-2">
-                  {item === undefined ? t('services.notSet') : formatValue(locale, field.config, item.value)}
+                  {item === undefined
+                    ? t('services.notSet')
+                    : formatFieldValue(locale, field.config, item.value, t('common.notAvailable'), item.locationName)}
                 </p>
               </div>
             );
@@ -176,38 +181,6 @@ function ServiceValues({ data, version }: { data: EventData; version: RecipeVers
       </PanelBody>
     </Panel>
   );
-}
-
-function formatValue(
-  locale: ReturnType<typeof useCanonicalLocale>,
-  config: RecipeVersionData['recipeFields'][number]['config'],
-  value: EventFieldValue,
-): string {
-  switch (value.kind) {
-    case 'text':
-    case 'longText':
-      return value.value;
-    case 'number':
-      return formatNumber(locale, value.value);
-    case 'boolean':
-      return value.value ? '✓' : '—';
-    case 'date':
-      return formatDate(locale, value.value);
-    case 'datetime':
-      return formatDateTime(locale, value.value);
-    case 'time':
-      return formatTime(locale, value.value);
-    case 'select':
-      return config.kind === 'select'
-        ? (config.options.find((option) => option.id === value.optionId)?.label ?? value.optionId)
-        : value.optionId;
-    case 'multiSelect':
-      return config.kind === 'multiSelect'
-        ? value.optionIds.map((id) => config.options.find((option) => option.id === id)?.label ?? id).join(', ')
-        : value.optionIds.join(', ');
-    case 'location':
-      return value.locationId;
-  }
 }
 
 function StatusControls({
@@ -240,6 +213,7 @@ function StatusControls({
 function ServiceEditor({
   data,
   version,
+  project,
   onClose,
   onMessage,
   updateCore,
@@ -247,6 +221,7 @@ function ServiceEditor({
 }: {
   data: EventData;
   version: RecipeVersionData;
+  project: ProjectData;
   onClose: () => void;
   onMessage: (message: string) => void;
   updateCore: ReturnType<typeof useMutation<typeof api.events.mutations.updateEventCoreFields>>;
@@ -274,6 +249,14 @@ function ServiceEditor({
     const endsAt = endBlank ? undefined : timestampFromParts(end);
     if (startsAt === undefined || (!endBlank && endsAt === undefined) || (endsAt !== undefined && endsAt < startsAt)) {
       onMessage(t('errors.eventDatesInvalid'));
+      return;
+    }
+    // The project's window is the second date rule, and the one this screen
+    // used to ignore entirely: a service could be moved outside its project
+    // and only the server would ever have objected — except it did not either.
+    const outside = projectWindowProblem(project, startsAt, endsAt);
+    if (outside !== undefined) {
+      onMessage(t(outside === 'before' ? 'errors.eventBeforeProjectWindow' : 'errors.eventAfterProjectWindow'));
       return;
     }
     const edited = new Map(
@@ -316,8 +299,20 @@ function ServiceEditor({
               onChange={(event) => setName(event.target.value)}
             />
           </label>
-          <ServiceDateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
-          <ServiceDateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
+          <ProjectWindowHint project={project} />
+          <ServiceDateTime
+            label={t('services.startsAt')}
+            value={start}
+            onChange={setStart}
+            required
+            bounds={projectWindowDateBounds(project)}
+          />
+          <ServiceDateTime
+            label={t('services.endsAt')}
+            value={end}
+            onChange={setEnd}
+            bounds={projectWindowDateBounds(project)}
+          />
           {version.recipeFields
             .filter((field) => field.visible)
             .map((field) => (

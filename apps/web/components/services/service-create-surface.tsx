@@ -9,7 +9,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '@priamo/convex/api';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
-import { ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
+import { ProjectWindowHint, ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldGroup, FieldLabel, FieldSpanFull } from '@/components/ui/field';
 import { Panel, PanelBody } from '@/components/ui/panel';
@@ -21,6 +21,7 @@ import {
   toEventFieldValue,
   type FieldValueFormState,
 } from '@/lib/field-value-form';
+import { projectWindowDateBounds, projectWindowProblem } from '@/lib/project-window';
 import { roleAtLeast } from '@/lib/roles';
 import { serviceFieldProblem } from '@/lib/service-form-checks';
 import { timestampFromParts, type TimestampParts } from '@/lib/timestamps';
@@ -125,6 +126,14 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
       (endsAt !== undefined && endsAt < startsAt)
     ) {
       setMessage(t('errors.eventDatesInvalid'));
+      return;
+    }
+    // The chosen project's window is the other half of the date rule. Checked
+    // here so the mistake is named on the form rather than arriving as a
+    // rejected mutation; `validateEventWithinProjectWindow` still decides.
+    const outside = projectWindowProblem(selectedProject, startsAt, endsAt);
+    if (outside !== undefined) {
+      setMessage(t(outside === 'before' ? 'errors.eventBeforeProjectWindow' : 'errors.eventAfterProjectWindow'));
       return;
     }
 
@@ -249,8 +258,20 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
                   <FieldControl required value={name} onChange={(event) => setName(event.target.value)} />
                 </Field>
               </FieldSpanFull>
-              <ServiceDateTime label={t('services.startsAt')} value={start} onChange={setStart} required />
-              <ServiceDateTime label={t('services.endsAt')} value={end} onChange={setEnd} />
+              {selectedProject === undefined ? null : <ProjectWindowHint project={selectedProject} />}
+              <ServiceDateTime
+                label={t('services.startsAt')}
+                value={start}
+                onChange={setStart}
+                required
+                bounds={selectedProject === undefined ? undefined : projectWindowDateBounds(selectedProject)}
+              />
+              <ServiceDateTime
+                label={t('services.endsAt')}
+                value={end}
+                onChange={setEnd}
+                bounds={selectedProject === undefined ? undefined : projectWindowDateBounds(selectedProject)}
+              />
               {recipeVersionId === undefined ? (
                 <FieldSpanFull>
                   <p className="text-sm text-ink-3">{t('services.chooseRecipeHint')}</p>

@@ -96,6 +96,7 @@ export async function createEventFromRecipe(
   }
   const name = validateEntityName(args.name, 'event');
   validateEventDates(args.startsAt, args.endsAt);
+  validateEventWithinProjectWindow(project, args.startsAt, args.endsAt);
   const fields = await getVersionFields(ctx, version._id);
   const resolved = await validateEventAgainstRecipe(ctx, version, fields, withRecipeDefaults(fields, args.values), true);
 
@@ -251,6 +252,10 @@ export async function updateEventCoreFields(
   // clears a stored value; omitting the argument leaves the stored end alone.
   const endsAt = args.endsAt === undefined ? event.endsAt : (args.endsAt ?? undefined);
   validateEventDates(startsAt, endsAt);
+  // Checked on the merged pair for the same reason the ordering rule is: moving
+  // only one end out of the project's window is as much a violation as writing
+  // both outside it.
+  validateEventWithinProjectWindow(project, startsAt, endsAt);
 
   // Built column by column rather than spreading client args, so only known
   // columns are written and the audit row names what actually changed.
@@ -435,9 +440,16 @@ export async function getEvent(
   eventId: Id<'events'>,
 ): Promise<{
   event: Doc<'events'>;
-  values: { fieldDefinitionId: Id<'fieldDefinitions'>; key: string; label: string; value: EventFieldValue }[];
+  values: {
+    fieldDefinitionId: Id<'fieldDefinitions'>;
+    key: string;
+    label: string;
+    value: EventFieldValue;
+    locationName?: string;
+  }[];
 }> {
   const { event } = await requireEventAccess(ctx, eventId);
+  const locations = new Map<Id<'locations'>, Doc<'locations'> | null>();
   const storedValues = await ctx.db
     .query('eventFieldValues')
     .withIndex('by_event_field', (q) => q.eq('eventId', event._id))
@@ -448,7 +460,13 @@ export async function getEvent(
     (await getVersionFields(ctx, event.recipeVersionId)).map((field) => [field.fieldDefinitionId, field]),
   );
 
-  const values: { fieldDefinitionId: Id<'fieldDefinitions'>; key: string; label: string; value: EventFieldValue }[] = [];
+  const values: {
+    fieldDefinitionId: Id<'fieldDefinitions'>;
+    key: string;
+    label: string;
+    value: EventFieldValue;
+    locationName?: string;
+  }[] = [];
   for (const stored of storedValues) {
     const recipeField = byDefinition.get(stored.fieldDefinitionId);
     // The stored row must be one this version actually composes, and must point
@@ -468,7 +486,15 @@ export async function getEvent(
     // If that helper is ever narrowed to published-only, a retired version's
     // definition becomes re-keyable and every historical event silently changes
     // the key it reports: I3 breaks with no test failing here.
-    values.push({ fieldDefinitionId: stored.fieldDefinitionId, key: definition.key, label: definition.label, value: stored.value });
+    values.push({
+      fieldDefinitionId: stored.fieldDefinitionId,
+      key: definition.key,
+      label: definition.label,
+      value: stored.value,
+      // A location value is a reference; the console needs its name to render
+      // anything better than a raw id. See `locationNameOf`.
+      ...(await locationNameOf(ctx, locations, event.organizationId, stored.value)),
+    });
   }
   return { event, values };
 }
@@ -483,6 +509,215 @@ export async function listProjectEvents(
     .query('events')
     .withIndex('by_project_startsAt', (q) => q.eq('projectId', project._id))
     .paginate(args.paginationOpts);
+}
+
+/**
+ * One row of the Services table: the event, the project it belongs to, and the
+ * values of every field its own Recipe Version composes.
+ *
+ * The console's Services screen is organization-wide and column-configurable,
+ * so it needs more per row than the event document — the project name (services
+ * from every project are interleaved in one list) and the typed values (a
+ * recipe with fifteen fields should be able to show fifteen columns). Fetching
+ * each row's values separately would be one query per visible row; the join is
+ * done here instead, once per page.
+ */
+export type EventRow = {
+  event: Doc<'events'>;
+  projectName: string;
+  projectStatus: Doc<'projects'>['status'];
+  /**
+   * The owning project's window, carried on the row so an editor in the table
+   * can bound its pickers and name a violation before a round trip. It is an
+   * affordance: `validateEventWithinProjectWindow` remains the only thing that
+   * decides. Both ends are optional because a project's dates are.
+   */
+  projectStartsAt?: number;
+  projectEndsAt?: number;
+  fields: {
+    fieldDefinitionId: Id<'fieldDefinitions'>;
+    key: string;
+    label: string;
+    required: boolean;
+    position: number;
+    config: Doc<'recipeFields'>['config'];
+    value?: EventFieldValue;
+    /**
+     * Present only for a stored `location` value. A location value is a
+     * reference, and a table cell showing the raw id is not information — the
+     * name is joined here, from the same tenant's location catalogue, so the
+     * console never has to fetch the whole catalogue to render a column.
+     */
+    locationName?: string;
+  }[];
+};
+
+/**
+ * The organization's events across every project, ordered by start time.
+ *
+ * Filters pick the index rather than post-filtering a page, so a status- or
+ * project-restricted list never reads rows it will discard (I6 — the same
+ * reasoning that put those composite indexes in schema.ts for statistics).
+ * `projectId` is proven through `requireProjectAccess`, so a project id from
+ * another tenant is indistinguishable from one that does not exist (I9).
+ */
+export async function listOrganizationEvents(
+  ctx: QueryCtx,
+  args: {
+    organizationId: Id<'organizations'>;
+    projectId?: Id<'projects'>;
+    status?: EventStatus;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<EventRow>> {
+  const authenticated = await requireAuthenticatedUser(ctx);
+  await requireOrganizationMembership(ctx, args.organizationId, authenticated);
+  if (args.projectId !== undefined) {
+    const { project } = await requireProjectAccess(ctx, args.projectId);
+    // The membership above proves the caller belongs to `organizationId`; this
+    // proves the project does, so neither id can be used to reach the other's
+    // tenant (I1).
+    if (project.organizationId !== args.organizationId) return notFoundOrInaccessible();
+  }
+
+  const page = await paginateEvents(ctx, args);
+  return { ...page, page: await decorateEvents(ctx, page.page) };
+}
+
+function paginateEvents(
+  ctx: QueryCtx,
+  args: {
+    organizationId: Id<'organizations'>;
+    projectId?: Id<'projects'>;
+    status?: EventStatus;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<Doc<'events'>>> {
+  const { organizationId, projectId, status, paginationOpts } = args;
+  const events = ctx.db.query('events');
+  if (projectId !== undefined) {
+    return status === undefined
+      ? events.withIndex('by_project_startsAt', (q) => q.eq('projectId', projectId)).paginate(paginationOpts)
+      : events
+          .withIndex('by_project_status_startsAt', (q) => q.eq('projectId', projectId).eq('status', status))
+          .paginate(paginationOpts);
+  }
+  return status === undefined
+    ? events.withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts)
+    : events
+        .withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId).eq('status', status))
+        .paginate(paginationOpts);
+}
+
+/**
+ * Joins one page of events to their project and to their own version's fields.
+ *
+ * Every lookup that repeats across a page is memoized: a page of one project's
+ * services shares a project document and usually a single recipe version, so
+ * the naive version would re-read the same version's field rows and the same
+ * field definitions once per row. Field values are read through
+ * `by_event_field`, a bounded child set per event (I6 does not apply — a
+ * version cannot compose more than `maxFieldsPerVersion` fields).
+ *
+ * Only `visible` fields are returned: an invisible field is not part of what
+ * the recipe presents, and the table must not become the one surface that
+ * leaks it.
+ */
+async function decorateEvents(ctx: QueryCtx, events: Doc<'events'>[]): Promise<EventRow[]> {
+  const projects = new Map<Id<'projects'>, Doc<'projects'> | null>();
+  const versionFields = new Map<Id<'recipeVersions'>, Doc<'recipeFields'>[]>();
+  const definitions = new Map<Id<'fieldDefinitions'>, Doc<'fieldDefinitions'> | null>();
+  const locations = new Map<Id<'locations'>, Doc<'locations'> | null>();
+
+  const rows: EventRow[] = [];
+  for (const event of events) {
+    let project = projects.get(event.projectId);
+    if (project === undefined) {
+      project = await ctx.db.get(event.projectId);
+      projects.set(event.projectId, project);
+    }
+    // The stored ownership graph is cross-checked rather than assumed, exactly
+    // as `requireEventAccess` does for the single-event doors (I4).
+    if (project === null || project.organizationId !== event.organizationId) return notFoundOrInaccessible();
+
+    let recipeFields = versionFields.get(event.recipeVersionId);
+    if (recipeFields === undefined) {
+      recipeFields = await getVersionFields(ctx, event.recipeVersionId);
+      versionFields.set(event.recipeVersionId, recipeFields);
+    }
+    const stored = new Map(
+      (
+        await ctx.db
+          .query('eventFieldValues')
+          .withIndex('by_event_field', (q) => q.eq('eventId', event._id))
+          .collect()
+      ).map((value) => [value.fieldDefinitionId, value]),
+    );
+
+    const fields: EventRow['fields'] = [];
+    for (const recipeField of recipeFields) {
+      if (!recipeField.visible) continue;
+      let definition = definitions.get(recipeField.fieldDefinitionId);
+      if (definition === undefined) {
+        definition = await ctx.db.get(recipeField.fieldDefinitionId);
+        definitions.set(recipeField.fieldDefinitionId, definition);
+      }
+      if (definition === null) return notFoundOrInaccessible();
+      const value = stored.get(recipeField.fieldDefinitionId);
+      // A stored value must point at this exact version's row; one carrying
+      // another version's `recipeFieldId` is corruption. `getEvent` above makes
+      // the same check for the same reason.
+      if (value !== undefined && value.recipeFieldId !== recipeField._id) return notFoundOrInaccessible();
+      fields.push({
+        fieldDefinitionId: recipeField.fieldDefinitionId,
+        // `key` is stable for this event's lifetime and `label` is deliberately
+        // live — the coupling note on `getEvent` is the full contract.
+        key: definition.key,
+        label: definition.label,
+        required: recipeField.required,
+        position: recipeField.position,
+        // Semantics come from the immutable snapshot, never the live
+        // definition, so an inline editor validates against the rules this
+        // event was created under (I3).
+        config: recipeField.config,
+        ...(value === undefined ? {} : { value: value.value }),
+        ...(await locationNameOf(ctx, locations, event.organizationId, value?.value)),
+      });
+    }
+    rows.push({
+      event,
+      projectName: project.name,
+      projectStatus: project.status,
+      ...(project.startsAt === undefined ? {} : { projectStartsAt: project.startsAt }),
+      ...(project.endsAt === undefined ? {} : { projectEndsAt: project.endsAt }),
+      fields,
+    });
+  }
+  return rows;
+}
+
+/**
+ * The display name of a `location` value, memoized across the page.
+ *
+ * Returns a spreadable fragment rather than a bare string so a non-location
+ * value (or a location the tenant can no longer see) leaves the key absent
+ * instead of writing `undefined` into the row. The organization is re-checked
+ * on the way out: a stored reference is not a licence to read across tenants,
+ * even though every write path already enforces it (I1).
+ */
+async function locationNameOf(
+  ctx: QueryCtx,
+  cache: Map<Id<'locations'>, Doc<'locations'> | null>,
+  organizationId: Id<'organizations'>,
+  value: EventFieldValue | undefined,
+): Promise<{ locationName?: string }> {
+  if (value === undefined || value.kind !== 'location') return {};
+  let location = cache.get(value.locationId);
+  if (location === undefined) {
+    location = await ctx.db.get(value.locationId);
+    cache.set(value.locationId, location);
+  }
+  return location === null || location.organizationId !== organizationId ? {} : { locationName: location.name };
 }
 
 /**
@@ -552,6 +787,34 @@ function validateEventDates(startsAt: number, endsAt: number | undefined): void 
   if (!isFiniteNumber(startsAt)) return invalidInput('eventStartInvalid', 'Event start must be a finite timestamp');
   if (endsAt !== undefined && !isFiniteNumber(endsAt)) return invalidInput('eventEndInvalid', 'Event end must be a finite timestamp');
   if (endsAt !== undefined && endsAt < startsAt) return invalidInput('eventDateRangeInvalid', 'Event end must not precede its start');
+}
+
+/**
+ * A Project's own window is the operational envelope its Events live inside.
+ *
+ * A festival that runs the 15th to the 19th has no service on the 22nd, and a
+ * service that finishes before the festival's established start is data entry
+ * gone wrong rather than a plan — both used to be accepted, because the only
+ * date rule was the event's own internal ordering (`validateEventDates`) and
+ * nothing ever compared an event to its container.
+ *
+ * Each bound is enforced only when the project actually declares it: the
+ * project window is optional on both ends, and a project with no dates
+ * constrains nothing. Comparing the event's LAST instant (`endsAt ?? startsAt`)
+ * against the project's end covers the open-ended case without a second rule.
+ *
+ * This is a WRITE-TIME rule on events, deliberately not retroactive: narrowing
+ * a project's window later cannot be made to reject already-stored events
+ * without scanning every event in the project (I6), so `updateProject` leaves
+ * historical rows alone and this gate governs everything written from here on.
+ */
+function validateEventWithinProjectWindow(project: Doc<'projects'>, startsAt: number, endsAt: number | undefined): void {
+  if (project.startsAt !== undefined && startsAt < project.startsAt) {
+    return invalidInput('eventBeforeProjectWindow', 'Event starts before its project window');
+  }
+  if (project.endsAt !== undefined && (endsAt ?? startsAt) > project.endsAt) {
+    return invalidInput('eventAfterProjectWindow', 'Event ends after its project window');
+  }
 }
 
 /**

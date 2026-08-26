@@ -70,6 +70,8 @@ export const errorCodes = [
   'eventStartInvalid',
   'eventEndInvalid',
   'eventDateRangeInvalid',
+  'eventBeforeProjectWindow',
+  'eventAfterProjectWindow',
   'eventProjectReadOnly',
   'eventProjectUnavailable',
   'eventReadOnly',
