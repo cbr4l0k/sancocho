@@ -5,6 +5,7 @@ import { api, internal } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { capabilitiesForField } from '../convex/fields/model';
 import schema from '../convex/schema';
+import { maxTrackedFieldDefinitions } from '../convex/validators';
 import { enableSeedMutations, modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
@@ -48,6 +49,7 @@ async function provision(t: ReturnType<typeof convexTest>, subject: string) {
 
 const textConfig = { kind: 'text' } as const;
 const longTextConfig = { kind: 'longText' } as const;
+const numberConfig = { kind: 'number', integer: true } as const;
 
 test('field keys are indexed-unique and organization fields cannot shadow built-ins', async () => {
   const t = convexTest(schema, modules);
@@ -404,6 +406,59 @@ test('a field bound to a counting semantic type must declare an integer number c
   await expect(owner.client.mutation(createFieldDefinition, {
     organizationId, key: 'plainTitle', label: 'Title', semanticType: 'eventName', config: textConfig,
   })).resolves.not.toBeNull();
+});
+
+/**
+ * `getTrackedFieldDefinitions{ForType}` resolves a field list on every
+ * `createEventFromRecipe`/`updateEventFields`/`changeEventStatus` call.
+ * Without a cap, an org binding an unusually large number of custom fields
+ * to the same tracked semantic type could push those writes past Convex's
+ * per-transaction read limit — service creation would break, not a
+ * dashboard get slow. This proves the cap is enforced at CREATE and UPDATE
+ * time, with a stable code (never message-text matching), and is scoped per
+ * (organization, semanticType) — not a general field-count limit.
+ */
+test('binding more field definitions than maxTrackedFieldDefinitions to one tracked semantic type is refused at creation and update, with a stable code', async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity(identity('cap-owner'));
+  await owner.mutation(api.auth.mutations.ensureUser, {});
+  const organizationId = await owner.mutation(api.organizations.mutations.createOrganization, { name: 'Cap Co', slug: 'cap-co' });
+
+  for (let i = 0; i < maxTrackedFieldDefinitions; i += 1) {
+    await owner.mutation(api.fields.mutations.createFieldDefinition, {
+      organizationId, key: `pax${i}`, label: `Pax ${i}`, semanticType: 'passenger.count', config: numberConfig,
+    });
+  }
+  // The (maxTrackedFieldDefinitions + 1)th binding to the SAME type is refused.
+  await expect(owner.mutation(api.fields.mutations.createFieldDefinition, {
+    organizationId, key: 'oneTooMany', label: 'One too many', semanticType: 'passenger.count', config: numberConfig,
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticTypeLimitExceeded' } });
+
+  // A DIFFERENT tracked semantic type is entirely unaffected — this is a
+  // per-(organization, semanticType) cap, not a general field-count limit.
+  await expect(owner.mutation(api.fields.mutations.createFieldDefinition, {
+    organizationId, key: 'chairs', label: 'Wheelchairs', semanticType: 'accessibility.wheelchairCount', config: numberConfig,
+  })).resolves.not.toBeNull();
+
+  // Updating an EXISTING (currently unbound) field's semanticType onto the
+  // already-full type is refused the same way — the check runs on update,
+  // not only on creation.
+  // A compatible (number, integer) but so-far-unbound field, so the ONLY
+  // thing standing between it and success is the capacity check itself.
+  const plainField = await owner.mutation(api.fields.mutations.createFieldDefinition, { organizationId, key: 'plain', label: 'Plain', config: numberConfig });
+  await expect(owner.mutation(api.fields.mutations.updateFieldDefinition, {
+    fieldDefinitionId: plainField, semanticType: 'passenger.count',
+  })).rejects.toMatchObject({ data: { code: 'fieldSemanticTypeLimitExceeded' } });
+
+  // Re-saving one of the fields ALREADY in the bucket (unchanged
+  // semanticType) is unaffected — the cap only fires when a binding is
+  // actually gained, not on every edit to an already-counted field.
+  const alreadyBound = await owner.query(api.fields.queries.listFieldDefinitions, { organizationId, paginationOpts: firstPage });
+  const existingBoundField = alreadyBound.page.find((field) => field.key === 'pax0');
+  if (existingBoundField === undefined) throw new Error('test setup: expected pax0 to exist');
+  await expect(owner.mutation(api.fields.mutations.updateFieldDefinition, {
+    fieldDefinitionId: existingBoundField._id, label: 'Pax 0 renamed',
+  })).resolves.toBeNull();
 });
 
 test('published and retired references preserve field meaning while allowing presentation edits', async () => {
