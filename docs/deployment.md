@@ -183,54 +183,22 @@ answers `200 {"status":"ok"}`. Point the platform's health check there — **not
 On DigitalOcean App Platform, create the service from the image pushed in section
 4 and set `CLERK_SECRET_KEY` as a runtime secret.
 
-## 6. The statistics backfill — required for any pre-existing data
+## 6. Seeding and the destructive tenant reset
 
-**Read this before showing anyone the dashboard.**
-
-Statistics are served from maintained counters that are updated by the same
-mutations that write the underlying facts. Counters therefore only know about
-writes made *after* the counters existed. Any organization whose data predates
-them — imported records, a seeded demo, anything created before this schema —
-reports **zero across every statistic, with no error and no hint why**. It looks
-like a broken product rather than a missing migration step.
-
-A brand-new production deployment with no data needs nothing here. The moment you
-import or seed anything, run the backfill for every organization:
+**`PRIAMO_ENABLE_SEED` gates `seed/reset:resetTenantOperations`**, which
+hard-deletes an organization's events, recipes, and locations, and the seed
+mutations beside it. Leave the flag unset on production. If you ever need it,
+turn it on and off again in the same sitting:
 
 ```bash
-cd apps/convex
-ORG=<organizationId>
-for PHASE in clear events projects recipes locations; do
-  CURSOR=null
-  while :; do
-    OUT=$(bunx convex run statistics/mutations:backfillOrganizationCounters \
-      "{\"organizationId\":\"$ORG\",\"phase\":\"$PHASE\",\"cursor\":$CURSOR}" --prod)
-    echo "$OUT" | grep -q '"isDone": true' && break
-    CURSOR="\"$(echo "$OUT" | grep -o '"continueCursor": *"[^"]*"' | sed 's/.*: *"//;s/"//')\""
-  done
-done
+bunx convex env set PRIAMO_ENABLE_SEED true --prod
+# ... run the seed or reset ...
+bunx convex env remove PRIAMO_ENABLE_SEED --prod
 ```
 
-Run `clear` first, then each entity phase, feeding the returned cursor back until
-the phase reports `isDone`. Each call processes at most 100 indexed rows, so it is
-safe on large tenants. Run it in a maintenance window: normal writes must not race
-a rebuild that resets its destination rows.
-
-> **The backfill is gated by `PRIAMO_ENABLE_SEED`, and so is the destructive
-> tenant reset.** Turning the flag on to run a backfill also opens
-> `seed/reset:resetTenantOperations`, which hard-deletes an organization's events,
-> recipes, and locations. Enable it, run the backfill, and turn it off again in the
-> same sitting:
->
-> ```bash
-> bunx convex env set PRIAMO_ENABLE_SEED true --prod
-> # ... run the backfill ...
-> bunx convex env remove PRIAMO_ENABLE_SEED --prod
-> ```
->
-> Leaving it on is not a small risk. It also permits seeding, which consumes the
-> deployment-wide-unique organization slug and permanently squats built-in field
-> keys for every tenant — none of which can be undone.
+Leaving it on is not a small risk. It permits seeding, which consumes the
+deployment-wide-unique organization slug and permanently squats built-in field
+keys for every tenant — none of which can be undone.
 
 ## 7. Verification checklist
 
@@ -245,8 +213,6 @@ Run through this after every production deploy.
       `CLERK_JWT_ISSUER_DOMAIN` does not match the issuer.
 - [ ] The browser console is clean on at least the landing page and one signed-in
       screen.
-- [ ] Statistics show non-zero numbers for an organization that has services. If
-      they are all zero and services exist, the backfill has not been run.
 - [ ] Switching locale changes the chrome and leaves tenant-authored names
       untouched.
 

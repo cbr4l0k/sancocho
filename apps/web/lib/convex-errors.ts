@@ -50,12 +50,7 @@ export type ConvexErrorMessageKey =
   | 'errors.locationDeleteBlocked'
   | 'errors.locationAddressTooLong'
   | 'errors.locationCoordinatesInvalid'
-  | 'errors.auditInvalid'
-  | 'errors.statisticsWindowInvalid'
-  | 'errors.statisticsWindowTooLarge'
-  | 'errors.statisticsLimitInvalid'
-  | 'errors.statisticsFilterWindowInvalid'
-  | 'errors.statisticsThresholdInvalid';
+  | 'errors.auditInvalid';
 
 /** Kept as an alias so existing presentation call sites remain unchanged. */
 export type ConvexErrorPresentation = ConvexErrorMessageKey;
@@ -150,17 +145,6 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedRecipeConflict: 'errors.generic',
   auditEntityIdTooLong: 'errors.auditInvalid',
   auditMetadataInvalid: 'errors.auditInvalid',
-  statisticsWindowInvalid: 'errors.statisticsWindowInvalid',
-  statisticsWindowTooLarge: 'errors.statisticsWindowTooLarge',
-  statisticsLimitInvalid: 'errors.statisticsLimitInvalid',
-  statisticsFilterWindowInvalid: 'errors.statisticsFilterWindowInvalid',
-  statisticsThresholdInvalid: 'errors.statisticsThresholdInvalid',
-  // Both codes are thrown only from `backfillOrganizationCounters`, an
-  // `internalMutation` no web client can call — there is no UI surface for
-  // them to describe, so they fall back to the generic message rather than
-  // getting copy nobody will ever read.
-  statisticsBackfillCursorInvalid: 'errors.generic',
-  statisticsBackfillPhaseComplete: 'errors.generic',
 };
 
 function isErrorCode(code: string): code is ErrorCode {

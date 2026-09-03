@@ -47,11 +47,7 @@ async function deleteAll<
     | 'recipeVersions'
     | 'eventRecipes'
     | 'fieldDefinitions'
-    | 'locations'
-    | 'statisticsCounters'
-    | 'statisticsSemanticCounters'
-    | 'statisticsTotals'
-    | 'statisticsBackfillProgress',
+    | 'locations',
 >(
   ctx: MutationCtx,
   table: T,
@@ -74,10 +70,6 @@ export const resetTenantOperations = internalMutation({
     eventRecipes: v.number(),
     fieldDefinitions: v.number(),
     locations: v.number(),
-    statisticsCounters: v.number(),
-    statisticsSemanticCounters: v.number(),
-    statisticsTotals: v.number(),
-    statisticsBackfillProgress: v.number(),
     auditEvents: v.number(),
   }),
   handler: async (ctx) => {
@@ -95,14 +87,6 @@ export const resetTenantOperations = internalMutation({
     // the things pointing at them.
     const fieldDefinitions = await deleteAll(ctx, 'fieldDefinitions');
     const locations = await deleteAll(ctx, 'locations');
-    // Every table the maintained statistics counters mirror was just wiped
-    // above; leaving these behind would report stale totals for a "clean
-    // slate" tenant, and every reseed generation would silently add onto the
-    // last one's counts instead of starting from zero.
-    const statisticsCounters = await deleteAll(ctx, 'statisticsCounters');
-    const statisticsSemanticCounters = await deleteAll(ctx, 'statisticsSemanticCounters');
-    const statisticsTotals = await deleteAll(ctx, 'statisticsTotals');
-    const statisticsBackfillProgress = await deleteAll(ctx, 'statisticsBackfillProgress');
 
     const audits = await ctx.db.query('auditEvents').collect();
     let auditEvents = 0;
@@ -121,10 +105,6 @@ export const resetTenantOperations = internalMutation({
       eventRecipes,
       fieldDefinitions,
       locations,
-      statisticsCounters,
-      statisticsSemanticCounters,
-      statisticsTotals,
-      statisticsBackfillProgress,
       auditEvents,
     };
   },

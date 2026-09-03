@@ -357,12 +357,11 @@ test('semantic compatibility is enforced on creation and update, and absent sema
 
 /**
  * `passenger.count` and `accessibility.wheelchairCount` are counts of
- * discrete things — never fractional — and a statistics counter maintains a
- * running sum over their values for the whole lifetime of every event that
- * carries one (statistics/model.ts `statisticsSemanticCounters`). A field
- * bound to either type must therefore declare `integer: true` on its
- * `number` config, or a fractional value could accumulate floating-point
- * residue into that running sum that a live re-scan would never reproduce.
+ * discrete things — never fractional. A field bound to either type must
+ * therefore declare `integer: true` on its `number` config, or a value that
+ * the semantic type cannot mean (2.5 passengers) becomes storable, and any
+ * consumer summing or averaging those values inherits floating-point residue
+ * from it.
  */
 test('a field bound to a counting semantic type must declare an integer number config', async () => {
   const t = convexTest(schema, modules);

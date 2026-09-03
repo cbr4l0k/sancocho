@@ -6,10 +6,10 @@ coordinators, event organizers and ops teams who currently run complex transport
 projects on spreadsheets and email.
 
 Two halves, both real. The backend is complete and tested: schema, domain modules,
-authorization, validation, audit log, maintained statistics counters, and a seeded
+authorization, validation, audit log, and a seeded
 demonstration slice. The console (`apps/web/`) is built on top of it: Next.js App Router
 with React 19 and Tailwind v4, covering projects, services, service configuration
-(fields, recipes, locations), statistics, and organization settings, in `es-CO` and
+(fields, recipes, locations), and organization settings, in `es-CO` and
 `en-US`. Only the chat surface is a stub, and deliberately so — it is a UI with a
 client-side responder that produces reviewable proposals, with no backend chat domain and
 no write path of its own (I11).
@@ -47,9 +47,9 @@ is specified but not yet built — see [`docs/provider-access.md`](docs/provider
 | `apps/convex/convex/auth.config.ts` | Convex JWT provider config (Clerk-specific) |
 | `apps/convex/convex/lib/` | `authAdapter.ts`, `access.ts`, `roles.ts`, `errors.ts`, `names.ts` |
 | `apps/convex/convex/validators/` | Shared Convex validators, the field-config and field-value unions, the semantic registry, audit vocabulary |
-| `apps/convex/convex/<domain>/` | One directory per domain: `auth`, `organizations`, `invitations`, `projects`, `fields`, `recipes` (+ `recipes/fields`), `events`, `locations`, `relationships`, `statistics`, `audit`, `seed` |
+| `apps/convex/convex/<domain>/` | One directory per domain: `auth`, `organizations`, `invitations`, `projects`, `fields`, `recipes` (+ `recipes/fields`), `events`, `locations`, `relationships`, `audit`, `seed` |
 | `apps/convex/tests/` | vitest + convex-test suites, one file per domain concern |
-| `apps/web/` | The Next.js operations console: 24 App Router route files under `app/` (18 pages, 4 layouts, an error boundary and `/api/health`), 55 files under `components/` — 13 of them vendored shadcn primitives in `components/ui/` — `i18n/` with the `es-CO` / `en-US` catalogues and a `check-i18n` lint gate, and 22 colocated `*.test.ts` suites under `lib/` and `i18n/` |
+| `apps/web/` | The Next.js operations console: 23 App Router route files under `app/` (17 pages, 4 layouts, an error boundary and `/api/health`), 42 files under `components/` — 13 of them vendored shadcn primitives in `components/ui/` — `i18n/` with the `es-CO` / `en-US` catalogues and a `check-i18n` lint gate, and 19 colocated `*.test.ts` suites under `lib/` and `i18n/` |
 | `packages/shared/` | Marker package for future provider-neutral shared types |
 | `docs/` | Architecture and policy documentation (index below) |
 
@@ -213,7 +213,6 @@ catalogue, with no demo tenant.
 | [`docs/auth.md`](docs/auth.md) | Identity flow, the adapter boundary, exactly which files are Clerk-specific, what replacing Clerk requires, self-hosted considerations |
 | [`docs/authorization.md`](docs/authorization.md) | The two-path access chain, the role policy per operation, tenant isolation, error discipline |
 | [`docs/provider-access.md`](docs/provider-access.md) | Decision record for the second principal: provider Organizations, scoped grants, the closed capability set, the code-owned semantic projection. Decided, not built |
-| [`docs/statistics.md`](docs/statistics.md) | Maintained counters, semantic aggregation, the backfill, and why a dashboard read is a point read |
 | [`docs/web-design.md`](docs/web-design.md) | The console's design decision record: typography, palette, status colour/shape mapping, table/form/pagination patterns |
 | [`docs/web-chat.md`](docs/web-chat.md) | The chat surface, its stubbed responder, and the proposal contract |
 | [`docs/recipes.md`](docs/recipes.md) | Field definitions, the semantic capability registry, config snapshots, recipe/version lifecycle and published immutability |

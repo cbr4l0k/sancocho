@@ -55,9 +55,6 @@ import type * as seed_cordillera from "../seed/cordillera.js";
 import type * as seed_identity from "../seed/identity.js";
 import type * as seed_mutations from "../seed/mutations.js";
 import type * as seed_reset from "../seed/reset.js";
-import type * as statistics_model from "../statistics/model.js";
-import type * as statistics_mutations from "../statistics/mutations.js";
-import type * as statistics_queries from "../statistics/queries.js";
 import type * as validators_index from "../validators/index.js";
 
 import type {
@@ -114,9 +111,6 @@ declare const fullApi: ApiFromModules<{
   "seed/identity": typeof seed_identity;
   "seed/mutations": typeof seed_mutations;
   "seed/reset": typeof seed_reset;
-  "statistics/model": typeof statistics_model;
-  "statistics/mutations": typeof statistics_mutations;
-  "statistics/queries": typeof statistics_queries;
   "validators/index": typeof validators_index;
 }>;
 

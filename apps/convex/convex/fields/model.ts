@@ -381,7 +381,7 @@ function assertSemanticCompatibility(semanticType: SemanticType | undefined, con
   // A semantic type whose values are always a count of discrete things
   // (`requiresInteger`) needs its `number` config to actually enforce that —
   // see the doc comment on `SemanticDefinition.requiresInteger` in
-  // validators/index.ts for why a maintained statistics counter depends on it.
+  // validators/index.ts.
   if (definition.requiresInteger === true && config.kind === 'number' && config.integer !== true) {
     return invalidInput('fieldSemanticIncompatible', 'This semantic type requires an integer-valued number field (config.integer must be true)');
   }
@@ -395,17 +395,14 @@ function assertSemanticCompatibility(semanticType: SemanticType | undefined, con
  * (everything except `passenger.count`/`accessibility.wheelchairCount`
  * today) — this is deliberately narrow, not a general field-count limit.
  *
- * This is the CREATE/UPDATE-time half of the guarantee; the READ-time half
- * (`statistics/model.ts` `getTrackedFieldDefinitionsForType`, which enforces
- * the identical number defensively on every read) is what actually protects
- * data that predates this check — this half exists so a tenant hits one
- * clear, immediate rejection at configuration time instead of a mysterious
- * failure on every subsequent service write.
+ * A tenant hits one clear, immediate rejection at configuration time rather
+ * than a mysterious failure later, when something has to resolve the whole
+ * bound field list to interpret an event.
  *
  * `.take(max + 1)` bounds this to at most `max + 1` documents regardless of
  * how many fields this org has ever created in total (I6) — it reads only
  * the rows that share this exact `(organizationId, semanticType)` pair, via
- * the same `by_org_semantic` index the read-side check uses.
+ * the `by_org_semantic` index.
  */
 async function assertSemanticTypeCapacity(
   ctx: MutationCtx,

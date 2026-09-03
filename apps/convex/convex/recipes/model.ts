@@ -11,7 +11,6 @@ import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
 import { assertUsableLocation } from '../locations/model';
 import type { fieldConfigValidator, eventFieldValueValidator } from '../validators';
-import { changeCounter } from '../statistics/model';
 
 type FieldConfig = typeof fieldConfigValidator.type;
 type EventFieldValue = typeof eventFieldValueValidator.type;
@@ -78,7 +77,6 @@ export async function archiveRecipe(ctx: MutationCtx, recipeId: Id<'eventRecipes
   // archived recipe, so they are inert rather than dangerous.
   await retireCurrentPublishedVersion(ctx, recipe, access);
   await ctx.db.patch(recipeId, { status: 'archived' });
-  if (recipe.status === 'active') await changeCounter(ctx, { organizationId: recipe.organizationId, category: 'activeRecipe', delta: -1 });
   await recordAuditEvent(ctx, { organizationId: recipe.organizationId, actorUserId: access.user._id, action: 'recipe.archived', entityType: 'eventRecipe', entityId: recipeId, metadata: { previousStatus: recipe.status } });
 }
 
@@ -123,7 +121,6 @@ export async function publishRecipeVersion(ctx: MutationCtx, recipeVersionId: Id
   await ctx.db.patch(recipeVersionId, { status: 'published', publishedAt: Date.now() });
   if (recipe.status === 'draft') {
     await ctx.db.patch(recipe._id, { status: 'active' });
-    await changeCounter(ctx, { organizationId: recipe.organizationId, category: 'activeRecipe', delta: 1 });
   }
   await recordAuditEvent(ctx, { organizationId: recipe.organizationId, actorUserId: access.user._id, action: 'recipeVersion.published', entityType: 'recipeVersion', entityId: recipeVersionId, metadata: { versionNumber: version.versionNumber } });
 }

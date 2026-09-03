@@ -110,7 +110,7 @@ Enumerated, and every entry is a required negative test in #71 and #87.
    it was resolved from, or what any other Provider charges.
 9. The Event's **budget** (`budgetAmount`, `budgetCurrency`), `clientCostCentreId`, and
    accountable owner.
-10. **Statistics** of any kind — counters, totals, semantic breakdowns, occupancy,
+10. **Aggregates** of any kind — counters, totals, semantic breakdowns, occupancy,
     rollups.
 11. The coordinator's **audit log**, members, invitations, or organization settings.
 12. Anything at all on a Project it was not granted. A grant for Project A confers nothing

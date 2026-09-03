@@ -141,7 +141,7 @@ building a screen.
 ```
 apps/convex/convex/   — schema.ts + one directory per domain (auth, organizations,
                         invitations, projects, fields, recipes, recipes/fields, events,
-                        locations, relationships, statistics, audit, seed, validators, lib)
+                        locations, relationships, audit, seed, validators, lib)
                         each domain: model.ts (logic) + queries.ts / mutations.ts (thin)
 apps/convex/tests/    — convex-test suites, one per domain
 apps/web/             — app/[locale]/… routes, components/{ui,<domain>}, i18n/, lib/
@@ -159,7 +159,7 @@ Guidance, not rigid; prefer cohesive modules over giant files.
   slice → `stage:C` remaining domains → `stage:D` seeds/demo → `stage:E` docs; console
   `stage:F` foundation (shell, auth, i18n) → `stage:G` configuration surfaces (fields,
   recipes) → `stage:H` operations surfaces (projects, locations, services) → `stage:I`
-  chat → `stage:J` statistics & export. Then the reshape (tracked in #91): `stage:M`
+  chat → `stage:J` export. Then the reshape (tracked in #91): `stage:M`
   reshape foundation (rename, Event layer, money primitives, cost centres) → `stage:N`
   principals (providers directory, Principal union, grants, the single gate) → `stage:O`
   commercial backend (fleet, rate cards, assignments, costing, rollups) → `stage:P`

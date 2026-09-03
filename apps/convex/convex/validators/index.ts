@@ -121,10 +121,9 @@ export const projectDocValidator = v.object({
  * `eventFields` above: `schema.ts` builds the table from it and every public
  * query builds its `returns` validator from it, so the stored document and the
  * documented API contract cannot drift. Before this it was declared a second
- * time (schema.ts had its own inline shape, and `recipes/queries.ts` and
- * `statistics/queries.ts` each hand-rolled their own copy of the return
- * shape) — a column added to one would have been silently rejected by the
- * others at runtime.
+ * time (schema.ts had its own inline shape, and `recipes/queries.ts`
+ * hand-rolled its own copy of the return shape) — a column added to one would
+ * have been silently rejected by the others at runtime.
  */
 export const recipeFields = {
   organizationId: v.id('organizations'),
@@ -365,10 +364,6 @@ export const auditActionValidator = v.union(
   v.literal('location.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
-  // The statistics counter backfill is a deployment-administrative operation
-  // (see statistics/model.ts), not a tenant-facing write, but it is still
-  // destructive and still gets exactly one audit action like everything else.
-  v.literal('organization.statisticsBackfilled'),
   v.literal('invitation.created'),
   v.literal('invitation.revoked'),
   v.literal('invitation.accepted'),
@@ -509,45 +504,32 @@ type SemanticDefinition = Readonly<{
   // Only meaningful when `expectedDataType` is `'number'`: a `count` of
   // discrete things (passengers, luggage pieces, wheelchairs) is never
   // fractional, so a field bound to one of these types must declare
-  // `integer: true` on its `number` config. Without this, a maintained
-  // running-sum counter (statistics/model.ts `statisticsSemanticCounters`)
-  // accumulating fractional deltas over many add/edit/clear cycles can drift
-  // by IEEE-754 floating-point residue — a permanently nonzero `sum` at
-  // `count: 0` that the live-scan path (which recomputes from the stored
-  // rows every time) would never reproduce, so the maintained and scanned
-  // totals silently disagree forever. Omitted (falls back to `false`
-  // implicitly, i.e. absent) for semantic types with no such invariant.
+  // `integer: true` on its `number` config. A fractional passenger count is
+  // not a value this semantic type can mean, and any consumer summing or
+  // averaging these values would inherit IEEE-754 residue from one. Omitted
+  // (falls back to `false` implicitly, i.e. absent) for semantic types with
+  // no such invariant.
   requiresInteger?: true | undefined;
-  // Only meaningful for a type `statistics/model.ts` actually resolves field
-  // definitions for (today: `passenger.count`, `accessibility.wheelchairCount`
-  // — see `TrackedSemanticType` there). `fields/model.ts` enforces this at
-  // field CREATE/UPDATE time (`assertSemanticTypeCapacity`), and
-  // `statistics/model.ts` `getTrackedFieldDefinitionsForType` enforces it
-  // AGAIN defensively on every read (`.take(cap + 1)`, throws if exceeded) —
-  // the creation-time check cannot retroactively bound rows already written
-  // before the cap existed. Both checks read the SAME number from here, so
-  // they can never silently disagree. See the doc comment on
-  // `maxFieldDefinitionsPerSemanticType` in fields/model.ts for why this
-  // specific number was chosen. Omitted for every type this file's
-  // statistics layer never resolves a field list for.
+  // How many field definitions one organization may bind to this semantic
+  // type (today: `passenger.count`, `accessibility.wheelchairCount`).
+  // `fields/model.ts` enforces it at field CREATE/UPDATE time
+  // (`assertSemanticTypeCapacity`), reading this number rather than a
+  // hand-copied literal, so the rule and the constant can never disagree.
+  // Deliberately narrow: this is a per-(organization, semanticType) cap on
+  // the types a per-write consumer resolves a field list for, not a general
+  // field-count limit. Omitted for every type without such a consumer.
   maxFieldDefinitionsPerSemanticType?: number | undefined;
 }>;
 
-/** Code-owned semantics; tenant data may name a type but can never grant capabilities. */
 // A tenant can bind at most this many field definitions to
-// `passenger.count` or `accessibility.wheelchairCount` — the only semantic
-// types `statistics/model.ts` `getTrackedFieldDefinitionsForType` resolves a
-// field list for. Without a cap, an org that (deliberately or accidentally)
-// bound an unusually large number of custom fields to the same tracked type
-// could push `createEventFromRecipe`/`updateEventFields`/`changeEventStatus`
-// — which resolve this list on every single write — past Convex's
-// per-transaction read limit; the failure mode is service creation breaking
-// for that tenant, not a dashboard getting slow. 25 is real headroom over
-// what a realistic tenant needs (a dozen or so: adult/child/infant/staff
-// passenger counts, a couple of accessibility variants) while keeping the
-// worst case — a filtered read scanning `maxFilteredScan` (500) events, each
-// resolving up to this many field definitions — comfortably inside a single
-// transaction's budget (500 × 26 = 13,000 targeted point reads).
+// `passenger.count` or `accessibility.wheelchairCount` — the counting
+// semantic types a consumer has to resolve a whole field list for before it
+// can interpret one event. Without a cap, an org that (deliberately or
+// accidentally) bound an unusually large number of custom fields to the same
+// type could push such a resolution past Convex's per-transaction read
+// limit. 25 is real headroom over what a realistic tenant needs (a dozen or
+// so: adult/child/infant/staff passenger counts, a couple of accessibility
+// variants). Enforced by `assertSemanticTypeCapacity` in fields/model.ts.
 export const maxTrackedFieldDefinitions = 25;
 
 /** Code-owned semantics; tenant data may name a type but can never grant capabilities. */
@@ -586,22 +568,6 @@ export const semanticRegistry = Object.freeze({
 } satisfies Record<string, SemanticDefinition>);
 
 export type SemanticType = keyof typeof semanticRegistry;
-
-/**
- * Every semantic type whose registry entry declares `capability` among its
- * `capabilities`, computed from the registry itself rather than a
- * hand-maintained list — so a statistics feature keyed on a capability (e.g.
- * `passengerTotals`, `accessibilityRequirements`) automatically follows any
- * future field bound to that capability, and a field whose semantics are
- * never wired to a capability is automatically excluded. This is what
- * "compute from semanticType, never by matching on field keys or labels"
- * means in code: the caller names a capability, never a field key.
- */
-export function semanticTypesForCapability(capability: SemanticCapability): readonly SemanticType[] {
-  return (Object.keys(semanticRegistry) as SemanticType[]).filter((type) =>
-    (semanticRegistry[type].capabilities as readonly SemanticCapability[]).includes(capability),
-  );
-}
 
 /** Must stay in sync with semanticRegistry keys; the satisfies check below enforces it. */
 export const semanticTypeValidator = v.union(

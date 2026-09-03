@@ -213,15 +213,14 @@ function ShellFrame({ children }: ApplicationShellProps) {
   const t = useTranslations();
   // Nav visibility is presentation only, never authorization (I1); the server is sole authority.
   //
-  // Five destinations, in the order a day runs: ask, then plan, then dispatch,
-  // then review, and configuration last. Recipes, locations and field
-  // definitions are organization *configuration*, not daily operations, so they
-  // live under /settings rather than competing with them here.
+  // Four destinations, in the order a day runs: ask, then plan, then dispatch,
+  // and configuration last. Recipes, locations and field definitions are
+  // organization *configuration*, not daily operations, so they live under
+  // /settings rather than competing with them here.
   const nav = [
     { to: '/chat', label: t('nav.chat') },
     { to: '/projects', label: t('nav.projects') },
     { to: '/services', label: t('nav.services') },
-    { to: '/statistics', label: t('nav.statistics') },
     { to: '/settings', label: t('nav.settings') },
   ];
 

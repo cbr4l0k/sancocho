@@ -530,8 +530,8 @@ reached from the nav, not the landing view.
 
 The route tree splits along **operational data vs. configuration**, and the nav
 mirrors that split. Operational surfaces sit at the top level —
-`/{locale}/chat`, `/{locale}/projects`, `/{locale}/services`, and
-`/{locale}/statistics`. Configuration lives under settings:
+`/{locale}/chat`, `/{locale}/projects` and `/{locale}/services`. Configuration
+lives under settings:
 `/{locale}/settings` (organization, including the read-only member roster),
 `/{locale}/settings/recipes`, `/{locale}/settings/fields`, and
 `/{locale}/settings/locations`. Recipes, Field Definitions and Locations are
