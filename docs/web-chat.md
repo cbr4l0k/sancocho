@@ -14,14 +14,16 @@ lost on reload, tab close, or navigation away from and back to `/chat`.**
 Why, in order of weight:
 
 1. **Persisting it is a backend issue, not a frontend one**, exactly as #32 calls out.
-   A durable conversation needs a new Convex table, tenant scoping (I1: every row must
-   prove `identity → app user → org membership`), pagination for a growing per-user
-   history (I6), and a decision about whether conversation content belongs in the audit
-   log. None of that exists yet, and building it silently inside a UI-only issue would
-   smuggle a schema decision into a ticket that explicitly excludes one.
-2. **Nothing here is authoritative data.** Per #33, the assistant never writes directly;
-   a proposal only becomes a real Recipe or Service once a human accepts it into the
-   existing form and submits the existing mutation. The conversation transcript itself
+   A durable conversation needs a new Convex table, tenant scoping (I1 on its member arm:
+   every row must prove `identity → app user → org membership → capability`; a
+   conversation is coordinator data and no provider grant reaches it), pagination for a
+   growing per-user history (I6), and a decision about whether conversation content
+   belongs in the audit log. None of that exists yet, and building it silently inside a
+   UI-only issue would smuggle a schema decision into a ticket that explicitly excludes
+   one.
+2. **Nothing here is authoritative data.** Per #33 and I11, the assistant never writes
+   directly; a proposal only becomes a real Recipe or Service once a human accepts it into
+   the existing form and submits the existing mutation. The conversation transcript itself
    is scratch space for getting there, not a record Priamo needs to keep — the actual
    product artifacts (recipes, services) are what get persisted, through the paths that
    already persist them.

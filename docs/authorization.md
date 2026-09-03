@@ -2,17 +2,51 @@
 
 ## The access chain (I1)
 
-Every public operation proves the same chain, implemented once in `lib/access.ts`:
+I1 is a **two-path** model:
 
 ```
 identity (auth adapter)
   → users row for (authProvider, authSubject)
-  → organizationMemberships row for the target organization
-  → membership role ≥ the operation's minimum role
+  → principal
+      ├─ member:   organizationMemberships row for the target organization
+      └─ provider: an active providerAccessGrants row for (provider, project)
+  → capability
+      ├─ member:   membership role ≥ the operation's minimum role
+      └─ provider: the requested intent ∈ the grant's closed capability set
   → ownership of every referenced entity, re-derived from the stored graph
 ```
 
-Knowing a Convex id grants nothing. `requireAuthenticatedUser`, `requireOrganizationMembership`,
+Knowing a Convex id grants nothing, on either path. Neither arm derives capability from
+identity alone: a member proves a stored membership row and a role rank, a provider proves
+a stored grant row and a named capability. The two vocabularies do not compose — a
+provider's rank inside its *own* Organization confers nothing here, and a coordinator's
+role confers nothing through a grant its tenant issued.
+
+**The provider path does not exist in code yet.** Everything below this section describes
+the member path, which is the only path `lib/access.ts` implements today: every helper
+there takes an `organizationId` and returns a shape containing
+`membership: Doc<'organizationMemberships'>`, so a second principal cannot currently be
+expressed without changing that return type. Issue #71 generalizes it — a `Principal`
+discriminated union, a `providerAccessGrants` table, and one
+`requireAssignmentAccess(ctx, assignmentId, intent)` gate that every Assignment-touching
+operation must route through. The decision it implements is recorded in
+[`provider-access.md`](provider-access.md), including the enumerated may-see / may-not-see
+lists, the closed capability set (`readAssignment`, `writeExecution`, `respondToTerms`,
+`readLinkedServiceProjection`), and the rule that grants are non-transitive.
+
+The invariant is stated in its target shape deliberately. If I1 kept describing membership
+as the only principal, it would stop being load-bearing the moment the second arm landed,
+and every helper written in the meantime would be written against a chain the code is
+about to leave.
+
+Error discipline is identical on both paths (I9): an ungranted provider probing an
+adjacent id gets the same generic error as a stranger probing a fabricated one. Audit
+carries both actor dimensions — which user, acting under which grant.
+
+### The member path today
+
+Every public operation proves the member chain, implemented once in `lib/access.ts`.
+`requireAuthenticatedUser`, `requireOrganizationMembership`,
 `requireOrganizationRole` and `requireOrganizationAccess` are the only entry points; domains
 add one resolver each on top (`requireProjectAccess`, `requireEventAccess`,
 `requireLocationAccess`, `requireRecipeAccess`, `requireVersionAccess`,

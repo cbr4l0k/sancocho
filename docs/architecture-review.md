@@ -8,7 +8,8 @@
 > [`deviations.md`](deviations.md).
 
 Implementation-affecting decisions for the priamo backend foundation. Invariants
-I1–I9 and domain conventions live in `CLAUDE.md`; issue scopes live in GitHub issues
+I1–I11 and domain conventions live in `CLAUDE.md` (I10 and I11 postdate Stage A and are
+not discussed here); issue scopes live in GitHub issues
 #2–#16. This document settles *how* those are realized and records any adjustments
 forced by current Convex/Clerk APIs. Later stages cite this file rather than
 re-deciding.

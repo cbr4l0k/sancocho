@@ -31,10 +31,16 @@ Event → Event Field Values
 - Vocabulary: the backend entity is an **Event**; the console calls it a **Service**
   (`Servicio`). Keep backend identifiers on `event`; keep user-facing words on service.
 
-## Non-negotiable invariants (I1–I9)
+## Non-negotiable invariants (I1–I11)
 
-- **I1 Tenant isolation**: every public op proves `identity → app user → org membership →
-  permission → ownership of every referenced entity`. Knowing a Convex ID grants nothing.
+- **I1 Tenant isolation**: every public op proves `identity → app user → principal
+  (member | provider grant) → capability → ownership of every referenced entity`. Knowing
+  a Convex ID grants nothing. There are two principal arms and neither derives capability
+  from identity alone: an organization membership carrying a ranked role, or a scoped,
+  non-transitive Provider grant carrying a closed capability set. No invariant, helper or
+  doc may assume membership is the only possible principal. The second arm is specified in
+  [`docs/provider-access.md`](docs/provider-access.md) and implemented by #71; it does not
+  exist in code yet.
 - **I2 Published Recipe Versions are immutable** (record, fields, ordering, required
   flags, defaults, validation, visibility). Changes go through a new draft version.
 - **I3 Historical validation integrity**: Events stay interpretable and validatable under
@@ -52,7 +58,18 @@ Event → Event Field Values
   reference types, workflow engines, or low-code form engines. Structured flexibility only.
 - **I9 Don't disclose cross-tenant existence** — generic "not found/inaccessible" errors
   when a caller lacks access, whether or not the entity exists. The console must not
-  translate an error into anything more specific than the backend's own code.
+  translate an error into anything more specific than the backend's own code. This applies
+  identically to both principal arms.
+- **I10 Agreed money is immutable.** Once an Assignment revision resolves a rate from a
+  published Rate Card Version, that amount is stored on the revision and is never
+  recomputed. Reports read the stored figure. Editing a rate card, renaming a vehicle
+  class, retiring a version or archiving a provider can never retroactively change what a
+  past assignment cost. Renegotiation creates a new server-numbered revision (I7); it
+  never patches an accepted one.
+- **I11 The assistant never writes.** Chat emits typed, reviewable proposals; accepting a
+  proposal prefills the ordinary form and every write goes through the same validated
+  mutation a human action would use. There is no privileged assistant path, no
+  assistant-only mutation, and no bypass of any authorization or validation gate.
 
 ## Backend conventions
 
@@ -123,8 +140,8 @@ building a screen.
 
 ```
 apps/convex/convex/   — schema.ts + one directory per domain (auth, organizations,
-                        projects, fields, recipes, recipes/fields, events, locations,
-                        relationships, audit, seed, validators, lib)
+                        invitations, projects, fields, recipes, recipes/fields, events,
+                        locations, relationships, statistics, audit, seed, validators, lib)
                         each domain: model.ts (logic) + queries.ts / mutations.ts (thin)
 apps/convex/tests/    — convex-test suites, one per domain
 apps/web/             — app/[locale]/… routes, components/{ui,<domain>}, i18n/, lib/
@@ -142,8 +159,15 @@ Guidance, not rigid; prefer cohesive modules over giant files.
   slice → `stage:C` remaining domains → `stage:D` seeds/demo → `stage:E` docs; console
   `stage:F` foundation (shell, auth, i18n) → `stage:G` configuration surfaces (fields,
   recipes) → `stage:H` operations surfaces (projects, locations, services) → `stage:I`
-  chat → `stage:J` statistics & export. Don't start a stage while the previous one is
-  knowingly broken.
+  chat → `stage:J` statistics & export. Then the reshape (tracked in #91): `stage:M`
+  reshape foundation (rename, Event layer, money primitives, cost centres) → `stage:N`
+  principals (providers directory, Principal union, grants, the single gate) → `stage:O`
+  commercial backend (fleet, rate cards, assignments, costing, rollups) → `stage:P`
+  provider accounts & portal → `stage:Q` console (events, config, assignment panel,
+  dispatch, budget, import) → `stage:R` chat backend. `stage:K` and `stage:L` are
+  **retired**: their split encoded an ordering that changed (the access-chain
+  generalization now precedes the commercial model), so they are not reused or renumbered.
+  Don't start a stage while the previous one is knowingly broken.
 - After every change set, from the repo root: `bun run codegen` → `bun run typecheck` →
   `bun run lint` (includes `i18n:check`) → `bun run test` → fix. Never leave the repo
   non-compiling; never claim tests passed without running them. If a command can't run,
@@ -158,9 +182,21 @@ Guidance, not rigid; prefer cohesive modules over giant files.
 
 ## Explicit non-goals
 
-No driver/vehicle/fleet management, routing, mapping, geocoding, address normalization,
-billing/pricing, flight-tracking integrations, workflow engines, rules engines (leave
-documented room for future structured conditional rules — don't build them), low-code
-builders, event sourcing, or generic reference systems. The chat surface is a UI with a
-stubbed responder that produces reviewable proposals — it is not an agent, a rules
-engine, or a write path of its own. Future compatibility yes; premature building no.
+No routing, mapping, geocoding, address normalization, flight-tracking integrations,
+workflow engines, rules engines (leave documented room for future structured conditional
+rules — don't build them), low-code builders, event sourcing, or generic reference
+systems. The chat surface is a UI with a stubbed responder that produces reviewable
+proposals — it is not an agent, a rules engine, or a write path of its own (I11). Future
+compatibility yes; premature building no.
+
+The commercial model records what was agreed and what it cost. It does **not** extend to:
+
+- No invoicing, tax, payment collection, reconciliation, or accounts-payable system.
+- No pricing engine, formula language, expression DSL, or currency-conversion engine.
+  Rates are looked up from a published Rate Card Version, never computed from a rule.
+- No driver management, payroll, scheduling, telematics, maintenance, or availability
+  system. Vehicle classes are what is priced; fleet vehicles are what shows up.
+- No provider ratings, contracts, document store, insurance tracking, or onboarding
+  workflow.
+- No tenant-configurable disclosure rule (I8) — provider visibility is a code-owned
+  semantic projection; see [`docs/provider-access.md`](docs/provider-access.md).
