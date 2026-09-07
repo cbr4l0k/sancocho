@@ -173,7 +173,7 @@ export async function archiveEvent(ctx: MutationCtx, eventId: Id<'events'>): Pro
 export async function deleteEvent(ctx: MutationCtx, eventId: Id<'events'>): Promise<void> {
   const { event, project, access } = await requireEventAccess(ctx, eventId, authoringRole);
   assertProjectAcceptsEventWrites(project);
-  if (event.status !== 'archived') return invalidInput('eventArchiveRequired', 'Events must be archived before deletion');
+  if (event.status !== 'archived') return invalidInput('eventDeleteRequiresArchive', 'Events must be archived before deletion');
   const service = await ctx.db
     .query('services')
     .withIndex('by_event_startsAt', (q) => q.eq('eventId', event._id))

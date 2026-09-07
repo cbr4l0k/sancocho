@@ -236,12 +236,37 @@ test('Event reads return content to viewers', async () => {
   });
 });
 
+test('Event access rejects a forged Event whose stored Project belongs to another organization', async () => {
+  const { t, client, organizationId, projectId } = await fixture('events-forged-project-chain');
+  const foreignOrganizationId = await client.mutation(createOrganization, {
+    name: 'Foreign Event Project',
+    slug: 'events-forged-project-chain-foreign',
+  });
+  const foreignProjectId = await client.mutation(createProject, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign project',
+  });
+  const forgedEventId = await t.run((ctx) => ctx.db.insert('events', {
+    organizationId,
+    projectId: foreignProjectId,
+    name: 'Corrupt event',
+    status: 'draft',
+    startsAt: 200,
+  }));
+
+  await expect(client.query(getEvent, { eventId: forgedEventId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+  await expect(client.query(listProjectEvents, { projectId, paginationOpts: firstPage })).resolves.toMatchObject({ page: [] });
+});
+
 test('Event dates are finite, ordered, and constrained by the Project window on create and update', async () => {
   const { t, client, projectId } = await fixture('events-dates');
   await expect(client.mutation(createEvent, { projectId, name: 'Bad start', startsAt: Number.NaN })).rejects.toMatchObject({ data: { code: 'eventStartInvalid' } });
   await expect(client.mutation(createEvent, { projectId, name: 'Bad end', startsAt: 200, endsAt: Number.POSITIVE_INFINITY })).rejects.toMatchObject({ data: { code: 'eventEndInvalid' } });
   await expect(client.mutation(createEvent, { projectId, name: 'Bad range', startsAt: 300, endsAt: 200 })).rejects.toMatchObject({ data: { code: 'eventDateRangeInvalid' } });
   await expect(client.mutation(createEvent, { projectId, name: 'Too early', startsAt: 99 })).rejects.toMatchObject({ data: { code: 'eventBeforeProjectWindow' } });
+  await expect(client.mutation(createEvent, { projectId, name: 'Open-ended too late', startsAt: 1001 })).rejects.toMatchObject({ data: { code: 'eventAfterProjectWindow' } });
   await expect(client.mutation(createEvent, { projectId, name: 'Too late', startsAt: 200, endsAt: 1001 })).rejects.toMatchObject({ data: { code: 'eventAfterProjectWindow' } });
   const eventId = await client.mutation(createEvent, { projectId, name: 'Bounded', startsAt: 200, endsAt: 900 });
   await expect(client.mutation(updateEvent, { eventId, startsAt: Number.NaN })).rejects.toMatchObject({ data: { code: 'eventStartInvalid' } });
@@ -253,6 +278,36 @@ test('Event dates are finite, ordered, and constrained by the Project window on 
     expect(await ctx.db.get(eventId)).toMatchObject({ startsAt: 200, endsAt: 900 });
   });
   await expect(client.mutation(createEvent, { projectId, name: 'Boundaries', startsAt: 100, endsAt: 1000 })).resolves.toBeDefined();
+});
+
+test('updating an Event start persists the new start', async () => {
+  const { t, client, projectId } = await fixture('events-update-start');
+  const eventId = await client.mutation(createEvent, { projectId, name: 'Moving start', startsAt: 200, endsAt: 900 });
+
+  await expect(client.mutation(updateEvent, { eventId, startsAt: 300 })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(eventId)).toMatchObject({ startsAt: 300, endsAt: 900 });
+  });
+});
+
+test('updating an Event end persists the new end', async () => {
+  const { t, client, projectId } = await fixture('events-update-end');
+  const eventId = await client.mutation(createEvent, { projectId, name: 'Moving end', startsAt: 200, endsAt: 900 });
+
+  await expect(client.mutation(updateEvent, { eventId, endsAt: 800 })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(eventId)).toMatchObject({ startsAt: 200, endsAt: 800 });
+  });
+});
+
+test('clearing an Event end removes the stored end', async () => {
+  const { t, client, projectId } = await fixture('events-clear-end');
+  const eventId = await client.mutation(createEvent, { projectId, name: 'Clearable end', startsAt: 200, endsAt: 900 });
+
+  await expect(client.mutation(updateEvent, { eventId, endsAt: null })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect((await ctx.db.get(eventId))?.endsAt).toBeUndefined();
+  });
 });
 
 test('completed Projects reject new Events and archived Projects freeze every Event write door', async () => {
@@ -275,7 +330,7 @@ test('completed Projects reject new Events and archived Projects freeze every Ev
 test('archived Events reject edits and unarchived Events reject hard deletion', async () => {
   const { client, projectId } = await fixture('events-own-lifecycle');
   const eventId = await client.mutation(createEvent, { projectId, name: 'Lifecycle event', startsAt: 200 });
-  await expect(client.mutation(deleteEvent, { eventId })).rejects.toMatchObject({ data: { code: 'eventArchiveRequired' } });
+  await expect(client.mutation(deleteEvent, { eventId })).rejects.toMatchObject({ data: { code: 'eventDeleteRequiresArchive' } });
   await client.mutation(archiveEvent, { eventId });
   await expect(client.mutation(updateEvent, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: { code: 'eventArchived' } });
 });

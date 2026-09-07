@@ -1060,6 +1060,48 @@ test('service queries paginate by start time, stay tenant-scoped, and join live 
   await expect(member.client.query(getService, { serviceId: foreignServiceId })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
+test('listEventServices paginates only the requested Event in ascending start order', async () => {
+  const { owner, projectId, eventId, versionId, requiredCode, createService } = await fixture();
+  const otherEventId = await owner.client.mutation(createEvent, { projectId, name: 'Other event', startsAt: 0 });
+  await owner.client.mutation(createServiceFromServiceKind, {
+    eventId: otherEventId,
+    serviceKindVersionId: versionId,
+    name: 'Other event service',
+    startsAt: 50,
+    values: [requiredCode],
+  });
+  const late = await createService([requiredCode], { name: 'Late', startsAt: 300 });
+  const early = await createService([requiredCode], { name: 'Early', startsAt: 100 });
+
+  const first = await owner.client.query(listEventServices, {
+    eventId,
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  expect(first.page.map((service) => service._id)).toEqual([early]);
+  expect(first.isDone).toBe(false);
+  const second = await owner.client.query(listEventServices, {
+    eventId,
+    paginationOpts: { numItems: 1, cursor: first.continueCursor },
+  });
+  expect(second.page.map((service) => service._id)).toEqual([late]);
+  expect(second.isDone).toBe(true);
+});
+
+test('Service access rejects a forged Service whose Event belongs to a different Project', async () => {
+  const { t, owner, organizationId, projectId, createService } = await fixture();
+  const otherProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Other service project' });
+  const otherEventId = await owner.client.mutation(createEvent, { projectId: otherProjectId, name: 'Other service event', startsAt: 0 });
+  const forgedServiceId = await createService();
+  await t.run((ctx) => ctx.db.patch(forgedServiceId, { eventId: otherEventId }));
+
+  await expect(owner.client.query(getService, { serviceId: forgedServiceId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+  await expect(owner.client.query(listProjectServices, { projectId, paginationOpts: firstPage })).resolves.toMatchObject({
+    page: [expect.objectContaining({ _id: forgedServiceId })],
+  });
+});
+
 test('F3 regression: configured defaults are materialized at creation, before the required-field check', async () => {
   const { t, owner, organizationId, eventId, locationId } = await fixture();
   // A fresh serviceKind whose fields carry defaults, including a REQUIRED one: the

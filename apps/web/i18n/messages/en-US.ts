@@ -543,6 +543,8 @@ const enUS = {
     projectArchived: 'Archived projects are read-only.',
     projectArchiveRequired: 'Archive this project before deleting it.',
     projectDatesInvalid: 'Review the project start and end dates.',
+    eventArchiveRequired: 'Use the archive action to archive this event.',
+    eventDeleteRequiresArchive: 'Archive this event before deleting it.',
     relationshipSelfReference: 'A service cannot be related to itself.',
     fieldKeyInvalid: 'Use a unique lowerCamelCase key with 2–64 characters.',
     fieldKeyTaken: 'A field with this key already exists in this organization.',

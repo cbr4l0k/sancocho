@@ -28,6 +28,7 @@ export const errorCodes = [
   'eventProjectReadOnly',
   'eventArchived',
   'eventArchiveRequired',
+  'eventDeleteRequiresArchive',
   'eventTerminal',
   'eventStatusTransitionInvalid',
   'eventDeleteBlocked',

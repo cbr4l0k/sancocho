@@ -16,6 +16,8 @@ export type ConvexErrorMessageKey =
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
   | 'errors.projectDatesInvalid'
+  | 'errors.eventArchiveRequired'
+  | 'errors.eventDeleteRequiresArchive'
   | 'errors.relationshipSelfReference'
   | 'errors.fieldKeyInvalid'
   | 'errors.fieldKeyTaken'
@@ -83,7 +85,8 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   eventProjectUnavailable: 'errors.generic',
   eventProjectReadOnly: 'errors.generic',
   eventArchived: 'errors.generic',
-  eventArchiveRequired: 'errors.generic',
+  eventArchiveRequired: 'errors.eventArchiveRequired',
+  eventDeleteRequiresArchive: 'errors.eventDeleteRequiresArchive',
   eventTerminal: 'errors.generic',
   eventStatusTransitionInvalid: 'errors.generic',
   eventDeleteBlocked: 'errors.generic',

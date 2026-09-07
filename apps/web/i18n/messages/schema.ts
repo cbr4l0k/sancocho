@@ -437,6 +437,8 @@ export type MessageSchema = {
     projectArchived: string;
     projectArchiveRequired: string;
     projectDatesInvalid: string;
+    eventArchiveRequired: string;
+    eventDeleteRequiresArchive: string;
     relationshipSelfReference: string;
     fieldKeyInvalid: string;
     fieldKeyTaken: string;

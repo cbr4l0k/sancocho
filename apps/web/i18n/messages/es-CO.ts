@@ -548,6 +548,8 @@ const esCO = {
     projectArchived: 'Los proyectos archivados son de solo lectura.',
     projectArchiveRequired: 'Archiva este proyecto antes de eliminarlo.',
     projectDatesInvalid: 'Revisa las fechas de inicio y finalización del proyecto.',
+    eventArchiveRequired: 'Usa la acción de archivar para archivar este evento.',
+    eventDeleteRequiresArchive: 'Archiva este evento antes de eliminarlo.',
     relationshipSelfReference: 'Un servicio no puede relacionarse consigo mismo.',
     fieldKeyInvalid: 'Usa una clave lowerCamelCase única de 2 a 64 caracteres.',
     fieldKeyTaken: 'Ya existe un campo con esta clave en la organización.',
