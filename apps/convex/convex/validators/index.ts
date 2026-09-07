@@ -26,7 +26,7 @@ export const roleValidator = v.union(
   v.literal('viewer'),
 );
 
-export const recipeStatusValidator = v.union(
+export const serviceKindStatusValidator = v.union(
   v.literal('draft'),
   v.literal('active'),
   v.literal('archived'),
@@ -60,13 +60,13 @@ export const invitationStatusValidator = v.union(
   v.literal('expired'),
 );
 
-export const recipeVersionStatusValidator = v.union(
+export const serviceKindVersionStatusValidator = v.union(
   v.literal('draft'),
   v.literal('published'),
   v.literal('retired'),
 );
 
-export const eventStatusValidator = v.union(
+export const serviceStatusValidator = v.union(
   v.literal('draft'),
   v.literal('planned'),
   v.literal('confirmed'),
@@ -117,26 +117,26 @@ export const projectDocValidator = v.object({
 });
 
 /**
- * Single definition of the eventRecipes table shape, mirroring `projectFields`/
- * `eventFields` above: `schema.ts` builds the table from it and every public
+ * Single definition of the serviceKinds table shape, mirroring `projectFields`/
+ * `serviceFields` above: `schema.ts` builds the table from it and every public
  * query builds its `returns` validator from it, so the stored document and the
  * documented API contract cannot drift. Before this it was declared a second
- * time (schema.ts had its own inline shape, and `recipes/queries.ts`
+ * time (schema.ts had its own inline shape, and `serviceKinds/queries.ts`
  * hand-rolled its own copy of the return shape) — a column added to one would
  * have been silently rejected by the others at runtime.
  */
-export const recipeFields = {
+export const serviceKindFields = {
   organizationId: v.id('organizations'),
   key: v.string(),
   name: v.string(),
   description: v.optional(v.string()),
-  status: recipeStatusValidator,
+  status: serviceKindStatusValidator,
 };
 
-export const recipeDocValidator = v.object({
-  _id: v.id('eventRecipes'),
+export const serviceKindDocValidator = v.object({
+  _id: v.id('serviceKinds'),
   _creationTime: v.number(),
-  ...recipeFields,
+  ...serviceKindFields,
 });
 
 /** Shared persisted and returned shape for organization-owned locations. */
@@ -187,31 +187,31 @@ export const organizationInvitationDocValidator = v.object({
 });
 
 /**
- * Single definition of the events table shape: `schema.ts` builds the table from
+ * Single definition of the services table shape: `schema.ts` builds the table from
  * it and the public queries build their `returns` validator from it, so the
  * stored document and the documented API contract cannot drift. It was declared
  * twice — once per side — and a column added to one would have silently been
  * rejected by the other at runtime.
  *
- * `recipeId` is derived from `recipeVersionId` server-side and `organizationId`
+ * `serviceKindId` is derived from `serviceKindVersionId` server-side and `organizationId`
  * from the stored entity graph (I4); neither is ever accepted from client args,
  * which is why no public mutation validator repeats them.
  */
-export const eventFields = {
+export const serviceFields = {
   organizationId: v.id('organizations'),
   projectId: v.id('projects'),
-  recipeId: v.id('eventRecipes'),
-  recipeVersionId: v.id('recipeVersions'),
+  serviceKindId: v.id('serviceKinds'),
+  serviceKindVersionId: v.id('serviceKindVersions'),
   name: v.string(),
-  status: eventStatusValidator,
+  status: serviceStatusValidator,
   startsAt: v.number(),
   endsAt: v.optional(v.number()),
 };
 
-export const eventDocValidator = v.object({
-  _id: v.id('events'),
+export const serviceDocValidator = v.object({
+  _id: v.id('services'),
   _creationTime: v.number(),
-  ...eventFields,
+  ...serviceFields,
 });
 
 /** Built-in vs org-owned field definitions; must agree with organizationId presence. */
@@ -275,8 +275,8 @@ export const selectOptionValidator = v.object({
  * One config union binds data type, validation rules, and options together so a
  * document can never carry rules or options that disagree with its data type
  * (impossible states unrepresentable). Used by fieldDefinitions (source of
- * truth for drafts) and recipeFields (immutable snapshot taken at publish —
- * this snapshot is what historical event validation reads, making I3
+ * truth for drafts) and serviceKindFields (immutable snapshot taken at publish —
+ * this snapshot is what historical service validation reads, making I3
  * structural rather than procedural). For select/multiSelect the snapshotted
  * `options` list IS the allowed set.
  */
@@ -304,15 +304,15 @@ export function isFiniteNumber(value: number): boolean {
 }
 
 /**
- * Typed event values are shared by schema and future mutation arguments. Each
+ * Typed service values are shared by schema and future mutation arguments. Each
  * discriminator carries only the data valid for that field type (I8).
  * date/time/number/datetime branches are structurally loose at the Convex
  * layer (bare string/float64); every write path MUST go through the
- * centralized event validation gate (issue #10) which enforces calendar/clock
- * validity, finiteness, and recipe rules. Never use this union alone as the
+ * centralized service validation gate (issue #10) which enforces calendar/clock
+ * validity, finiteness, and serviceKind rules. Never use this union alone as the
  * only validation of a public mutation's field values.
  */
-export const eventFieldValueValidator = v.union(
+export const serviceFieldValueValidator = v.union(
   v.object({ kind: v.literal('text'), value: v.string() }),
   v.object({ kind: v.literal('longText'), value: v.string() }),
   v.object({ kind: v.literal('number'), value: v.number() }),
@@ -339,25 +339,25 @@ export const auditActionValidator = v.union(
   v.literal('fieldDefinition.updated'),
   v.literal('fieldDefinition.archived'),
   v.literal('fieldDefinition.deleted'),
-  v.literal('recipe.created'),
-  v.literal('recipe.updated'),
-  v.literal('recipe.archived'),
-  v.literal('recipeVersion.created'),
-  v.literal('recipeVersion.published'),
-  v.literal('recipeVersion.retired'),
-  v.literal('recipeField.added'),
-  v.literal('recipeField.updated'),
-  v.literal('recipeField.removed'),
-  v.literal('recipeVersion.fieldsReordered'),
-  v.literal('event.created'),
-  // Two distinct update vocabularies, so two distinct actions: `event.updated`
-  // records COLUMN NAMES in `metadata.changedFields` (updateEventCoreFields),
-  // `event.fieldsUpdated` records FIELD DEFINITION IDS (updateEventFields).
+  v.literal('serviceKind.created'),
+  v.literal('serviceKind.updated'),
+  v.literal('serviceKind.archived'),
+  v.literal('serviceKindVersion.created'),
+  v.literal('serviceKindVersion.published'),
+  v.literal('serviceKindVersion.retired'),
+  v.literal('serviceKindField.added'),
+  v.literal('serviceKindField.updated'),
+  v.literal('serviceKindField.removed'),
+  v.literal('serviceKindVersion.fieldsReordered'),
+  v.literal('service.created'),
+  // Two distinct update vocabularies, so two distinct actions: `service.updated`
+  // records COLUMN NAMES in `metadata.changedFields` (updateServiceCoreFields),
+  // `service.fieldsUpdated` records FIELD DEFINITION IDS (updateServiceFields).
   // One action for both forced every log consumer to sniff the value.
-  v.literal('event.updated'),
-  v.literal('event.fieldsUpdated'),
-  v.literal('event.statusChanged'),
-  v.literal('event.cancelled'),
+  v.literal('service.updated'),
+  v.literal('service.fieldsUpdated'),
+  v.literal('service.statusChanged'),
+  v.literal('service.cancelled'),
   v.literal('location.created'),
   v.literal('location.updated'),
   v.literal('location.archived'),
@@ -386,12 +386,12 @@ export const auditEntityTypeValidator = v.union(
   v.literal('membership'),
   v.literal('project'),
   v.literal('fieldDefinition'),
-  v.literal('eventRecipe'),
-  v.literal('recipeVersion'),
-  v.literal('recipeField'),
-  v.literal('event'),
+  v.literal('serviceKind'),
+  v.literal('serviceKindVersion'),
+  v.literal('serviceKindField'),
+  v.literal('service'),
   v.literal('location'),
-  v.literal('eventRelationship'),
+  v.literal('serviceRelationship'),
   v.literal('invitation'),
 );
 
@@ -412,12 +412,12 @@ export const auditMetadataKeys = [
   'position',
   'previousRole',
   'previousStatus',
-  'recipeVersionId',
+  'serviceKindVersionId',
   'role',
   'slug',
-  'sourceEventId',
+  'sourceServiceId',
   'status',
-  'targetEventId',
+  'targetServiceId',
   'type',
   'versionNumber',
 ] as const;
@@ -488,11 +488,11 @@ export type FieldDataType = typeof fieldDataTypeValidator.type;
  * instead of `string` and can never match capabilities by free-form comparison (I8).
  */
 export type SemanticCapability =
-  | 'eventName'
-  | 'eventDescription'
-  | 'eventDate'
-  | 'eventTime'
-  | 'eventLocation'
+  | 'serviceName'
+  | 'serviceDescription'
+  | 'serviceDate'
+  | 'serviceTime'
+  | 'serviceLocation'
   | 'passengerTotals'
   | 'occupancyMetrics'
   | 'capacityValidation'
@@ -524,7 +524,7 @@ type SemanticDefinition = Readonly<{
 // A tenant can bind at most this many field definitions to
 // `passenger.count` or `accessibility.wheelchairCount` — the counting
 // semantic types a consumer has to resolve a whole field list for before it
-// can interpret one event. Without a cap, an org that (deliberately or
+// can interpret one service. Without a cap, an org that (deliberately or
 // accidentally) bound an unusually large number of custom fields to the same
 // type could push such a resolution past Convex's per-transaction read
 // limit. 25 is real headroom over what a realistic tenant needs (a dozen or
@@ -541,11 +541,11 @@ export const semanticRegistry = Object.freeze({
   // declared would make TypeScript reject reading it off the others at all
   // (not just report `undefined`), since `satisfies` (unlike `as`) preserves
   // each entry's own literal shape rather than unifying them.
-  eventName: { expectedDataType: 'text', capabilities: ['eventName'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
-  eventDescription: { expectedDataType: 'longText', capabilities: ['eventDescription'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
-  eventDate: { expectedDataType: 'date', capabilities: ['eventDate'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
-  eventTime: { expectedDataType: 'time', capabilities: ['eventTime'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
-  eventLocation: { expectedDataType: 'location', capabilities: ['eventLocation'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  serviceName: { expectedDataType: 'text', capabilities: ['serviceName'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  serviceDescription: { expectedDataType: 'longText', capabilities: ['serviceDescription'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  serviceDate: { expectedDataType: 'date', capabilities: ['serviceDate'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  serviceTime: { expectedDataType: 'time', capabilities: ['serviceTime'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
+  serviceLocation: { expectedDataType: 'location', capabilities: ['serviceLocation'], requiresInteger: undefined, maxFieldDefinitionsPerSemanticType: undefined },
   'passenger.count': {
     expectedDataType: 'number',
     capabilities: ['passengerTotals', 'occupancyMetrics', 'capacityValidation'],
@@ -571,11 +571,11 @@ export type SemanticType = keyof typeof semanticRegistry;
 
 /** Must stay in sync with semanticRegistry keys; the satisfies check below enforces it. */
 export const semanticTypeValidator = v.union(
-  v.literal('eventName'),
-  v.literal('eventDescription'),
-  v.literal('eventDate'),
-  v.literal('eventTime'),
-  v.literal('eventLocation'),
+  v.literal('serviceName'),
+  v.literal('serviceDescription'),
+  v.literal('serviceDate'),
+  v.literal('serviceTime'),
+  v.literal('serviceLocation'),
   v.literal('passenger.count'),
   v.literal('transport.origin'),
   v.literal('transport.destination'),

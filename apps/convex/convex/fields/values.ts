@@ -4,24 +4,24 @@ import {
   isFiniteNumber,
   isValidDateString,
   isValidTimeString,
-  type eventFieldValueValidator,
+  type serviceFieldValueValidator,
   type fieldConfigValidator,
 } from '../validators';
 
 type FieldConfig = typeof fieldConfigValidator.type;
-type FieldValue = typeof eventFieldValueValidator.type;
+type FieldValue = typeof serviceFieldValueValidator.type;
 
 /**
  * Absolute ceilings on stored string values, independent of what any snapshot
  * says.
  *
  * A snapshot's own `maxLength` is optional — the seeded `notes` built-in ships
- * with none — so without these a single Event value could be megabytes. That
- * matters because of an asymmetry: `updateEventFields` writes one row per field,
- * so writes stay small, but `getEvent` `.collect()`s every value of an event at
+ * with none — so without these a single Service value could be megabytes. That
+ * matters because of an asymmetry: `updateServiceFields` writes one row per field,
+ * so writes stay small, but `getService` `.collect()`s every value of an service at
  * once. The I6 argument for that collect bounds the ROW COUNT
  * (`maxFieldsPerVersion`), not the bytes — so a handful of huge values makes an
- * Event permanently unreadable while still being writable, and Events are never
+ * Service permanently unreadable while still being writable, and Services are never
  * deleted.
  *
  * They are enforced in two places on purpose:
@@ -32,7 +32,7 @@ type FieldValue = typeof eventFieldValueValidator.type;
  *   so no snapshot can ever advertise a bound the value gate would not honour.
  *
  * Sizes: `text` is a single-line value (2000, matching the description caps);
- * `longText` is a notes field (10000 ~ 10KB, so even a full 200-field event
+ * `longText` is a notes field (10000 ~ 10KB, so even a full 200-field service
  * stays inside a single transaction's read budget).
  */
 export const maxTextValueLength = 2000;
@@ -43,8 +43,8 @@ export const maxLongTextValueLength = 10000;
  *
  * Two tables denormalize the location a value points at so that locations can
  * be checked for references through an index instead of a table scan:
- * `recipeFields.defaultLocationId` (configuration defaults) and
- * `eventFieldValues.locationId` (operational data). Both are server-derived
+ * `serviceKindFields.defaultLocationId` (configuration defaults) and
+ * `serviceFieldValues.locationId` (operational data). Both are server-derived
  * from the value beside them and are never client-supplied (I4).
  *
  * EVERY write path that stores or clears one of those value columns must set
@@ -52,7 +52,7 @@ export const maxLongTextValueLength = 10000;
  * returns `undefined` and the mirror must be removed. A path that forgets it
  * leaves a location deletable while a row still references it, which for an
  * immutable published version means a permanently unusable version (I2/I3).
- * Issue #10's event-value writes consume this helper for the second mirror.
+ * Issue #10's service-value writes consume this helper for the second mirror.
  */
 export function locationIdFromValue(value: FieldValue | null | undefined): Id<'locations'> | undefined {
   return value?.kind === 'location' ? value.locationId : undefined;
@@ -65,8 +65,8 @@ export function locationIdFromValue(value: FieldValue | null | undefined): Id<'l
  * spurious patch and audit row on what is really a no-op write.
  *
  * `null` and `undefined` both mean "no value", so clearing an absent one is a
- * no-op. Two callers share it, and they must agree: `recipeFields.defaultValue`
- * (is this default actually different?) and `eventFieldValues.value` (is this
+ * no-op. Two callers share it, and they must agree: `serviceKindFields.defaultValue`
+ * (is this default actually different?) and `serviceFieldValues.value` (is this
  * submitted value actually a change worth auditing?). A looser comparison in
  * either place produces audit rows describing edits that never happened.
  */
@@ -103,10 +103,10 @@ export function sameFieldValue(left: FieldValue | undefined | null, right: Field
  * The single statement of "does this typed value satisfy this field config?".
  *
  * The config passed in is always the rule set that owns the value: the
- * immutable `recipeFields` snapshot, never the live `fieldDefinitions` row — so
+ * immutable `serviceKindFields` snapshot, never the live `fieldDefinitions` row — so
  * a value stays interpretable under exactly the rules it was written against
- * (I3). Recipe publishing uses it for `recipeFields.defaultValue`; issue #10's
- * event validation gate reuses it unchanged for `eventFieldValues.value`, so
+ * (I3). ServiceKind publishing uses it for `serviceKindFields.defaultValue`; issue #10's
+ * service validation gate reuses it unchanged for `serviceFieldValues.value`, so
  * a default and a stored value can never be held to different rules.
  *
  * Deliberate split of responsibility: this helper is pure (config + value, no

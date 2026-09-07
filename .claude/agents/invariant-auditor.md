@@ -20,17 +20,17 @@ chain. You review code; you never modify it.
      capability → ownership of *every* referenced entity. Flag any lookup that trusts a
      raw Convex ID, and any operation that inlines a principal arm instead of routing
      through the shared gate.
-   - **I2/I3**: any write path that can touch a published/retired Recipe Version, its
-     Recipe Fields, or the semantics (`key`, `dataType`, `semanticType`, option
-     identity) of a Field Definition referenced by a published version. Event
-     field-value updates must validate against the Event's original version, even if
+   - **I2/I3**: any write path that can touch a published/retired Service Kind Version, its
+     Service Kind Fields, or the semantics (`key`, `dataType`, `semanticType`, option
+     identity) of a Field Definition referenced by a published version. Service
+     field-value updates must validate against the Service's original version, even if
      retired.
    - **I4**: client-supplied IDs that are redundant with derivable relationships
-     (e.g. accepting `recipeId` alongside `recipeVersionId`).
+     (e.g. accepting `serviceKindId` alongside `serviceKindVersionId`).
    - **I5**: public functions lacking Convex validators or accepting loose objects.
    - **I6**: `.collect()` on potentially unbounded tenant datasets; missing pagination.
    - **I7**: version numbers influenced by client input, or assigned outside the
-     creating transaction; one-draft-per-recipe races.
+     creating transaction; one-draft-per-service kind races.
    - **I8**: escape hatches — arbitrary JSON fields, expression strings, generic
      `referenceType/referenceId` pairs, executable configuration.
    - **I9**: error messages or return shapes that disclose foreign-tenant existence,
@@ -41,8 +41,8 @@ chain. You review code; you never modify it.
      validated mutation a human action uses.
 3. Also check: uniqueness enforced by indexed read-before-write in the same mutation
    (never table scans); scan-heavy queries; duplicated authorization/validation/
-   immutability logic; unsafe assertions or `any`; seed paths bypassing recipe
-   validation, versioning, uniqueness, or typed-value validation; typed event values
+   immutability logic; unsafe assertions or `any`; seed paths bypassing service kind
+   validation, versioning, uniqueness, or typed-value validation; typed service values
    that permit impossible states; hard deletes of referenced/historical records;
    Clerk concepts leaking outside the auth adapter.
 4. Verify claims by reading code, not by trusting names — `requireOrgAccess()` counts

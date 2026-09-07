@@ -12,7 +12,7 @@ and conventions that apply to everything.
 ## Core architectural principle
 
 > Flexibility comes from assembling reusable, structured, semantic **Field Definitions**
-> into immutable, versioned **Event Recipes**.
+> into immutable, versioned **Service Kinds**.
 
 Never drift toward either failure mode: a rigid giant schema with hundreds of nullable
 columns, or a generic arbitrary-JSON form builder with no semantic understanding.
@@ -20,16 +20,16 @@ columns, or a generic arbitrary-JSON form builder with no semantic understanding
 ## Domain model
 
 ```
-Organization → Project → Event
-Field Definition → Event Recipe → Recipe Version → Recipe Fields
-Event → Event Field Values
+Organization → Project → Service
+Field Definition → Service Kind → Service Kind Version → Service Kind Fields
+Service → Service Field Values
 ```
 
-- A Recipe is **configuration**; an Event is **operational data**.
-- Every Event references the exact published Recipe Version it was created from.
-- Historical Events must never silently change because a Recipe is edited later.
-- Vocabulary: the backend entity is an **Event**; the console calls it a **Service**
-  (`Servicio`). Keep backend identifiers on `event`; keep user-facing words on service.
+- A Service Kind is **configuration**; a Service is **operational data**.
+- Every Service references the exact published Service Kind Version it was created from.
+- Historical Services must never silently change because a Service Kind is edited later.
+- Vocabulary: the backend entity is an **Service**; the console calls it a **Service**
+  (`Servicio`). Keep backend identifiers on `service`; keep user-facing words on service.
 
 ## Non-negotiable invariants (I1–I11)
 
@@ -41,17 +41,17 @@ Event → Event Field Values
   doc may assume membership is the only possible principal. The second arm is specified in
   [`docs/provider-access.md`](docs/provider-access.md) and implemented by #71; it does not
   exist in code yet.
-- **I2 Published Recipe Versions are immutable** (record, fields, ordering, required
+- **I2 Published Service Kind Versions are immutable** (record, fields, ordering, required
   flags, defaults, validation, visibility). Changes go through a new draft version.
-- **I3 Historical validation integrity**: Events stay interpretable and validatable under
-  the exact Recipe Version + field semantics they were created with — even after that
+- **I3 Historical validation integrity**: Services stay interpretable and validatable under
+  the exact Service Kind Version + field semantics they were created with — even after that
   version is retired or the field is used elsewhere.
-- **I4 Authoritative relationships are derived server-side** (e.g. `recipeId` from
-  `recipeVersionId`, org ownership through the stored entity graph); never trust
+- **I4 Authoritative relationships are derived server-side** (e.g. `serviceKindId` from
+  `serviceKindVersionId`, org ownership through the stored entity graph); never trust
   redundant client-supplied IDs.
 - **I5 Every public function validates input with Convex validators.** No loose objects.
 - **I6 Unbounded public list reads use Convex pagination** — no unrestricted `.collect()`
-  on growing tenant datasets (bounded child sets like one version's Recipe Fields are fine).
+  on growing tenant datasets (bounded child sets like one version's Service Kind Fields are fine).
 - **I7 Version numbers are server-assigned** in the same transaction that creates the
   version; clients never choose or calculate them.
 - **I8 No escape hatches**: no user scripts, expression DSLs, arbitrary JSON, generic
@@ -84,12 +84,12 @@ Event → Event Field Values
   APIs and document any resulting design adjustments.
 - **Uniqueness** = indexed read-before-write inside the same mutation. Never
   full-table-scan for uniqueness. Constraints: `authProvider+authSubject`, org `slug`,
-  `orgId+userId`, `orgId+field key`, `orgId+recipe key`, `recipeId+versionNumber`,
-  one draft per recipe, `recipeVersionId+fieldDefinitionId`, `eventId+fieldDefinitionId`,
+  `orgId+userId`, `orgId+field key`, `orgId+serviceKind key`, `serviceKindId+versionNumber`,
+  one draft per service kind, `serviceKindVersionId+fieldDefinitionId`, `serviceId+fieldDefinitionId`,
   relationship `source+target+type`, one pending invitation per `orgId+email`.
 - **Temporal semantics**: `datetime` = absolute timestamp (ms); `date` = `YYYY-MM-DD`
   string, never converted to a timestamp; `time` = strict `HH:mm` wall-clock string.
-  An Event's canonical `startsAt` is always a complete absolute timestamp.
+  A Service's canonical `startsAt` is always a complete absolute timestamp.
 - **Errors are stable codes**, not prose: throw `ConvexError` carrying a code from
   `convex/lib/errors.ts`. Nothing (tests included) may match on message text.
 - Public handlers stay thin; authorization, validation, and business invariants live in
@@ -98,7 +98,7 @@ Event → Event Field Values
 - Roles: `owner > admin > planner > operator > viewer`. Final owner can never be removed
   or demoted (server-side check).
 - Deletion policy: prefer archival/cancellation. Never hard-delete published/retired
-  versions, referenced recipes/fields, projects with events, or events. Destructive ops
+  versions, referenced service kinds/fields, projects with services, or services. Destructive ops
   verify references first.
 - Audit log (not event sourcing): domain operations record audit events; metadata never
   contains secrets, tokens, provider claims, or excessive PII.
@@ -131,7 +131,7 @@ building a screen.
   `/es` and `/en`, mapped only in `i18n/locales.ts`. Internal links always carry the
   locale segment via the `i18n/` href helpers — never a bare path. Message keys may not
   contain `.` (next-intl reserves it for nesting). Catalogues cover UI chrome and
-  code-owned vocabulary only — **tenant-authored text (recipe/field/project/location
+  code-owned vocabulary only — **tenant-authored text (service kind/field/project/location
   names, option labels) is rendered exactly as entered, never translated.**
 - Pure logic goes in `lib/*.ts` with a colocated `*.test.ts` (`bun test`); components
   stay presentational enough that the rules are testable without rendering.
@@ -140,7 +140,7 @@ building a screen.
 
 ```
 apps/convex/convex/   — schema.ts + one directory per domain (auth, organizations,
-                        invitations, projects, fields, recipes, recipes/fields, events,
+                        invitations, projects, fields, serviceKinds, serviceKinds/fields, services,
                         locations, relationships, audit, seed, validators, lib)
                         each domain: model.ts (logic) + queries.ts / mutations.ts (thin)
 apps/convex/tests/    — convex-test suites, one per domain
@@ -158,7 +158,7 @@ Guidance, not rigid; prefer cohesive modules over giant files.
 - Stage discipline (labels): backend `stage:A` architecture → `stage:B` priority vertical
   slice → `stage:C` remaining domains → `stage:D` seeds/demo → `stage:E` docs; console
   `stage:F` foundation (shell, auth, i18n) → `stage:G` configuration surfaces (fields,
-  recipes) → `stage:H` operations surfaces (projects, locations, services) → `stage:I`
+  service kinds) → `stage:H` operations surfaces (projects, locations, services) → `stage:I`
   chat → `stage:J` export. Then the reshape (tracked in #91): `stage:M`
   reshape foundation (rename, Event layer, money primitives, cost centres) → `stage:N`
   principals (providers directory, Principal union, grants, the single gate) → `stage:O`
@@ -175,7 +175,7 @@ Guidance, not rigid; prefer cohesive modules over giant files.
 - Package manager: **bun** (no npm). Assume the dev server is already running; don't run
   `dev` or `build`.
 - The **priority vertical slice** beats breadth: sign-in → app user → org → project →
-  built-in fields → recipe → publish version → create typed Service → retrieve it. A
+  built-in fields → service kind → publish version → create typed Service → retrieve it. A
   smaller coherent working product is better than a broad partially connected one.
 - After implementing backend code, run the `invariant-auditor` agent on the diff; before
   claiming a domain's tests done, run `test-coverage-auditor`.

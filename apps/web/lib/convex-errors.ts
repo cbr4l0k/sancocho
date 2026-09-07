@@ -29,22 +29,22 @@ export type ConvexErrorMessageKey =
   | 'errors.fieldLookupTooLarge'
   | 'errors.fieldConfigInvalid'
   | 'errors.fieldValueInvalid'
-  | 'errors.recipeKeyInvalid'
-  | 'errors.recipeDescriptionTooLong'
-  | 'errors.recipeArchived'
-  | 'errors.recipePublishedVersionRequired'
-  | 'errors.recipeVersionNotDraft'
-  | 'errors.recipeDraftInvalid'
-  | 'errors.eventRecipeUnavailable'
-  | 'errors.eventFieldsInvalid'
-  | 'errors.eventDatesInvalid'
-  | 'errors.eventBeforeProjectWindow'
-  | 'errors.eventAfterProjectWindow'
-  | 'errors.eventProjectReadOnly'
-  | 'errors.eventProjectUnavailable'
-  | 'errors.eventReadOnly'
-  | 'errors.eventTerminal'
-  | 'errors.eventStatusTransitionInvalid'
+  | 'errors.serviceKindKeyInvalid'
+  | 'errors.serviceKindDescriptionTooLong'
+  | 'errors.serviceKindArchived'
+  | 'errors.serviceKindPublishedVersionRequired'
+  | 'errors.serviceKindVersionNotDraft'
+  | 'errors.serviceKindDraftInvalid'
+  | 'errors.serviceKindUnavailable'
+  | 'errors.serviceFieldsInvalid'
+  | 'errors.serviceDatesInvalid'
+  | 'errors.serviceBeforeProjectWindow'
+  | 'errors.serviceAfterProjectWindow'
+  | 'errors.serviceProjectReadOnly'
+  | 'errors.serviceProjectUnavailable'
+  | 'errors.serviceReadOnly'
+  | 'errors.serviceTerminal'
+  | 'errors.serviceStatusTransitionInvalid'
   | 'errors.locationArchived'
   | 'errors.locationArchiveRequired'
   | 'errors.locationDeleteBlocked'
@@ -94,38 +94,38 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   fieldValueOptionInvalid: 'errors.fieldValueInvalid',
   fieldValueLengthInvalid: 'errors.fieldValueInvalid',
   fieldValueRangeInvalid: 'errors.fieldValueInvalid',
-  recipeKeyInvalid: 'errors.recipeKeyInvalid',
-  recipeDescriptionTooLong: 'errors.recipeDescriptionTooLong',
-  recipeArchived: 'errors.recipeArchived',
-  recipePublishedVersionRequired: 'errors.recipePublishedVersionRequired',
-  recipeVersionNotDraft: 'errors.recipeVersionNotDraft',
-  recipeVersionEmpty: 'errors.recipeDraftInvalid',
-  recipeFieldRequiredHidden: 'errors.recipeDraftInvalid',
-  recipeFieldConfigMismatch: 'errors.recipeDraftInvalid',
-  recipeFieldConfigNotNarrower: 'errors.recipeDraftInvalid',
-  recipeFieldSnapshotOptionInvalid: 'errors.recipeDraftInvalid',
-  recipeFieldDuplicateDefinition: 'errors.recipeDraftInvalid',
-  recipeFieldDefinitionUnavailable: 'errors.recipeDraftInvalid',
-  recipeFieldLimitExceeded: 'errors.recipeDraftInvalid',
-  recipeFieldOrderInvalid: 'errors.recipeDraftInvalid',
-  recipeFieldPositionInvalid: 'errors.recipeDraftInvalid',
-  eventRecipeUnavailable: 'errors.eventRecipeUnavailable',
-  eventFieldUnknown: 'errors.eventFieldsInvalid',
-  eventFieldDuplicate: 'errors.eventFieldsInvalid',
-  eventFieldRequired: 'errors.eventFieldsInvalid',
-  eventStartInvalid: 'errors.eventDatesInvalid',
-  eventEndInvalid: 'errors.eventDatesInvalid',
-  eventDateRangeInvalid: 'errors.eventDatesInvalid',
+  serviceKindKeyInvalid: 'errors.serviceKindKeyInvalid',
+  serviceKindDescriptionTooLong: 'errors.serviceKindDescriptionTooLong',
+  serviceKindArchived: 'errors.serviceKindArchived',
+  serviceKindPublishedVersionRequired: 'errors.serviceKindPublishedVersionRequired',
+  serviceKindVersionNotDraft: 'errors.serviceKindVersionNotDraft',
+  serviceKindVersionEmpty: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldRequiredHidden: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldConfigMismatch: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldConfigNotNarrower: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldSnapshotOptionInvalid: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldDuplicateDefinition: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldDefinitionUnavailable: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldLimitExceeded: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldOrderInvalid: 'errors.serviceKindDraftInvalid',
+  serviceKindFieldPositionInvalid: 'errors.serviceKindDraftInvalid',
+  serviceKindUnavailable: 'errors.serviceKindUnavailable',
+  serviceFieldUnknown: 'errors.serviceFieldsInvalid',
+  serviceFieldDuplicate: 'errors.serviceFieldsInvalid',
+  serviceFieldRequired: 'errors.serviceFieldsInvalid',
+  serviceStartInvalid: 'errors.serviceDatesInvalid',
+  serviceEndInvalid: 'errors.serviceDatesInvalid',
+  serviceDateRangeInvalid: 'errors.serviceDatesInvalid',
   // Named separately from the generic date error: "outside the project's
   // window" is a different mistake from "these two times are inverted", and
   // collapsing them makes the fix unguessable.
-  eventBeforeProjectWindow: 'errors.eventBeforeProjectWindow',
-  eventAfterProjectWindow: 'errors.eventAfterProjectWindow',
-  eventProjectReadOnly: 'errors.eventProjectReadOnly',
-  eventProjectUnavailable: 'errors.eventProjectUnavailable',
-  eventReadOnly: 'errors.eventReadOnly',
-  eventTerminal: 'errors.eventTerminal',
-  eventStatusTransitionInvalid: 'errors.eventStatusTransitionInvalid',
+  serviceBeforeProjectWindow: 'errors.serviceBeforeProjectWindow',
+  serviceAfterProjectWindow: 'errors.serviceAfterProjectWindow',
+  serviceProjectReadOnly: 'errors.serviceProjectReadOnly',
+  serviceProjectUnavailable: 'errors.serviceProjectUnavailable',
+  serviceReadOnly: 'errors.serviceReadOnly',
+  serviceTerminal: 'errors.serviceTerminal',
+  serviceStatusTransitionInvalid: 'errors.serviceStatusTransitionInvalid',
   locationArchived: 'errors.locationArchived',
   locationArchiveRequired: 'errors.locationArchiveRequired',
   locationDeleteBlocked: 'errors.locationDeleteBlocked',
@@ -138,11 +138,11 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedOrganizationMissing: 'errors.generic',
   seedOrganizationOwnerMissing: 'errors.generic',
   seedLocationMissing: 'errors.generic',
-  seedRecipeMissing: 'errors.generic',
-  seedRecipeVersionMissing: 'errors.generic',
+  seedServiceKindMissing: 'errors.generic',
+  seedServiceKindVersionMissing: 'errors.generic',
   seedServiceMissing: 'errors.generic',
   seedFieldConflict: 'errors.generic',
-  seedRecipeConflict: 'errors.generic',
+  seedServiceKindConflict: 'errors.generic',
   auditEntityIdTooLong: 'errors.auditInvalid',
   auditMetadataInvalid: 'errors.auditInvalid',
 };

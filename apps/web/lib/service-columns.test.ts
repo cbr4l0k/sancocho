@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { serviceFieldColumns } from './service-columns';
 
 describe('serviceFieldColumns', () => {
-  test('unions the fields of every loaded recipe', () => {
+  test('unions the fields of every loaded service kind', () => {
     const columns = serviceFieldColumns([
       { fields: [{ key: 'flight_number', label: 'Vuelo', position: 0 }] },
       { fields: [{ key: 'route', label: 'Ruta', position: 1 }] },
@@ -11,7 +11,7 @@ describe('serviceFieldColumns', () => {
     expect(columns.map((column) => column.key)).toEqual(['flight_number', 'route']);
   });
 
-  test('treats the same field key from two recipes as one column', () => {
+  test('treats the same field key from two service kinds as one column', () => {
     const columns = serviceFieldColumns([
       { fields: [{ key: 'notes', label: 'Notas', position: 3 }] },
       { fields: [{ key: 'notes', label: 'Notas', position: 9 }] },
@@ -19,7 +19,7 @@ describe('serviceFieldColumns', () => {
     expect(columns).toEqual([{ key: 'notes', label: 'Notas' }]);
   });
 
-  test('orders by the earliest position any recipe gives a field', () => {
+  test('orders by the earliest position any service kind gives a field', () => {
     const columns = serviceFieldColumns([
       { fields: [{ key: 'notes', label: 'Notas', position: 9 }] },
       {

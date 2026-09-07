@@ -13,26 +13,26 @@ No geocoding, no address normalization, no mapping (explicit non-goals).
 ## Reference, not snapshot
 
 A `location` field value stores a `locationId`. It is a **reference to the live entity**, so
-later edits to the location are visible from historical Events: correcting an airport's
-address updates what every past event shows.
+later edits to the location are visible from historical Services: correcting an airport's
+address updates what every past service shows.
 
 That is a deliberate choice with a real cost, and the cost is stated rather than hidden:
 
 - **What it buys**: reference data stays correctable in one place. A typo fixed once is fixed
-  everywhere, and there is no snapshot fan-out per event.
-- **What it costs**: an Event is *not* a record of where the location was at the time. If a
+  everywhere, and there is no snapshot fan-out per service.
+- **What it costs**: a Service is *not* a record of where the location was at the time. If a
   hotel is renamed or moved, history reads as if it always had the new name. Audit-grade
   location snapshots would require a revision system and are deliberately **not built**.
 
-This is the one place where the I3 guarantee is scoped rather than absolute: an event's
-*rules* are frozen (the recipe snapshot), and its *values* are frozen (`locationId` never
+This is the one place where the I3 guarantee is scoped rather than absolute: a service's
+*rules* are frozen (the service kind snapshot), and its *values* are frozen (`locationId` never
 changes on its own), but the referenced location document is live.
 
 ## Archival and deletion
 
 | Operation | Rule |
 | --- | --- |
-| `archiveLocation` | Always allowed (idempotent). An archived location is rejected by every subsequent event-value write and every recipe default validation |
+| `archiveLocation` | Always allowed (idempotent). An archived location is rejected by every subsequent service-value write and every service kind default validation |
 | `updateLocation` | Refused for archived locations |
 | `deleteLocation` | Only after archival, and only if no reference exists |
 
@@ -40,28 +40,28 @@ Deletion is guarded by two indexed first-hit reads, both of which must find noth
 
 | Guard | Index | Covers |
 | --- | --- | --- |
-| `eventFieldValues.locationId` | `by_location` | Operational data — any stored event value pointing at the location |
-| `recipeFields.defaultLocationId` | `by_defaultLocation` | Configuration — any recipe field default pointing at the location |
+| `serviceFieldValues.locationId` | `by_location` | Operational data — any stored service value pointing at the location |
+| `serviceKindFields.defaultLocationId` | `by_defaultLocation` | Configuration — any service kind field default pointing at the location |
 
 Both columns are **server-derived mirrors** of the `location` value beside them, written
 through the single shared helper `fields/values.ts:locationIdFromValue` on every write path —
-add, update, clone, event create, event update, and every clear (where it returns `undefined`
+add, update, clone, service create, service update, and every clear (where it returns `undefined`
 and the column must be removed). A write path that forgot it would leave a location deletable
 while a row still referenced it.
 
-The second guard is the structural one. A published recipe version is immutable (I2), so a
+The second guard is the structural one. A published service kind version is immutable (I2), so a
 default it carries can never be repaired. Deleting the location out from under it would leave
-a dangling reference that fails every later event creation and every clone-then-publish,
+a dangling reference that fails every later service creation and every clone-then-publish,
 permanently disabling that version with a generic error and no recovery. Archival — not
 deletion — is the lifecycle path for a location referenced anywhere.
 
 ## Known consequence: archival degrades published versions
 
-Accepted, documented in `locations/model.ts`, and asserted by `events.test.ts`:
+Accepted, documented in `locations/model.ts`, and asserted by `services.test.ts`:
 
-Archiving a location makes every already-published, immutable recipe version that defaults to
-it stop being usable for new events, because the default fails
-`validateRecipeFieldDefaultValue`. There is no unarchive operation.
+Archiving a location makes every already-published, immutable service kind version that defaults to
+it stop being usable for new services, because the default fails
+`validateServiceKindFieldDefaultValue`. There is no unarchive operation.
 
 Whether an archived location should keep working for *pre-existing* published defaults while
 being refused for *new* selections is a revision-system question — per-version location

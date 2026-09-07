@@ -96,7 +96,7 @@ export async function listEntityAuditEvents(
  *   so passing the bound here means the value bypassed its domain validation.
  * - Server-generated summaries (`auditMetadataSummaryKeys`) are TRUNCATED. They
  *   are comma-joined column names and document ids, so length tracks how much
- *   the user legitimately changed: a 200-field recipe version yields ~6.6KB of
+ *   the user legitimately changed: a 200-field serviceKind version yields ~6.6KB of
  *   `changedFields`. Throwing there would roll back a valid edit and blame the
  *   user's input for the log's own limit — the regression this rule prevents.
  *

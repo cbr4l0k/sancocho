@@ -28,7 +28,7 @@ export function isOwner(role: Role): boolean {
  * site, so the policy is a single decision rather than eight independent ones.
  *
  * These are deliberately stricter than operational work. A planner runs
- * projects, services and recipes all day; a field definition they add is
+ * projects, services and serviceKinds all day; a field definition they add is
  * permanent in a way a service is not (once a published version references it,
  * its key, semantic type and config are frozen for good — I2/I3), and a
  * location is referenced by field values across every project. Configuration is

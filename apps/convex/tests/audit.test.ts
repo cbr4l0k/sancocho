@@ -12,13 +12,13 @@ const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
 const createProject = api.projects.mutations.createProject;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
-const createRecipe = api.recipes.mutations.createRecipe;
-const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
-const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
-const addRecipeField = api.recipes.fields.mutations.addRecipeField;
-const createEventFromRecipe = api.events.mutations.createEventFromRecipe;
-const changeEventStatus = api.events.mutations.changeEventStatus;
-const updateEventFields = api.events.mutations.updateEventFields;
+const createServiceKind = api.serviceKinds.mutations.createServiceKind;
+const createInitialDraftVersion = api.serviceKinds.mutations.createInitialDraftVersion;
+const publishServiceKindVersion = api.serviceKinds.mutations.publishServiceKindVersion;
+const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
+const createServiceFromServiceKind = api.services.mutations.createServiceFromServiceKind;
+const changeServiceStatus = api.services.mutations.changeServiceStatus;
+const updateServiceFields = api.services.mutations.updateServiceFields;
 const listOrganizationAuditEvents = api.audit.queries.listOrganizationAuditEvents;
 const listEntityAuditEvents = api.audit.queries.listEntityAuditEvents;
 
@@ -46,20 +46,20 @@ async function operationalFixture() {
     label: 'Code',
     config: { kind: 'text' },
   });
-  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key: 'recipe', name: 'Recipe' });
-  const recipeVersionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
-  await owner.client.mutation(addRecipeField, { recipeVersionId, fieldDefinitionId, required: true, visible: true });
-  await owner.client.mutation(publishRecipeVersion, { recipeVersionId });
-  const eventId = await owner.client.mutation(createEventFromRecipe, {
+  const serviceKindId = await owner.client.mutation(createServiceKind, { organizationId, key: 'serviceKind', name: 'ServiceKind' });
+  const serviceKindVersionId = await owner.client.mutation(createInitialDraftVersion, { serviceKindId });
+  await owner.client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId, required: true, visible: true });
+  await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId });
+  const serviceId = await owner.client.mutation(createServiceFromServiceKind, {
     projectId,
-    recipeVersionId,
-    name: 'Event',
+    serviceKindVersionId,
+    name: 'Service',
     startsAt: 1,
     values: [{ fieldDefinitionId, value: { kind: 'text', value: 'x' } }],
   });
-  await owner.client.mutation(changeEventStatus, { eventId, status: 'planned' });
-  await owner.client.mutation(changeEventStatus, { eventId, status: 'confirmed' });
-  return { t, owner, organizationId, projectId, eventId };
+  await owner.client.mutation(changeServiceStatus, { serviceId, status: 'planned' });
+  await owner.client.mutation(changeServiceStatus, { serviceId, status: 'confirmed' });
+  return { t, owner, organizationId, projectId, serviceId };
 }
 
 /** Total rows in the log, read directly: proves what the public API cannot show. */
@@ -68,13 +68,13 @@ function countAuditEvents(t: ReturnType<typeof convexTest>) {
 }
 
 test('writes a newest-first operational audit log and filters entity history', async () => {
-  const { owner, organizationId, projectId, eventId } = await operationalFixture();
+  const { owner, organizationId, projectId, serviceId } = await operationalFixture();
   const page = await owner.client.query(listOrganizationAuditEvents, { organizationId, paginationOpts: { numItems: 100, cursor: null } });
   const actions = page.page.map((entry) => entry.action);
-  expect(actions.slice(0, 3)).toEqual(['event.statusChanged', 'event.statusChanged', 'event.created']);
+  expect(actions.slice(0, 3)).toEqual(['service.statusChanged', 'service.statusChanged', 'service.created']);
   expect(actions).toEqual(expect.arrayContaining([
-    'organization.created', 'project.created', 'fieldDefinition.created', 'recipe.created',
-    'recipeVersion.created', 'recipeField.added', 'recipeVersion.published',
+    'organization.created', 'project.created', 'fieldDefinition.created', 'serviceKind.created',
+    'serviceKindVersion.created', 'serviceKindField.added', 'serviceKindVersion.published',
   ]));
   expect(page.page.every((entry, index) => index === 0 || entry._creationTime <= (page.page[index - 1]?._creationTime ?? Infinity))).toBe(true);
 
@@ -83,7 +83,7 @@ test('writes a newest-first operational audit log and filters entity history', a
     organizationId, entityType: 'project', entityId: secondProjectId, paginationOpts: { numItems: 10, cursor: null },
   });
   expect(projectHistory.page.map((entry) => entry.action)).toEqual(['project.created']);
-  expect(projectHistory.page.every((entry) => entry.entityId !== projectId && entry.entityId !== eventId)).toBe(true);
+  expect(projectHistory.page.every((entry) => entry.entityId !== projectId && entry.entityId !== serviceId)).toBe(true);
 });
 
 test('audit reads are admin-only, tenant-isolated, paginated, and append-only', async () => {
@@ -163,8 +163,8 @@ test('a bulk field-value edit succeeds and audits, truncating its own summary in
   const owner = await provision(t, 'audit-bulk-owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Bulk', slug: 'audit-bulk' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Bulk project' });
-  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key: 'bulk', name: 'Bulk' });
-  const recipeVersionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
+  const serviceKindId = await owner.client.mutation(createServiceKind, { organizationId, key: 'bulk', name: 'Bulk' });
+  const serviceKindVersionId = await owner.client.mutation(createInitialDraftVersion, { serviceKindId });
   // 20 composed fields: `changedFields` then joins 20 document ids (~660 chars),
   // which is what used to exceed the 512-character metadata bound and abort the
   // whole edit with an error blaming the user's input.
@@ -174,33 +174,33 @@ test('a bulk field-value edit succeeds and audits, truncating its own summary in
     const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
       organizationId, key: `bulkField${index}`, label: `Bulk field ${index}`, config: { kind: 'text' },
     });
-    await owner.client.mutation(addRecipeField, { recipeVersionId, fieldDefinitionId, required: true, visible: true });
+    await owner.client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId, required: true, visible: true });
     fieldDefinitionIds.push(fieldDefinitionId);
   }
-  await owner.client.mutation(publishRecipeVersion, { recipeVersionId });
-  const eventId = await owner.client.mutation(createEventFromRecipe, {
-    projectId, recipeVersionId, name: 'Bulk event', startsAt: 1,
+  await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId });
+  const serviceId = await owner.client.mutation(createServiceFromServiceKind, {
+    projectId, serviceKindVersionId, name: 'Bulk service', startsAt: 1,
     values: fieldDefinitionIds.map((fieldDefinitionId) => ({ fieldDefinitionId, value: { kind: 'text' as const, value: 'before' } })),
   });
 
-  await expect(owner.client.mutation(updateEventFields, {
-    eventId,
+  await expect(owner.client.mutation(updateServiceFields, {
+    serviceId,
     values: fieldDefinitionIds.map((fieldDefinitionId) => ({ fieldDefinitionId, value: { kind: 'text' as const, value: 'after' } })),
   })).resolves.toBeNull();
 
   const stored = await t.run(async (ctx) => (await ctx.db
-    .query('eventFieldValues')
-    .withIndex('by_event_field', (q) => q.eq('eventId', eventId))
+    .query('serviceFieldValues')
+    .withIndex('by_service_field', (q) => q.eq('serviceId', serviceId))
     .collect()).map((row) => row.value));
   expect(stored).toHaveLength(fieldCount);
   expect(stored.every((value) => value.kind === 'text' && value.value === 'after')).toBe(true);
 
   const history = await owner.client.query(listEntityAuditEvents, {
-    organizationId, entityType: 'event', entityId: eventId, paginationOpts: { numItems: 10, cursor: null },
+    organizationId, entityType: 'service', entityId: serviceId, paginationOpts: { numItems: 10, cursor: null },
   });
   // Typed-value edits carry their own action, so this row cannot be confused
   // with a core-column edit that names COLUMNS under the same metadata key.
-  const updated = history.page.find((entry) => entry.action === 'event.fieldsUpdated');
+  const updated = history.page.find((entry) => entry.action === 'service.fieldsUpdated');
   expect(updated).toBeDefined();
   const changedFields = updated?.metadata.changedFields;
   expect(typeof changedFields).toBe('string');
@@ -227,21 +227,21 @@ test('audit metadata records the exact documented content for an action', async 
 });
 
 test('entity-scoped audit history paginates across cursors and isolates unknown entities', async () => {
-  const { t, owner, organizationId, eventId } = await operationalFixture();
+  const { t, owner, organizationId, serviceId } = await operationalFixture();
   let cursor: string | null = null;
   const actions: string[] = [];
   const creationTimes: number[] = [];
   do {
     const page: { page: { action: string; _creationTime: number }[]; isDone: boolean; continueCursor: string } =
       await owner.client.query(listEntityAuditEvents, {
-        organizationId, entityType: 'event', entityId: eventId, paginationOpts: { numItems: 1, cursor },
+        organizationId, entityType: 'service', entityId: serviceId, paginationOpts: { numItems: 1, cursor },
       });
     expect(page.page.length).toBeLessThanOrEqual(1);
     actions.push(...page.page.map((entry) => entry.action));
     creationTimes.push(...page.page.map((entry) => entry._creationTime));
     cursor = page.isDone ? null : page.continueCursor;
   } while (cursor !== null);
-  expect(actions).toEqual(['event.statusChanged', 'event.statusChanged', 'event.created']);
+  expect(actions).toEqual(['service.statusChanged', 'service.statusChanged', 'service.created']);
   expect(creationTimes.every((time, index) => index === 0 || time <= (creationTimes[index - 1] ?? Infinity))).toBe(true);
 
   // An entity id that never existed is not an authorization failure: inside an
@@ -260,7 +260,7 @@ test('entity-scoped audit history paginates across cursors and isolates unknown 
 
   // The one free-form public input is bounded rather than passed to the index.
   await expect(owner.client.query(listEntityAuditEvents, {
-    organizationId, entityType: 'event', entityId: 'x'.repeat(129), paginationOpts: { numItems: 10, cursor: null },
+    organizationId, entityType: 'service', entityId: 'x'.repeat(129), paginationOpts: { numItems: 10, cursor: null },
   })).rejects.toMatchObject({ data: { code: 'auditEntityIdTooLong' } });
 });
 

@@ -18,8 +18,8 @@ Setup, environment variables, deployment configuration and the seed workflow are
 | Domain model, layering, tables and indexes, uniqueness rationale | [`docs/architecture.md`](../../docs/architecture.md) |
 | Identity flow, the Clerk-specific files, replacing the provider | [`docs/auth.md`](../../docs/auth.md) |
 | Access chain, role policy per operation, tenant isolation, error discipline | [`docs/authorization.md`](../../docs/authorization.md) |
-| Field definitions, semantic registry, snapshots, version lifecycle | [`docs/recipes.md`](../../docs/recipes.md) |
-| Typed event values, creation flow, temporal semantics, relationships | [`docs/events.md`](../../docs/events.md) |
+| Field definitions, semantic registry, snapshots, version lifecycle | [`docs/serviceKinds.md`](../../docs/serviceKinds.md) |
+| Typed service values, creation flow, temporal semantics, relationships | [`docs/services.md`](../../docs/services.md) |
 | Location reference semantics | [`docs/locations.md`](../../docs/locations.md) |
 | Deletion and archival policy | [`docs/deletion-and-archival.md`](../../docs/deletion-and-archival.md) |
 | Audit log and metadata safety | [`docs/audit.md`](../../docs/audit.md) |

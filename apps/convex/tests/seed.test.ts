@@ -17,11 +17,11 @@ const grantDemoMembership = internal.seed.mutations.grantDemoMembership;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
-const getEvent = api.events.queries.getEvent;
-const getRecipeVersion = api.recipes.queries.getRecipeVersion;
-const listProjectEvents = api.events.queries.listProjectEvents;
-const listRecipes = api.recipes.queries.listRecipes;
-const addRecipeField = api.recipes.fields.mutations.addRecipeField;
+const getService = api.services.queries.getService;
+const getServiceKindVersion = api.serviceKinds.queries.getServiceKindVersion;
+const listProjectServices = api.services.queries.listProjectServices;
+const listServiceKinds = api.serviceKinds.queries.listServiceKinds;
+const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
 
 const issuer = 'https://seed.priamo.internal';
 const subject = 'demonstration-owner';
@@ -31,7 +31,7 @@ const ownerIdentity = { issuer, subject, name: 'Demonstration Owner', email: 'de
  * 2026-06-15T15:40:00Z: the demonstration flight's 18:40 local arrival as a
  * complete absolute timestamp. Written as a literal rather than imported from
  * the seed so that a change to the seeded instant has to be made deliberately in
- * both places (I3's temporal rule is the point of the seeded Event).
+ * both places (I3's temporal rule is the point of the seeded Service).
  */
 const expectedStartsAt = 1_781_538_000_000;
 
@@ -90,22 +90,22 @@ async function readDemonstration(t: SeedTest) {
     const memberships = await ctx.db.query('organizationMemberships').withIndex('by_org_user', (q) => q.eq('organizationId', organization._id)).collect();
     const projects = await ctx.db.query('projects').withIndex('by_org', (q) => q.eq('organizationId', organization._id)).collect();
     const locations = await ctx.db.query('locations').withIndex('by_org', (q) => q.eq('organizationId', organization._id)).collect();
-    const recipe = await ctx.db.query('eventRecipes').withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', 'airportArrivalTransfer')).unique();
-    if (recipe === null) throw new Error('Expected demonstration recipe');
-    const version = await ctx.db.query('recipeVersions').withIndex('by_recipe_version', (q) => q.eq('recipeId', recipe._id)).unique();
+    const serviceKind = await ctx.db.query('serviceKinds').withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', 'airportArrivalTransfer')).unique();
+    if (serviceKind === null) throw new Error('Expected demonstration serviceKind');
+    const version = await ctx.db.query('serviceKindVersions').withIndex('by_serviceKind_version', (q) => q.eq('serviceKindId', serviceKind._id)).unique();
     if (version === null) throw new Error('Expected demonstration version');
-    const fields = await ctx.db.query('recipeFields').withIndex('by_version', (q) => q.eq('recipeVersionId', version._id)).collect();
+    const fields = await ctx.db.query('serviceKindFields').withIndex('by_version', (q) => q.eq('serviceKindVersionId', version._id)).collect();
     const composition = await Promise.all(
       fields
         .sort((left, right) => left.position - right.position)
         .map(async (field) => {
           const definition = await ctx.db.get(field.fieldDefinitionId);
-          if (definition === null) throw new Error('Expected a definition behind every composed recipe field');
+          if (definition === null) throw new Error('Expected a definition behind every composed serviceKind field');
           return { position: field.position, key: definition.key, required: field.required };
         }),
     );
-    const events = await ctx.db.query('events').withIndex('by_recipeVersion', (q) => q.eq('recipeVersionId', version._id)).collect();
-    return { organization, memberships, projects, locations, recipe, version, fields, composition, events };
+    const services = await ctx.db.query('services').withIndex('by_serviceKindVersion', (q) => q.eq('serviceKindVersionId', version._id)).collect();
+    return { organization, memberships, projects, locations, serviceKind, version, fields, composition, services };
   });
 }
 
@@ -117,11 +117,11 @@ async function countRows(t: SeedTest) {
     projects: (await ctx.db.query('projects').collect()).length,
     locations: (await ctx.db.query('locations').collect()).length,
     fieldDefinitions: (await ctx.db.query('fieldDefinitions').collect()).length,
-    recipes: (await ctx.db.query('eventRecipes').collect()).length,
-    versions: (await ctx.db.query('recipeVersions').collect()).length,
-    recipeFields: (await ctx.db.query('recipeFields').collect()).length,
-    events: (await ctx.db.query('events').collect()).length,
-    eventFieldValues: (await ctx.db.query('eventFieldValues').collect()).length,
+    serviceKinds: (await ctx.db.query('serviceKinds').collect()).length,
+    versions: (await ctx.db.query('serviceKindVersions').collect()).length,
+    serviceKindFields: (await ctx.db.query('serviceKindFields').collect()).length,
+    services: (await ctx.db.query('services').collect()).length,
+    serviceFieldValues: (await ctx.db.query('serviceFieldValues').collect()).length,
   }));
 }
 
@@ -175,29 +175,29 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
     { name: 'Airport Terminal 2', type: 'airport', latitude: 41.2753, longitude: 28.7519 },
     { name: 'Marriott Hotel', type: 'hotel', latitude: 41.0122, longitude: 28.976 },
   ]);
-  expect(snapshot.recipe).toMatchObject({ key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer', status: 'active' });
-  expect(snapshot.version).toMatchObject({ versionNumber: 1, status: 'published', recipeId: snapshot.recipe._id });
+  expect(snapshot.serviceKind).toMatchObject({ key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer', status: 'active' });
+  expect(snapshot.version).toMatchObject({ versionNumber: 1, status: 'published', serviceKindId: snapshot.serviceKind._id });
   expect(snapshot.composition).toEqual(expectedComposition);
   expect(snapshot.fields.every((field) => field.visible)).toBe(true);
-  expect(snapshot.events).toHaveLength(1);
+  expect(snapshot.services).toHaveLength(1);
 
-  const event = snapshot.events[0];
-  if (event === undefined) throw new Error('Expected demonstration event');
-  expect(event).toMatchObject({
+  const service = snapshot.services[0];
+  if (service === undefined) throw new Error('Expected demonstration service');
+  expect(service).toMatchObject({
     name: 'LH441 arrival transfer',
     status: 'draft',
     // Derived server-side from the version, never supplied by the seed (I4).
-    recipeId: snapshot.recipe._id,
+    serviceKindId: snapshot.serviceKind._id,
     projectId: snapshot.projects[0]?._id,
     organizationId: snapshot.organization._id,
   });
   // The headline temporal rule: an absolute instant, not a bare wall-clock time.
-  expect(Number.isFinite(event.startsAt)).toBe(true);
-  expect(event.startsAt).toBe(expectedStartsAt);
-  expect(event.endsAt).toBeUndefined();
+  expect(Number.isFinite(service.startsAt)).toBe(true);
+  expect(service.startsAt).toBe(expectedStartsAt);
+  expect(service.endsAt).toBeUndefined();
 
   const client = t.withIdentity(ownerIdentity);
-  const result = await client.query(getEvent, { eventId: event._id });
+  const result = await client.query(getService, { serviceId: service._id });
   const airport = snapshot.locations.find((location) => location.type === 'airport');
   const hotel = snapshot.locations.find((location) => location.type === 'hotel');
   if (airport === undefined || hotel === undefined) throw new Error('Expected both seeded locations');
@@ -218,24 +218,24 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
 
   // The seeded data is reachable through the ordinary paginated public queries,
   // not only through direct database reads.
-  const events = await client.query(listProjectEvents, { projectId: event.projectId, paginationOpts: { numItems: 10, cursor: null } });
-  expect(events.page.map((row) => row._id)).toEqual([event._id]);
-  expect(events.isDone).toBe(true);
-  const recipes = await client.query(listRecipes, { organizationId: snapshot.organization._id, paginationOpts: { numItems: 10, cursor: null } });
-  expect(recipes.page.map((row) => ({ key: row.key, status: row.status })).sort((left, right) => left.key.localeCompare(right.key))).toEqual([
+  const services = await client.query(listProjectServices, { projectId: service.projectId, paginationOpts: { numItems: 10, cursor: null } });
+  expect(services.page.map((row) => row._id)).toEqual([service._id]);
+  expect(services.isDone).toBe(true);
+  const serviceKinds = await client.query(listServiceKinds, { organizationId: snapshot.organization._id, paginationOpts: { numItems: 10, cursor: null } });
+  expect(serviceKinds.page.map((row) => ({ key: row.key, status: row.status })).sort((left, right) => left.key.localeCompare(right.key))).toEqual([
     { key: 'airportArrivalTransfer', status: 'active' },
     { key: 'airportDepartureTransfer', status: 'active' },
     { key: 'pointToPointTransfer', status: 'active' },
     { key: 'shuttleService', status: 'active' },
   ]);
 
-  const recipeVersion = await client.query(getRecipeVersion, { recipeVersionId: snapshot.version._id });
-  await expect(client.mutation(addRecipeField, {
-    recipeVersionId: snapshot.version._id,
-    fieldDefinitionId: recipeVersion.recipeFields[0]?.fieldDefinitionId ?? (() => { throw new Error('Expected recipe field'); })(),
+  const serviceKindVersion = await client.query(getServiceKindVersion, { serviceKindVersionId: snapshot.version._id });
+  await expect(client.mutation(addServiceKindField, {
+    serviceKindVersionId: snapshot.version._id,
+    fieldDefinitionId: serviceKindVersion.serviceKindFields[0]?.fieldDefinitionId ?? (() => { throw new Error('Expected serviceKind field'); })(),
     required: false,
     visible: true,
-  })).rejects.toMatchObject({ data: { code: 'recipeVersionNotDraft' } });
+  })).rejects.toMatchObject({ data: { code: 'serviceKindVersionNotDraft' } });
 
   // Re-running writes nothing new anywhere: the counts cover every table the
   // seed touches, including the ones a duplicate user or membership would show up in.
@@ -247,11 +247,11 @@ test('demonstration seed makes one published, immutable airport-transfer vertica
     projects: 1,
     locations: 2,
     fieldDefinitions: 9,
-    recipes: 4,
+    serviceKinds: 4,
     versions: 4,
-    recipeFields: 29,
-    events: 1,
-    eventFieldValues: 9,
+    serviceKindFields: 29,
+    services: 1,
+    serviceFieldValues: 9,
   });
   expect((await readDemonstration(t)).composition).toEqual(expectedComposition);
 });
@@ -278,16 +278,16 @@ test('demonstration entities stay invisible to identities without a membership',
   const t = convexTest(schema, modules);
   await t.mutation(seedDemonstrationData, {});
   const snapshot = await readDemonstration(t);
-  const event = snapshot.events[0];
-  if (event === undefined) throw new Error('Expected demonstration event');
+  const service = snapshot.services[0];
+  if (service === undefined) throw new Error('Expected demonstration service');
 
   // A real deployment's developers are exactly this caller until the demo is
   // seeded with (or granted to) their own identity — the reason the owner is a
   // parameter rather than a fabricated issuer.
   const outsider = t.withIdentity({ issuer: 'https://example.clerk.accounts.dev', subject: 'outsider', name: 'Outsider' });
   await outsider.mutation(ensureUser, {});
-  await expect(outsider.query(getEvent, { eventId: event._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
-  await expect(outsider.query(getRecipeVersion, { recipeVersionId: snapshot.version._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
+  await expect(outsider.query(getService, { serviceId: service._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
+  await expect(outsider.query(getServiceKindVersion, { serviceKindVersionId: snapshot.version._id })).rejects.toMatchObject({ data: { code: 'notFoundOrInaccessible' } });
 });
 
 test('a real identity can own the demonstration, before or after it is seeded', async () => {
@@ -297,9 +297,9 @@ test('a real identity can own the demonstration, before or after it is seeded', 
 
   const developer = t.withIdentity({ issuer: clerkIssuer, subject: 'real-developer', name: 'Real Developer' });
   const snapshot = await readDemonstration(t);
-  const event = snapshot.events[0];
-  if (event === undefined) throw new Error('Expected demonstration event');
-  await expect(developer.query(getEvent, { eventId: event._id })).resolves.toMatchObject({ event: { _id: event._id } });
+  const service = snapshot.services[0];
+  if (service === undefined) throw new Error('Expected demonstration service');
+  await expect(developer.query(getService, { serviceId: service._id })).resolves.toMatchObject({ service: { _id: service._id } });
   // No synthetic seed identity was provisioned: the demo's only member is a
   // person who can actually sign in.
   const users = await t.run((ctx) => ctx.db.query('users').collect());
@@ -310,10 +310,10 @@ test('a real identity can own the demonstration, before or after it is seeded', 
   await other.mutation(seedDemonstrationData, {});
   await other.mutation(grantDemoMembership, { owner: { issuer: clerkIssuer, subject: 'late-arrival', name: 'Late Arrival' } });
   const otherSnapshot = await readDemonstration(other);
-  const otherEvent = otherSnapshot.events[0];
-  if (otherEvent === undefined) throw new Error('Expected demonstration event');
+  const otherService = otherSnapshot.services[0];
+  if (otherService === undefined) throw new Error('Expected demonstration service');
   const lateArrival = other.withIdentity({ issuer: clerkIssuer, subject: 'late-arrival', name: 'Late Arrival' });
-  await expect(lateArrival.query(getEvent, { eventId: otherEvent._id })).resolves.toMatchObject({ event: { _id: otherEvent._id } });
+  await expect(lateArrival.query(getService, { serviceId: otherService._id })).resolves.toMatchObject({ service: { _id: otherService._id } });
   expect(otherSnapshot.memberships.map((membership) => membership.role)).toEqual(['owner', 'owner']);
 });
 
@@ -327,5 +327,5 @@ test('the seed refuses to write into an organization that already owns the demon
   // the deployment-wide slug (I9).
   await expect(t.mutation(seedDemonstrationData, {})).rejects.toMatchObject({ data: { code: 'conflict' } });
   const counts = await countRows(t);
-  expect(counts).toMatchObject({ organizations: 1, projects: 0, recipes: 4, events: 0 });
+  expect(counts).toMatchObject({ organizations: 1, projects: 0, serviceKinds: 4, services: 0 });
 });

@@ -56,7 +56,7 @@ test('includes at least one canned turn per proposal kind, covering every review
     }
   }
 
-  expect(seenKinds.has('recipe')).toBe(true);
+  expect(seenKinds.has('serviceKind')).toBe(true);
   expect(seenKinds.has('service')).toBe(true);
   expect(seenStatuses.has('valid')).toBe(true);
   expect(seenStatuses.has('needsResolution')).toBe(true);

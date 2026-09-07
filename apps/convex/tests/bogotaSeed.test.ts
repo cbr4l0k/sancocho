@@ -7,9 +7,9 @@ import { enableSeedMutations, modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
-const listPublishedRecipes = api.recipes.queries.listPublishedRecipes;
+const listPublishedServiceKinds = api.serviceKinds.queries.listPublishedServiceKinds;
 const listLocations = api.locations.queries.listLocations;
-const listProjectEvents = api.events.queries.listProjectEvents;
+const listProjectServices = api.services.queries.listProjectServices;
 const resetTenantOperations = internal.seed.reset.resetTenantOperations;
 const seedBogotaOperations = internal.seed.bogota.seedBogotaOperations;
 
@@ -43,23 +43,23 @@ test('the Bogota seed fills an existing organization with locations, a project a
   const project = projects.page.find((row) => row.name === 'FEP');
   if (project === undefined) throw new Error('Expected the seeded FEP project');
 
-  const events = await client.query(listProjectEvents, { projectId: project._id, paginationOpts: firstPage });
-  expect(events.page).toHaveLength(6);
+  const services = await client.query(listProjectServices, { projectId: project._id, paginationOpts: firstPage });
+  expect(services.page).toHaveLength(6);
   // The statuses are walked through the real transition matrix, so a demo shows
   // more than a wall of drafts — and a jump would have been refused on the way.
-  const statuses = events.page.map((row) => row.status).sort();
+  const statuses = services.page.map((row) => row.status).sort();
   expect(statuses).toEqual(['cancelled', 'confirmed', 'confirmed', 'draft', 'planned', 'planned']);
   // Every service's startsAt is an absolute instant inside the project window.
-  expect(events.page.every((row) => row.startsAt > (project.startsAt ?? 0) && row.startsAt < (project.endsAt ?? Infinity))).toBe(true);
+  expect(services.page.every((row) => row.startsAt > (project.startsAt ?? 0) && row.startsAt < (project.endsAt ?? Infinity))).toBe(true);
 });
 
-test('the seed reuses the starter recipes rather than creating its own', async () => {
+test('the seed reuses the starter serviceKinds rather than creating its own', async () => {
   const t = convexTest(schema, modules);
   const { client, organizationId } = await tenant(t);
   await t.mutation(seedBogotaOperations, { organizationSlug: slug });
 
-  const recipes = await client.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-  expect(recipes.page.map((entry) => entry.recipe.key).sort()).toEqual([
+  const serviceKinds = await client.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+  expect(serviceKinds.page.map((entry) => entry.serviceKind.key).sort()).toEqual([
     'airportArrivalTransfer', 'airportDepartureTransfer', 'pointToPointTransfer', 'shuttleService',
   ]);
 });
@@ -78,11 +78,11 @@ test('the reset clears operational data but keeps the user, organization and pro
   await t.mutation(seedBogotaOperations, { organizationSlug: slug });
 
   const cleared = await t.mutation(resetTenantOperations, {});
-  expect(cleared).toMatchObject({ events: 6, locations: 8, eventRecipes: 4, fieldDefinitions: 9 });
+  expect(cleared).toMatchObject({ services: 6, locations: 8, serviceKinds: 4, fieldDefinitions: 9 });
 
   // Gone: the four things the reset is for.
   expect(await client.query(listLocations, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
-  expect(await client.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
+  expect(await client.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
 
   // Kept: the tenant itself, so a developer stays signed in and keeps their project.
   const organizations = await client.query(api.organizations.queries.listMyOrganizations, {});
@@ -95,7 +95,7 @@ test('the reset clears operational data but keeps the user, organization and pro
     const audits = await ctx.db.query('auditEvents').collect();
     expect(audits.some((audit) => audit.entityType === 'organization')).toBe(true);
     expect(audits.some((audit) => audit.entityType === 'project')).toBe(true);
-    expect(audits.some((audit) => ['event', 'location', 'eventRecipe', 'fieldDefinition'].includes(audit.entityType))).toBe(false);
+    expect(audits.some((audit) => ['service', 'location', 'serviceKind', 'fieldDefinition'].includes(audit.entityType))).toBe(false);
   });
 });
 
@@ -107,8 +107,8 @@ test('seeding again after a reset restores the same demonstration', async () => 
   const again = await t.mutation(seedBogotaOperations, { organizationSlug: slug });
 
   expect(again).toMatchObject({ locations: 8, services: 6 });
-  const recipes = await client.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-  expect(recipes.page).toHaveLength(4);
+  const serviceKinds = await client.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+  expect(serviceKinds.page).toHaveLength(4);
 });
 
 test('the reset and the seed both refuse without the deployment opt-in', async () => {

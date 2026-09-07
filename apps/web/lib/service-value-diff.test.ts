@@ -1,21 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { EventFieldValue } from './field-value-form';
-import { changedEventFieldValues } from './service-value-diff';
+import type { ServiceFieldValue } from './field-value-form';
+import { changedServiceFieldValues } from './service-value-diff';
 
 type ValueCase = {
-  unchanged: EventFieldValue;
-  changed: EventFieldValue;
+  unchanged: ServiceFieldValue;
+  changed: ServiceFieldValue;
 };
 
-type LocationId = Extract<EventFieldValue, { kind: 'location' }>['locationId'];
+type LocationId = Extract<ServiceFieldValue, { kind: 'location' }>['locationId'];
 
 /** Branded ids cannot be constructed at runtime; a fixture cast is the honest way to make one. */
 function locationId(value: string): LocationId {
   return value as LocationId;
 }
 
-const valueCases: Record<EventFieldValue['kind'], ValueCase> = {
+const valueCases: Record<ServiceFieldValue['kind'], ValueCase> = {
   text: {
     unchanged: { kind: 'text', value: 'Original' },
     changed: { kind: 'text', value: 'Updated' },
@@ -58,36 +58,36 @@ const valueCases: Record<EventFieldValue['kind'], ValueCase> = {
   },
 };
 
-describe('changedEventFieldValues', () => {
+describe('changedServiceFieldValues', () => {
   test.each(Object.entries(valueCases))('%s values omit an unchanged value and emit a changed value', (_, valueCase) => {
-    const original = new Map<string, EventFieldValue>([['field', valueCase.unchanged]]);
+    const original = new Map<string, ServiceFieldValue>([['field', valueCase.unchanged]]);
 
-    expect(changedEventFieldValues(original, new Map([['field', valueCase.unchanged]]))).toEqual([]);
-    expect(changedEventFieldValues(original, new Map([['field', valueCase.changed]]))).toEqual([
+    expect(changedServiceFieldValues(original, new Map([['field', valueCase.unchanged]]))).toEqual([]);
+    expect(changedServiceFieldValues(original, new Map([['field', valueCase.changed]]))).toEqual([
       { fieldDefinitionId: 'field', value: valueCase.changed },
     ]);
   });
 
   test('does not resubmit an untouched archived-location value', () => {
-    const original = new Map<string, EventFieldValue>([['pickup', valueCases.location.unchanged]]);
-    const edited = new Map<string, EventFieldValue | undefined>([['pickup', valueCases.location.unchanged]]);
+    const original = new Map<string, ServiceFieldValue>([['pickup', valueCases.location.unchanged]]);
+    const edited = new Map<string, ServiceFieldValue | undefined>([['pickup', valueCases.location.unchanged]]);
 
-    expect(changedEventFieldValues(original, edited)).toEqual([]);
+    expect(changedServiceFieldValues(original, edited)).toEqual([]);
   });
 
   test('emits multi-select values when their members, length, or order differ', () => {
-    const original = new Map<string, EventFieldValue>([
+    const original = new Map<string, ServiceFieldValue>([
       ['different-member', { kind: 'multiSelect', optionIds: ['first-option', 'second-option'] }],
       ['different-length', { kind: 'multiSelect', optionIds: ['first-option', 'second-option'] }],
       ['different-order', { kind: 'multiSelect', optionIds: ['first-option', 'second-option'] }],
     ]);
-    const edited = new Map<string, EventFieldValue | undefined>([
+    const edited = new Map<string, ServiceFieldValue | undefined>([
       ['different-member', { kind: 'multiSelect', optionIds: ['first-option', 'third-option'] }],
       ['different-length', { kind: 'multiSelect', optionIds: ['first-option'] }],
       ['different-order', { kind: 'multiSelect', optionIds: ['second-option', 'first-option'] }],
     ]);
 
-    expect(changedEventFieldValues(original, edited)).toEqual([
+    expect(changedServiceFieldValues(original, edited)).toEqual([
       {
         fieldDefinitionId: 'different-member',
         value: { kind: 'multiSelect', optionIds: ['first-option', 'third-option'] },
@@ -104,13 +104,13 @@ describe('changedEventFieldValues', () => {
   });
 
   test('uses null to clear a stored optional value', () => {
-    const original = new Map<string, EventFieldValue>([['notes', { kind: 'text', value: 'Keep no more' }]]);
-    const edited = new Map<string, EventFieldValue | undefined>([['notes', undefined]]);
+    const original = new Map<string, ServiceFieldValue>([['notes', { kind: 'text', value: 'Keep no more' }]]);
+    const edited = new Map<string, ServiceFieldValue | undefined>([['notes', undefined]]);
 
-    expect(changedEventFieldValues(original, edited)).toEqual([{ fieldDefinitionId: 'notes', value: null }]);
+    expect(changedServiceFieldValues(original, edited)).toEqual([{ fieldDefinitionId: 'notes', value: null }]);
   });
 
   test('omits a field absent from both sides', () => {
-    expect(changedEventFieldValues(new Map(), new Map([['new-field', undefined]]))).toEqual([]);
+    expect(changedServiceFieldValues(new Map(), new Map([['new-field', undefined]]))).toEqual([]);
   });
 });

@@ -22,8 +22,8 @@ type BuiltinSeed = {
  * for good (I2/I3). A typo shipped once can never be corrected in place — so
  * this array must be read against the issue's table, not adjusted casually.
  *
- * DECLARATION ORDER IS NOT COMPOSITION ORDER: starter recipes state their own
- * field order and required flags in recipes/builtins.ts.
+ * DECLARATION ORDER IS NOT COMPOSITION ORDER: starter serviceKinds state their own
+ * field order and required flags in serviceKinds/builtins.ts.
  */
 export const builtinFields = [
   { key: 'passengerCount', label: 'Passenger Count', semanticType: 'passenger.count', config: { kind: 'number', min: 0, integer: true } },

@@ -22,46 +22,46 @@ import { formatFieldValue } from '@/lib/field-value-format';
 import { projectWindowDateBounds, projectWindowProblem } from '@/lib/project-window';
 import {
   emptyFieldValueFormState,
-  fromEventFieldValue,
-  toEventFieldValue,
+  fromServiceFieldValue,
+  toServiceFieldValue,
   type FieldValueFormState,
 } from '@/lib/field-value-form';
 import { roleAtLeast } from '@/lib/roles';
 import { serviceFieldProblem } from '@/lib/service-form-checks';
 import { legalNextServiceStatuses } from '@/lib/service-transitions';
-import { changedEventFieldValues } from '@/lib/service-value-diff';
+import { changedServiceFieldValues } from '@/lib/service-value-diff';
 import { timestampFromParts, timestampToParts, type TimestampParts } from '@/lib/timestamps';
 
-type EventId = FunctionArgs<typeof api.events.queries.getEvent>['eventId'];
-type EventData = FunctionReturnType<typeof api.events.queries.getEvent>;
-type RecipeVersionData = FunctionReturnType<typeof api.recipes.queries.getRecipeVersion>;
+type ServiceId = FunctionArgs<typeof api.services.queries.getService>['serviceId'];
+type ServiceData = FunctionReturnType<typeof api.services.queries.getService>;
+type ServiceKindVersionData = FunctionReturnType<typeof api.serviceKinds.queries.getServiceKindVersion>;
 type ProjectData = FunctionReturnType<typeof api.projects.queries.getProject>;
 
-export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
+export function ServiceDetailSurface({ serviceId }: { serviceId: ServiceId }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
-  const data = useQuery(api.events.queries.getEvent, { eventId });
+  const data = useQuery(api.services.queries.getService, { serviceId });
   const project = useQuery(
     api.projects.queries.getProject,
-    data === undefined ? 'skip' : { projectId: data.event.projectId },
+    data === undefined ? 'skip' : { projectId: data.service.projectId },
   );
   const version = useQuery(
-    api.recipes.queries.getRecipeVersion,
-    data === undefined ? 'skip' : { recipeVersionId: data.event.recipeVersionId },
+    api.serviceKinds.queries.getServiceKindVersion,
+    data === undefined ? 'skip' : { serviceKindVersionId: data.service.serviceKindVersionId },
   );
-  const updateCore = useMutation(api.events.mutations.updateEventCoreFields);
-  const updateFields = useMutation(api.events.mutations.updateEventFields);
-  const changeStatus = useMutation(api.events.mutations.changeEventStatus);
+  const updateCore = useMutation(api.services.mutations.updateServiceCoreFields);
+  const updateFields = useMutation(api.services.mutations.updateServiceFields);
+  const changeStatus = useMutation(api.services.mutations.changeServiceStatus);
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   if (data === undefined || project === undefined || version === undefined || currentOrganization === null) return null;
   const frozenByProject = project.status === 'archived';
-  const terminal = data.event.status === 'completed' || data.event.status === 'cancelled';
+  const terminal = data.service.status === 'completed' || data.service.status === 'cancelled';
   const canEdit = roleAtLeast(currentOrganization.role, 'planner') && !frozenByProject && !terminal;
   const canOperate = roleAtLeast(currentOrganization.role, 'operator') && !frozenByProject && !terminal;
-  async function transition(status: EventData['event']['status']): Promise<void> {
+  async function transition(status: ServiceData['service']['status']): Promise<void> {
     try {
-      await changeStatus({ eventId, status });
+      await changeStatus({ serviceId, status });
     } catch (error) {
       setMessage(t(errorMessageKey(presentConvexError(error))));
     }
@@ -72,7 +72,7 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
      * edit form rendered below them opened out of sight. */
     <div className="flex flex-col gap-6">
       <PageHeader
-        badge={<StatusChip emphasis="loud" kind="service" status={data.event.status} />}
+        badge={<StatusChip emphasis="loud" kind="service" status={data.service.status} />}
         actions={
           canEdit && !editing ? <Button onClick={() => setEditing(true)}>{t('services.edit')}</Button> : undefined
         }
@@ -85,7 +85,7 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
       ) : null}
       {editing ? (
         <ServiceEditor
-          key={data.event._id}
+          key={data.service._id}
           data={data}
           version={version}
           project={project}
@@ -97,22 +97,22 @@ export function ServiceDetailSurface({ eventId }: { eventId: EventId }) {
       ) : (
         <>
           <ServiceCoreDetails data={data} />
-          <RecipeVersionPanel version={version} />
+          <ServiceKindVersionPanel version={version} />
           <ServiceValues data={data} version={version} />
-          <ServiceRelationships eventId={data.event._id} canEdit={canEdit} />
+          <ServiceRelationships serviceId={data.service._id} canEdit={canEdit} />
         </>
       )}
-      {canOperate ? <StatusControls status={data.event.status} onTransition={transition} /> : null}
+      {canOperate ? <StatusControls status={data.service.status} onTransition={transition} /> : null}
       <AuditPanel
-        organizationId={data.event.organizationId}
-        eventId={data.event._id}
+        organizationId={data.service.organizationId}
+        serviceId={data.service._id}
         enabled={roleAtLeast(currentOrganization.role, 'admin')}
       />
     </div>
   );
 }
 
-function ServiceCoreDetails({ data }: { data: EventData }) {
+function ServiceCoreDetails({ data }: { data: ServiceData }) {
   const t = useTranslations();
   const locale = useCanonicalLocale();
   return (
@@ -123,35 +123,35 @@ function ServiceCoreDetails({ data }: { data: EventData }) {
       <PanelBody className="gap-2 text-sm text-ink-2">
         <p>
           <span className="text-ink-3">{t('services.startsAt')} </span>
-          {formatDateTime(locale, data.event.startsAt)}
+          {formatDateTime(locale, data.service.startsAt)}
         </p>
         <p>
           <span className="text-ink-3">{t('services.endsAt')} </span>
-          {data.event.endsAt === undefined ? t('services.notSet') : formatDateTime(locale, data.event.endsAt)}
+          {data.service.endsAt === undefined ? t('services.notSet') : formatDateTime(locale, data.service.endsAt)}
         </p>
       </PanelBody>
     </Panel>
   );
 }
 
-function RecipeVersionPanel({ version }: { version: RecipeVersionData }) {
+function ServiceKindVersionPanel({ version }: { version: ServiceKindVersionData }) {
   const t = useTranslations();
   return (
     <Panel>
       <PanelHeader>
-        <PanelTitle>{t('services.recipeVersionTitle')}</PanelTitle>
-        <PanelDescription>{t('services.recipeVersionDescription')}</PanelDescription>
+        <PanelTitle>{t('services.serviceKindVersionTitle')}</PanelTitle>
+        <PanelDescription>{t('services.serviceKindVersionDescription')}</PanelDescription>
       </PanelHeader>
       <PanelBody className="gap-2 text-sm text-ink-2">
-        <p>{t('services.recipeVersionNumber', { version: version.version.versionNumber })}</p>
-        <StatusChip kind="recipeVersion" status={version.version.status} />
-        {version.version.status === 'retired' ? <p>{t('services.recipeVersionRetired')}</p> : null}
+        <p>{t('services.serviceKindVersionNumber', { version: version.version.versionNumber })}</p>
+        <StatusChip kind="serviceKindVersion" status={version.version.status} />
+        {version.version.status === 'retired' ? <p>{t('services.serviceKindVersionRetired')}</p> : null}
       </PanelBody>
     </Panel>
   );
 }
 
-function ServiceValues({ data, version }: { data: EventData; version: RecipeVersionData }) {
+function ServiceValues({ data, version }: { data: ServiceData; version: ServiceKindVersionData }) {
   const t = useTranslations();
   const locale = useCanonicalLocale();
   const values = new Map(data.values.map((value) => [value.fieldDefinitionId, value]));
@@ -161,7 +161,7 @@ function ServiceValues({ data, version }: { data: EventData; version: RecipeVers
         <PanelTitle>{t('services.valuesTitle')}</PanelTitle>
       </PanelHeader>
       <PanelBody className="gap-4">
-        {version.recipeFields
+        {version.serviceKindFields
           .filter((field) => field.visible)
           .map((field) => {
             const item = values.get(field.fieldDefinitionId);
@@ -187,8 +187,8 @@ function StatusControls({
   status,
   onTransition,
 }: {
-  status: EventData['event']['status'];
-  onTransition: (status: EventData['event']['status']) => Promise<void>;
+  status: ServiceData['service']['status'];
+  onTransition: (status: ServiceData['service']['status']) => Promise<void>;
 }) {
   const t = useTranslations();
   const next = legalNextServiceStatuses(status);
@@ -219,36 +219,36 @@ function ServiceEditor({
   updateCore,
   updateFields,
 }: {
-  data: EventData;
-  version: RecipeVersionData;
+  data: ServiceData;
+  version: ServiceKindVersionData;
   project: ProjectData;
   onClose: () => void;
   onMessage: (message: string) => void;
-  updateCore: ReturnType<typeof useMutation<typeof api.events.mutations.updateEventCoreFields>>;
-  updateFields: ReturnType<typeof useMutation<typeof api.events.mutations.updateEventFields>>;
+  updateCore: ReturnType<typeof useMutation<typeof api.services.mutations.updateServiceCoreFields>>;
+  updateFields: ReturnType<typeof useMutation<typeof api.services.mutations.updateServiceFields>>;
 }) {
   const t = useTranslations();
   const original = new Map(data.values.map((item) => [item.fieldDefinitionId, item.value]));
-  const [name, setName] = useState(data.event.name);
-  const [start, setStart] = useState<TimestampParts>(timestampToParts(data.event.startsAt));
+  const [name, setName] = useState(data.service.name);
+  const [start, setStart] = useState<TimestampParts>(timestampToParts(data.service.startsAt));
   const [end, setEnd] = useState<TimestampParts>(
-    data.event.endsAt === undefined ? { date: '', time: '' } : timestampToParts(data.event.endsAt),
+    data.service.endsAt === undefined ? { date: '', time: '' } : timestampToParts(data.service.endsAt),
   );
-  const [states, setStates] = useState<Map<EventData['values'][number]['fieldDefinitionId'], FieldValueFormState>>(
+  const [states, setStates] = useState<Map<ServiceData['values'][number]['fieldDefinitionId'], FieldValueFormState>>(
     new Map(),
   );
-  function state(field: RecipeVersionData['recipeFields'][number]): FieldValueFormState {
+  function state(field: ServiceKindVersionData['serviceKindFields'][number]): FieldValueFormState {
     const changed = states.get(field.fieldDefinitionId);
     if (changed !== undefined) return changed;
     const stored = original.get(field.fieldDefinitionId);
-    return stored === undefined ? emptyFieldValueFormState(field.config.kind) : fromEventFieldValue(stored);
+    return stored === undefined ? emptyFieldValueFormState(field.config.kind) : fromServiceFieldValue(stored);
   }
   async function save(): Promise<void> {
     const startsAt = timestampFromParts(start);
     const endBlank = end.date === '' && end.time === '';
     const endsAt = endBlank ? undefined : timestampFromParts(end);
     if (startsAt === undefined || (!endBlank && endsAt === undefined) || (endsAt !== undefined && endsAt < startsAt)) {
-      onMessage(t('errors.eventDatesInvalid'));
+      onMessage(t('errors.serviceDatesInvalid'));
       return;
     }
     // The project's window is the second date rule, and the one this screen
@@ -256,29 +256,29 @@ function ServiceEditor({
     // and only the server would ever have objected — except it did not either.
     const outside = projectWindowProblem(project, startsAt, endsAt);
     if (outside !== undefined) {
-      onMessage(t(outside === 'before' ? 'errors.eventBeforeProjectWindow' : 'errors.eventAfterProjectWindow'));
+      onMessage(t(outside === 'before' ? 'errors.serviceBeforeProjectWindow' : 'errors.serviceAfterProjectWindow'));
       return;
     }
     const edited = new Map(
-      version.recipeFields
+      version.serviceKindFields
         .filter((field) => field.visible)
-        .map((field) => [field.fieldDefinitionId, toEventFieldValue(state(field))]),
+        .map((field) => [field.fieldDefinitionId, toServiceFieldValue(state(field))]),
     );
-    for (const field of version.recipeFields.filter((item) => item.visible))
+    for (const field of version.serviceKindFields.filter((item) => item.visible))
       if (serviceFieldProblem(field.config, edited.get(field.fieldDefinitionId), field.required, false) !== undefined) {
         onMessage(t('services.fieldInvalid'));
         return;
       }
-    const changes = changedEventFieldValues(original, edited);
+    const changes = changedServiceFieldValues(original, edited);
     try {
       const core = {
-        eventId: data.event._id,
-        ...(name === data.event.name ? {} : { name }),
-        ...(startsAt === data.event.startsAt ? {} : { startsAt }),
-        ...(endsAt === data.event.endsAt ? {} : { endsAt: endsAt ?? null }),
+        serviceId: data.service._id,
+        ...(name === data.service.name ? {} : { name }),
+        ...(startsAt === data.service.startsAt ? {} : { startsAt }),
+        ...(endsAt === data.service.endsAt ? {} : { endsAt: endsAt ?? null }),
       };
       if (Object.keys(core).length > 1) await updateCore(core);
-      if (changes.length > 0) await updateFields({ eventId: data.event._id, values: changes });
+      if (changes.length > 0) await updateFields({ serviceId: data.service._id, values: changes });
       onClose();
     } catch (error) {
       onMessage(t(errorMessageKey(presentConvexError(error))));
@@ -313,7 +313,7 @@ function ServiceEditor({
             onChange={setEnd}
             bounds={projectWindowDateBounds(project)}
           />
-          {version.recipeFields
+          {version.serviceKindFields
             .filter((field) => field.visible)
             .map((field) => (
               <ServiceDynamicField
@@ -324,7 +324,7 @@ function ServiceEditor({
                   t('common.notAvailable')
                 }
                 value={state(field)}
-                organizationId={data.event.organizationId}
+                organizationId={data.service.organizationId}
                 onChange={(next) => setStates((old) => new Map(old).set(field.fieldDefinitionId, next))}
               />
             ))}
@@ -342,18 +342,18 @@ function ServiceEditor({
 
 function AuditPanel({
   organizationId,
-  eventId,
+  serviceId,
   enabled,
 }: {
-  organizationId: EventData['event']['organizationId'];
-  eventId: EventId;
+  organizationId: ServiceData['service']['organizationId'];
+  serviceId: ServiceId;
   enabled: boolean;
 }) {
   const t = useTranslations();
   const locale = useCanonicalLocale();
   const audits = usePaginatedQuery(
     api.audit.queries.listEntityAuditEvents,
-    enabled ? { organizationId, entityType: 'event', entityId: eventId } : 'skip',
+    enabled ? { organizationId, entityType: 'service', entityId: serviceId } : 'skip',
     { initialNumItems: 25 },
   );
   if (!enabled) return null;

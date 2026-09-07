@@ -16,7 +16,7 @@ import type { CanonicalLocale } from '@/i18n/locales';
  */
 export type ChatProposalStatus = 'valid' | 'needsResolution' | 'invalid';
 
-export interface ChatRecipeProposalField {
+export interface ChatServiceKindProposalField {
   readonly key: string;
   readonly label: string;
   readonly dataType: FieldDataType;
@@ -25,13 +25,13 @@ export interface ChatRecipeProposalField {
   readonly isNewFieldDefinition: boolean;
 }
 
-export interface ChatRecipeProposal {
-  readonly kind: 'recipe';
+export interface ChatServiceKindProposal {
+  readonly kind: 'serviceKind';
   readonly id: string;
   readonly status: ChatProposalStatus;
-  readonly recipeName: string;
-  readonly recipeKey: string;
-  readonly fields: readonly ChatRecipeProposalField[];
+  readonly serviceKindName: string;
+  readonly serviceKindKey: string;
+  readonly fields: readonly ChatServiceKindProposalField[];
   /** Present only when `status === 'invalid'`. */
   readonly issues?: readonly string[];
 }
@@ -48,8 +48,8 @@ export interface ChatServiceProposal {
   readonly id: string;
   readonly status: ChatProposalStatus;
   readonly projectName: string;
-  readonly recipeName: string;
-  readonly recipeVersionLabel: string;
+  readonly serviceKindName: string;
+  readonly serviceKindVersionLabel: string;
   readonly values: readonly ChatServiceProposalValue[];
   /** Present only when `status === 'needsResolution'`: things that don't exist yet. */
   readonly gaps?: readonly string[];
@@ -57,7 +57,7 @@ export interface ChatServiceProposal {
   readonly issues?: readonly string[];
 }
 
-export type ChatProposal = ChatRecipeProposal | ChatServiceProposal;
+export type ChatProposal = ChatServiceKindProposal | ChatServiceProposal;
 
 export type ChatTurnRole = 'user' | 'assistant';
 export type ChatTurnStatus = 'complete' | 'error';
@@ -119,20 +119,20 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
       role: 'assistant',
       status: 'complete',
       text:
-        'Puedo ayudarte a armar una receta nueva, crear un servicio a partir de una receta ' +
+        'Puedo ayudarte a armar un tipo de servicio nuevo, crear un servicio a partir de un tipo de servicio ' +
         'publicada, o revisar lo que ya existe. Cuéntame qué necesitas y te propongo algo concreto.',
     },
     {
       role: 'assistant',
       status: 'complete',
-      text: 'Con lo que describiste, arme esta receta. Revisa los campos propuestos.',
+      text: 'Con lo que describiste, arme este tipo de servicio. Revisa los campos propuestos.',
       proposals: [
         {
-          kind: 'recipe',
-          id: 'recipe-shuttle-valid',
+          kind: 'serviceKind',
+          id: 'serviceKind-shuttle-valid',
           status: 'valid',
-          recipeName: 'Transporte aeropuerto — grupo VIP',
-          recipeKey: 'transporteAeropuertoVip',
+          serviceKindName: 'Transporte aeropuerto — grupo VIP',
+          serviceKindKey: 'transporteAeropuertoVip',
           fields: [
             { key: 'flightNumber', label: 'Número de vuelo', dataType: 'text', required: true, isNewFieldDefinition: false },
             { key: 'passengerCount', label: 'Número de pasajeros', dataType: 'number', required: true, isNewFieldDefinition: false },
@@ -145,15 +145,15 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
     {
       role: 'assistant',
       status: 'complete',
-      text: 'Listo, este servicio queda armado con la versión publicada de la receta.',
+      text: 'Listo, este servicio queda armado con la versión publicada del tipo de servicio.',
       proposals: [
         {
           kind: 'service',
           id: 'service-launch-valid',
           status: 'valid',
           projectName: 'Cumbre Regional 2026',
-          recipeName: 'Transporte aeropuerto — grupo VIP',
-          recipeVersionLabel: 'Versión 3',
+          serviceKindName: 'Transporte aeropuerto — grupo VIP',
+          serviceKindVersionLabel: 'Versión 3',
           values: [
             { key: 'flightNumber', label: 'Número de vuelo', value: 'AV204' },
             { key: 'passengerCount', label: 'Número de pasajeros', value: '6' },
@@ -172,8 +172,8 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
           id: 'service-launch-gaps',
           status: 'needsResolution',
           projectName: 'Cumbre Regional 2026',
-          recipeName: 'Traslado terrestre — delegaciones',
-          recipeVersionLabel: 'Versión 1',
+          serviceKindName: 'Traslado terrestre — delegaciones',
+          serviceKindVersionLabel: 'Versión 1',
           values: [
             { key: 'passengerCount', label: 'Número de pasajeros', value: '12' },
             { key: 'pickupLocation', label: 'Punto de recogida', value: 'Terminal Norte' },
@@ -188,21 +188,21 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
     {
       role: 'assistant',
       status: 'complete',
-      text: 'Arme una propuesta de receta, pero la validación encontró problemas antes de poder crearla.',
+      text: 'Arme una propuesta de tipo de servicio, pero la validación encontró problemas antes de poder crearla.',
       proposals: [
         {
-          kind: 'recipe',
-          id: 'recipe-shuttle-invalid',
+          kind: 'serviceKind',
+          id: 'serviceKind-shuttle-invalid',
           status: 'invalid',
-          recipeName: 'Traslado nocturno',
-          recipeKey: 'traslado nocturno',
+          serviceKindName: 'Traslado nocturno',
+          serviceKindKey: 'traslado nocturno',
           fields: [
             { key: 'passengerCount', label: 'Número de pasajeros', dataType: 'number', required: true, isNewFieldDefinition: false },
             { key: 'passengerCount', label: 'Cantidad de pasajeros', dataType: 'text', required: true, isNewFieldDefinition: true },
           ],
           issues: [
-            'La clave de receta "traslado nocturno" no es lowerCamelCase.',
-            'La clave de campo "passengerCount" está repetida en la misma receta.',
+            'La clave de tipo de servicio "traslado nocturno" no es lowerCamelCase.',
+            'La clave de campo "passengerCount" está repetida en el mismo tipo de servicio.',
           ],
         },
       ],
@@ -213,20 +213,20 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
       role: 'assistant',
       status: 'complete',
       text:
-        'I can help you put together a new recipe, create a service from a published recipe, ' +
+        'I can help you put together a new service kind, create a service from a published service kind, ' +
         'or review what already exists. Tell me what you need and I will propose something concrete.',
     },
     {
       role: 'assistant',
       status: 'complete',
-      text: 'Based on what you described, I put together this recipe. Review the proposed fields.',
+      text: 'Based on what you described, I put together this service kind. Review the proposed fields.',
       proposals: [
         {
-          kind: 'recipe',
-          id: 'recipe-shuttle-valid',
+          kind: 'serviceKind',
+          id: 'serviceKind-shuttle-valid',
           status: 'valid',
-          recipeName: 'Airport transfer — VIP group',
-          recipeKey: 'airportTransferVip',
+          serviceKindName: 'Airport transfer — VIP group',
+          serviceKindKey: 'airportTransferVip',
           fields: [
             { key: 'flightNumber', label: 'Flight number', dataType: 'text', required: true, isNewFieldDefinition: false },
             { key: 'passengerCount', label: 'Passenger count', dataType: 'number', required: true, isNewFieldDefinition: false },
@@ -239,15 +239,15 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
     {
       role: 'assistant',
       status: 'complete',
-      text: 'Done — this service is put together using the published recipe version.',
+      text: 'Done — this service is put together using the published service kind version.',
       proposals: [
         {
           kind: 'service',
           id: 'service-launch-valid',
           status: 'valid',
           projectName: 'Regional Summit 2026',
-          recipeName: 'Airport transfer — VIP group',
-          recipeVersionLabel: 'Version 3',
+          serviceKindName: 'Airport transfer — VIP group',
+          serviceKindVersionLabel: 'Version 3',
           values: [
             { key: 'flightNumber', label: 'Flight number', value: 'AV204' },
             { key: 'passengerCount', label: 'Passenger count', value: '6' },
@@ -266,8 +266,8 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
           id: 'service-launch-gaps',
           status: 'needsResolution',
           projectName: 'Regional Summit 2026',
-          recipeName: 'Ground transfer — delegations',
-          recipeVersionLabel: 'Version 1',
+          serviceKindName: 'Ground transfer — delegations',
+          serviceKindVersionLabel: 'Version 1',
           values: [
             { key: 'passengerCount', label: 'Passenger count', value: '12' },
             { key: 'pickupLocation', label: 'Pickup point', value: 'North Terminal' },
@@ -282,21 +282,21 @@ const cannedTurns: Record<CanonicalLocale, readonly CannedTurn[]> = {
     {
       role: 'assistant',
       status: 'complete',
-      text: 'I put together a recipe proposal, but validation found problems before it could be created.',
+      text: 'I put together a service kind proposal, but validation found problems before it could be created.',
       proposals: [
         {
-          kind: 'recipe',
-          id: 'recipe-shuttle-invalid',
+          kind: 'serviceKind',
+          id: 'serviceKind-shuttle-invalid',
           status: 'invalid',
-          recipeName: 'Overnight transfer',
-          recipeKey: 'overnight transfer',
+          serviceKindName: 'Overnight transfer',
+          serviceKindKey: 'overnight transfer',
           fields: [
             { key: 'passengerCount', label: 'Passenger count', dataType: 'number', required: true, isNewFieldDefinition: false },
             { key: 'passengerCount', label: 'Number of passengers', dataType: 'text', required: true, isNewFieldDefinition: true },
           ],
           issues: [
-            'The recipe key "overnight transfer" is not lowerCamelCase.',
-            'The field key "passengerCount" is duplicated within the same recipe.',
+            'The service kind key "overnight transfer" is not lowerCamelCase.',
+            'The field key "passengerCount" is duplicated within the same service kind.',
           ],
         },
       ],

@@ -4,15 +4,15 @@ import { v } from 'convex/values';
 import {
   archivalStatusValidator,
   auditEventFields,
-  eventFieldValueValidator,
-  eventFields,
-  eventStatusValidator,
+  serviceFieldValueValidator,
+  serviceFields,
+  serviceStatusValidator,
   fieldConfigValidator,
   fieldDefinitionFields,
   locationFields,
   organizationInvitationFields,
-  recipeFields,
-  recipeVersionStatusValidator,
+  serviceKindFields,
+  serviceKindVersionStatusValidator,
   projectFields,
   projectStatusValidator,
   relationshipTypeValidator,
@@ -24,8 +24,8 @@ import {
  * docs/architecture-review.md §10, Convex serializable OCC retries conflicting
  * mutations, so the retried read observes the winning write without needing locks.
  *
- * Every denormalized column (organizationId everywhere, events.recipeId,
- * eventFieldValues.locationId) is derived server-side from the stored entity
+ * Every denormalized column (organizationId everywhere, services.serviceKindId,
+ * serviceFieldValues.locationId) is derived server-side from the stored entity
  * graph in the same mutation (I4) — never accepted from client args.
  */
 
@@ -95,34 +95,34 @@ export default defineSchema({
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
-  eventRecipes: defineTable(recipeFields)
+  serviceKinds: defineTable(serviceKindFields)
     .index('by_org_key', ['organizationId', 'key'])
     .index('by_org', ['organizationId']),
 
-  recipeVersions: defineTable({
+  serviceKindVersions: defineTable({
     organizationId: v.id('organizations'),
-    recipeId: v.id('eventRecipes'),
+    serviceKindId: v.id('serviceKinds'),
     versionNumber: v.number(),
-    status: recipeVersionStatusValidator,
+    status: serviceKindVersionStatusValidator,
     // Older published versions have no truthful publish time: leaving this
     // optional distinguishes that absence from a known publication instant.
     publishedAt: v.optional(v.number()),
   })
-    .index('by_recipe_version', ['recipeId', 'versionNumber'])
-    .index('by_recipe_status', ['recipeId', 'status'])
-    // `listPublishedRecipes` starts from current published versions: publication
+    .index('by_serviceKind_version', ['serviceKindId', 'versionNumber'])
+    .index('by_serviceKind_status', ['serviceKindId', 'status'])
+    // `listPublishedServiceKinds` starts from current published versions: publication
     // is the selective fact that guarantees a picker row has a usable version,
-    // without an N+1 probe across every recipe in the organization.
+    // without an N+1 probe across every serviceKind in the organization.
     .index('by_org_status', ['organizationId', 'status']),
 
-  recipeFields: defineTable({
+  serviceKindFields: defineTable({
     organizationId: v.id('organizations'),
-    recipeVersionId: v.id('recipeVersions'),
+    serviceKindVersionId: v.id('serviceKindVersions'),
     fieldDefinitionId: v.id('fieldDefinitions'),
     position: v.number(),
     required: v.boolean(),
     visible: v.boolean(),
-    defaultValue: v.optional(eventFieldValueValidator),
+    defaultValue: v.optional(serviceFieldValueValidator),
     // Mirror of defaultValue.locationId when kind === 'location', derived
     // server-side from the value beside it and never client-supplied (I4).
     // Gives locations an indexed reference check over configuration defaults,
@@ -132,31 +132,31 @@ export default defineSchema({
     defaultLocationId: v.optional(v.id('locations')),
     // Snapshot of the field's config (data type, rules, options), taken when the
     // row is composed into a DRAFT version — so a draft may narrow the definition
-    // (tighter bounds, a subset of options) for this recipe. Publishing validates
+    // (tighter bounds, a subset of options) for this serviceKind. Publishing validates
     // the snapshot's coherence instead of overwriting it: same config kind, narrowing-
     // only bounds, and select options still a subset of the definition's. From
-    // publish onward the snapshot is immutable, and historical event validation
+    // publish onward the snapshot is immutable, and historical service validation
     // reads ONLY it, never the live fieldDefinition (I3).
     config: fieldConfigValidator,
   })
-    .index('by_version_field', ['recipeVersionId', 'fieldDefinitionId'])
-    .index('by_version', ['recipeVersionId'])
+    .index('by_version_field', ['serviceKindVersionId', 'fieldDefinitionId'])
+    .index('by_version', ['serviceKindVersionId'])
     // Supports "is this field definition referenced by any (published)
     // version?" for the immutability trigger and protected deletes.
     .index('by_field', ['fieldDefinitionId'])
-    // Supports the first-hit "is this location referenced by any recipe field
+    // Supports the first-hit "is this location referenced by any serviceKind field
     // default?" guard in locations/model.ts deleteLocation.
     .index('by_defaultLocation', ['defaultLocationId']),
 
   // Field shape lives in validators/ so the table and the public `returns`
-  // validator are built from the same definition. `recipeId` is derived from
-  // `recipeVersionId` server-side (I4); never client-supplied.
-  events: defineTable(eventFields)
+  // validator are built from the same definition. `serviceKindId` is derived from
+  // `serviceKindVersionId` server-side (I4); never client-supplied.
+  services: defineTable(serviceFields)
     .index('by_project', ['projectId'])
     .index('by_project_startsAt', ['projectId', 'startsAt'])
     .index('by_org_startsAt', ['organizationId', 'startsAt'])
-    // Serves status-restricted, bounded window reads of the event list: such a
-    // read must never fall back to reading every event in the window and
+    // Serves status-restricted, bounded window reads of the service list: such a
+    // read must never fall back to reading every service in the window and
     // filtering client-side (that reintroduces the exact I6 problem the index
     // exists to avoid), so status is indexed alongside org and start time and
     // each included status is queried as its own bounded range.
@@ -167,15 +167,15 @@ export default defineSchema({
     // organization before this index is ever queried, so no organizationId
     // column is needed in the key.
     .index('by_project_status_startsAt', ['projectId', 'status', 'startsAt'])
-    .index('by_recipe', ['recipeId'])
-    .index('by_recipeVersion', ['recipeVersionId']),
+    .index('by_serviceKind', ['serviceKindId'])
+    .index('by_serviceKindVersion', ['serviceKindVersionId']),
 
-  eventFieldValues: defineTable({
+  serviceFieldValues: defineTable({
     organizationId: v.id('organizations'),
-    eventId: v.id('events'),
-    recipeFieldId: v.id('recipeFields'),
+    serviceId: v.id('services'),
+    serviceKindFieldId: v.id('serviceKindFields'),
     fieldDefinitionId: v.id('fieldDefinitions'),
-    value: eventFieldValueValidator,
+    value: serviceFieldValueValidator,
     // Mirror of value.locationId when kind === 'location' (server-derived);
     // gives locations an indexed reference check before archival/deletion.
     // Every write path to `value` MUST set this column through
@@ -183,7 +183,7 @@ export default defineSchema({
     // #10 owns the first (and so far only) writer of this table.
     locationId: v.optional(v.id('locations')),
   })
-    .index('by_event_field', ['eventId', 'fieldDefinitionId'])
+    .index('by_service_field', ['serviceId', 'fieldDefinitionId'])
     .index('by_field', ['fieldDefinitionId'])
     .index('by_location', ['locationId']),
 
@@ -203,14 +203,14 @@ export default defineSchema({
       filterFields: ['organizationId', 'type', 'status'],
     }),
 
-  eventRelationships: defineTable({
+  serviceRelationships: defineTable({
     organizationId: v.id('organizations'),
-    sourceEventId: v.id('events'),
-    targetEventId: v.id('events'),
+    sourceServiceId: v.id('services'),
+    targetServiceId: v.id('services'),
     type: relationshipTypeValidator,
   })
-    .index('by_source_target_type', ['sourceEventId', 'targetEventId', 'type'])
-    .index('by_target', ['targetEventId']),
+    .index('by_source_target_type', ['sourceServiceId', 'targetServiceId', 'type'])
+    .index('by_target', ['targetServiceId']),
 
   // Audit is append-only: domain mutations write rows transactionally through
   // audit/model.ts; no public audit mutation can update or delete them.

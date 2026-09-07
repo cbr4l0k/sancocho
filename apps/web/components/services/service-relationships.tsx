@@ -28,29 +28,29 @@ import { LocaleLink } from '@/i18n/locale-link';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { mayRemoveServiceRelationship, relationshipTargetOptions } from '@/lib/service-relationships';
 
-type EventId = FunctionArgs<typeof api.events.queries.getEvent>['eventId'];
+type ServiceId = FunctionArgs<typeof api.services.queries.getService>['serviceId'];
 type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId'];
 type RelationshipType = FunctionArgs<typeof api.relationships.mutations.createRelationship>['type'];
 type Relationship = FunctionReturnType<typeof api.relationships.queries.listOutgoingRelationships>['page'][number];
 type Project = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number];
-type Service = FunctionReturnType<typeof api.events.queries.listProjectEvents>['page'][number];
+type Service = FunctionReturnType<typeof api.services.queries.listProjectServices>['page'][number];
 
 const relationshipTypes = ['dependsOn', 'follows', 'parentOf', 'relatedTo'] as const satisfies readonly RelationshipType[];
 type CoversExactly<Listed extends RelationshipType, Union> = [Union] extends [Listed] ? true : never;
 const _relationshipTypesInSync: CoversExactly<(typeof relationshipTypes)[number], RelationshipType> = true;
 void _relationshipTypesInSync;
 
-export function ServiceRelationships({ eventId, canEdit }: { eventId: EventId; canEdit: boolean }) {
+export function ServiceRelationships({ serviceId, canEdit }: { serviceId: ServiceId; canEdit: boolean }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
   const outgoing = usePaginatedQuery(
     api.relationships.queries.listOutgoingRelationships,
-    { eventId },
+    { serviceId },
     { initialNumItems: 25 },
   );
   const incoming = usePaginatedQuery(
     api.relationships.queries.listIncomingRelationships,
-    { eventId },
+    { serviceId },
     { initialNumItems: 25 },
   );
   const projects = usePaginatedQuery(
@@ -79,7 +79,7 @@ export function ServiceRelationships({ eventId, canEdit }: { eventId: EventId; c
       </PanelHeader>
       <PanelBodyFlush>
         {message === null ? null : <p role="alert" className="mx-5 mt-5 rounded-input border border-tone-stop/40 px-4 py-3 text-sm text-tone-stop sm:mx-6">{message}</p>}
-        {canEdit ? <RelationshipForm eventId={eventId} projects={projects.results} projectsStatus={projects.status} loadProjects={projects.loadMore} /> : null}
+        {canEdit ? <RelationshipForm serviceId={serviceId} projects={projects.results} projectsStatus={projects.status} loadProjects={projects.loadMore} /> : null}
         <RelationshipGroup
           direction="outgoing"
           relationships={outgoing.results}
@@ -184,8 +184,8 @@ function RelationshipGroup({
 function RelationshipSentence({ direction, relationship }: { direction: 'outgoing' | 'incoming'; relationship: Relationship }) {
   const t = useTranslations();
   const counterpart = (
-    <LocaleLink className="underline decoration-line-strong underline-offset-4 hover:decoration-accent" to={`/services/${relationship.counterpartEvent._id}`}>
-      {relationship.counterpartEvent.name}
+    <LocaleLink className="underline decoration-line-strong underline-offset-4 hover:decoration-accent" to={`/services/${relationship.counterpartService._id}`}>
+      {relationship.counterpartService.name}
     </LocaleLink>
   );
   const type = <strong className="font-semibold">{t(`relationships.types.${relationship.type}`)}</strong>;
@@ -194,38 +194,38 @@ function RelationshipSentence({ direction, relationship }: { direction: 'outgoin
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-ink-2">
       {direction === 'outgoing' ? <>{thisService} {type} <span aria-hidden="true">→</span> {counterpart}</> : <>{counterpart} {type} <span aria-hidden="true">→</span> {thisService}</>}
-      <StatusChip kind="service" status={relationship.counterpartEvent.status} />
+      <StatusChip kind="service" status={relationship.counterpartService.status} />
     </div>
   );
 }
 
 function RelationshipForm({
-  eventId,
+  serviceId,
   projects,
   projectsStatus,
   loadProjects,
 }: {
-  eventId: EventId;
+  serviceId: ServiceId;
   projects: readonly Project[];
   projectsStatus: ReturnType<typeof usePaginatedQuery<typeof api.projects.queries.listProjects>>['status'];
   loadProjects: (pageSize: number) => void;
 }) {
   const t = useTranslations();
   const [projectId, setProjectId] = useState<ProjectId>();
-  const [targetId, setTargetId] = useState<EventId>();
+  const [targetId, setTargetId] = useState<ServiceId>();
   const [type, setType] = useState<RelationshipType>('dependsOn');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const create = useMutation(api.relationships.mutations.createRelationship);
   const targetServices = usePaginatedQuery(
-    api.events.queries.listProjectEvents,
+    api.services.queries.listProjectServices,
     projectId === undefined ? 'skip' : { projectId },
     { initialNumItems: 25 },
   );
   // An archived target project is refused by createRelationship, so it is not
   // offered. UI checks are affordances only; the mutation remains authoritative.
   const targetProjects = projects.filter((project) => project.status !== 'archived');
-  const targetOptions = relationshipTargetOptions<Service>(targetServices.results, eventId);
+  const targetOptions = relationshipTargetOptions<Service>(targetServices.results, serviceId);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -233,7 +233,7 @@ function RelationshipForm({
     setSubmitting(true);
     setError(null);
     try {
-      await create({ sourceEventId: eventId, targetEventId: targetId, type });
+      await create({ sourceServiceId: serviceId, targetServiceId: targetId, type });
       setTargetId(undefined);
     } catch (caught) {
       const key = errorMessageKey(presentConvexError(caught));

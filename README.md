@@ -9,7 +9,7 @@ Two halves, both real. The backend is complete and tested: schema, domain module
 authorization, validation, audit log, and a seeded
 demonstration slice. The console (`apps/web/`) is built on top of it: Next.js App Router
 with React 19 and Tailwind v4, covering projects, services, service configuration
-(fields, recipes, locations), and organization settings, in `es-CO` and
+(fields, service kinds, locations), and organization settings, in `es-CO` and
 `en-US`. Only the chat surface is a stub, and deliberately so — it is a UI with a
 client-side responder that produces reviewable proposals, with no backend chat domain and
 no write path of its own (I11).
@@ -17,16 +17,16 @@ no write path of its own (I11).
 ## Core architectural principle
 
 > Flexibility comes from assembling reusable, structured, semantic **Field Definitions**
-> into immutable, versioned **Event Recipes**.
+> into immutable, versioned **Service Kinds**.
 
 ```
-Organization → Project → Event
-Field Definition → Event Recipe → Recipe Version → Recipe Fields
-Event → Event Field Values
+Organization → Project → Service
+Field Definition → Service Kind → Service Kind Version → Service Kind Fields
+Service → Service Field Values
 ```
 
-- A Recipe is *configuration*; an Event is *operational data*.
-- Every Event stores the exact published Recipe Version it was created from, and is
+- A Service Kind is *configuration*; a Service is *operational data*.
+- Every Service stores the exact published Service Kind Version it was created from, and is
   validated against that version's snapshotted field configuration forever — including
   after the version is retired or the underlying Field Definition is edited elsewhere.
 - The two failure modes this design exists to avoid are a rigid giant schema with hundreds
@@ -47,7 +47,7 @@ is specified but not yet built — see [`docs/provider-access.md`](docs/provider
 | `apps/convex/convex/auth.config.ts` | Convex JWT provider config (Clerk-specific) |
 | `apps/convex/convex/lib/` | `authAdapter.ts`, `access.ts`, `roles.ts`, `errors.ts`, `names.ts` |
 | `apps/convex/convex/validators/` | Shared Convex validators, the field-config and field-value unions, the semantic registry, audit vocabulary |
-| `apps/convex/convex/<domain>/` | One directory per domain: `auth`, `organizations`, `invitations`, `projects`, `fields`, `recipes` (+ `recipes/fields`), `events`, `locations`, `relationships`, `audit`, `seed` |
+| `apps/convex/convex/<domain>/` | One directory per domain: `auth`, `organizations`, `invitations`, `projects`, `fields`, `serviceKinds` (+ `serviceKinds/fields`), `services`, `locations`, `relationships`, `audit`, `seed` |
 | `apps/convex/tests/` | vitest + convex-test suites, one file per domain concern |
 | `apps/web/` | The Next.js operations console: 23 App Router route files under `app/` (17 pages, 4 layouts, an error boundary and `/api/health`), 42 files under `components/` — 13 of them vendored shadcn primitives in `components/ui/` — `i18n/` with the `es-CO` / `en-US` catalogues and a `check-i18n` lint gate, and 19 colocated `*.test.ts` suites under `lib/` and `i18n/` |
 | `packages/shared/` | Marker package for future provider-neutral shared types |
@@ -165,8 +165,8 @@ memberships are ignored entirely — the Convex database owns all of that. See
 
 ## Seeding
 
-The seed builds one complete vertical slice — organization → project → locations → recipe →
-published version 1 → a typed Event with nine values — and the deployment-wide built-in
+The seed builds one complete vertical slice — organization → project → locations → service kind →
+published version 1 → a typed Service with nine values — and the deployment-wide built-in
 field catalogue. Every write goes through the same domain functions the public API uses, so
 publish validation, server-assigned version numbers and the typed-value gate all really run.
 
@@ -183,7 +183,7 @@ bun run seed          # convex run seed/mutations:seedDemonstrationData
 
 Without the opt-in, the mutation throws
 `Seeding is disabled on this deployment; set PRIAMO_ENABLE_SEED=true to allow it`. Re-runs
-are idempotent (the second run stops at the recipe's indexed org/key lookup).
+are idempotent (the second run stops at the service kind's indexed org/key lookup).
 
 To make the demo usable by a human who can actually sign in, pass a real identity — the
 issuer your deployment verifies plus that provider's stable subject:
@@ -215,8 +215,8 @@ catalogue, with no demo tenant.
 | [`docs/provider-access.md`](docs/provider-access.md) | Decision record for the second principal: provider Organizations, scoped grants, the closed capability set, the code-owned semantic projection. Decided, not built |
 | [`docs/web-design.md`](docs/web-design.md) | The console's design decision record: typography, palette, status colour/shape mapping, table/form/pagination patterns |
 | [`docs/web-chat.md`](docs/web-chat.md) | The chat surface, its stubbed responder, and the proposal contract |
-| [`docs/recipes.md`](docs/recipes.md) | Field definitions, the semantic capability registry, config snapshots, recipe/version lifecycle and published immutability |
-| [`docs/events.md`](docs/events.md) | Typed event field values, the creation flow, temporal semantics, event status, relationships |
+| [`docs/service-kinds.md`](docs/service-kinds.md) | Field definitions, the semantic capability registry, config snapshots, service kind/version lifecycle and published immutability |
+| [`docs/services.md`](docs/services.md) | Typed service field values, the creation flow, temporal semantics, service status, relationships |
 | [`docs/locations.md`](docs/locations.md) | Location reference semantics and their historical implication |
 | [`docs/deletion-and-archival.md`](docs/deletion-and-archival.md) | What can be archived, what can be hard-deleted, and every reference guard |
 | [`docs/audit.md`](docs/audit.md) | The audit log, enforced metadata safety, the org-less gap |
@@ -227,15 +227,15 @@ catalogue, with no demo tenant.
 
 ```bash
 bun run test                                  # from the repo root; both suites
-bun run --cwd apps/convex test -- events      # one Convex file, via vitest's filter
+bun run --cwd apps/convex test -- services      # one Convex file, via vitest's filter
 bun run --cwd apps/web test                   # the console's pure-logic suites
 ```
 
 Two suites. **Convex: 225 tests across 19 files**, all in-memory via convex-test — one
 file per domain concern plus `verticalSlice.test.ts`, which asserts the whole priority
 slice end to end: authenticated identity → app user → organization + owner membership →
-project → built-in *and* tenant-owned field definitions → recipe → published version →
-typed Event → retrieval, with every derived id on the stored Event checked against the
+project → built-in *and* tenant-owned field definitions → service kind → published version →
+typed Service → retrieval, with every derived id on the stored Service checked against the
 entity it came from.
 
 convex-test does not enforce Convex's size/time limits and differs from the real runtime in
@@ -254,6 +254,6 @@ No routing, mapping, geocoding, address normalization, flight-tracking integrati
 workflow engines, rules engines, low-code builders, event sourcing, or generic reference
 systems. No invoicing, tax, payments or accounts-payable; no pricing engine or formula
 language; no driver management; no provider ratings, contracts or onboarding workflows.
-Room is deliberately left for future structured conditional rules on recipe fields (see
-`recipes/fields/model.ts`); they are not built. The full list, including the supply-side
+Room is deliberately left for future structured conditional rules on service kind fields (see
+`serviceKinds/fields/model.ts`); they are not built. The full list, including the supply-side
 boundaries, is in [`CLAUDE.md`](CLAUDE.md#explicit-non-goals).

@@ -83,7 +83,7 @@ screen.
   (`en`) or a canonical locale (`en-US`); without that, `/en` silently served
   Spanish.
 - Translation catalogues cover UI chrome and code-owned vocabulary only.
-  Tenant-authored recipe names, field labels/descriptions, select option labels,
+  Tenant-authored service kind names, field labels/descriptions, select option labels,
   project names, and location names are stored and rendered exactly as entered.
   Built-in field labels are localized in the frontend by code-owned semantic
   type; an absent or unknown semantic type intentionally falls back to its

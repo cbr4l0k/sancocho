@@ -6,7 +6,7 @@ import type { FieldDataType, fieldConfigValidator } from '@priamo/convex/validat
 
 import { Button } from '@/components/ui/button';
 import { isValidDateInput, isValidTimeInput, parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';
-import { clampConfigToBound } from '@/lib/recipe-field-narrowing';
+import { clampConfigToBound } from '@/lib/service-kind-field-narrowing';
 
 export type FieldConfig = typeof fieldConfigValidator.type;
 type Option = { id: string; label: string };
@@ -52,7 +52,7 @@ function optionalNumber(value: string): number | undefined {
 type FieldConfigEditorProps = {
   config: FieldConfig;
   setConfig: (config: FieldConfig) => void;
-  /** A definition config that a recipe snapshot may tighten but never widen. */
+  /** A definition config that a service kind snapshot may tighten but never widen. */
   bound?: FieldConfig | undefined;
   disabled?: boolean;
 };

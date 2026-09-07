@@ -5,7 +5,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 
 /**
- * Wipes a deployment's Services, Recipes, Field Definitions and Locations so a
+ * Wipes a deployment's Services, ServiceKinds, Field Definitions and Locations so a
  * developer can re-seed from a clean slate.
  *
  * This is a **development reset**, and it is the one operation in the codebase
@@ -29,23 +29,23 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
 
 /** Audit rows for these entity types are removed alongside their entities. */
 const clearedEntityTypes: ReadonlySet<Doc<'auditEvents'>['entityType']> = new Set([
-  'event',
-  'eventRelationship',
-  'eventRecipe',
-  'recipeVersion',
-  'recipeField',
+  'service',
+  'serviceRelationship',
+  'serviceKind',
+  'serviceKindVersion',
+  'serviceKindField',
   'fieldDefinition',
   'location',
 ]);
 
 async function deleteAll<
   T extends
-    | 'events'
-    | 'eventFieldValues'
-    | 'eventRelationships'
-    | 'recipeFields'
-    | 'recipeVersions'
-    | 'eventRecipes'
+    | 'services'
+    | 'serviceFieldValues'
+    | 'serviceRelationships'
+    | 'serviceKindFields'
+    | 'serviceKindVersions'
+    | 'serviceKinds'
     | 'fieldDefinitions'
     | 'locations',
 >(
@@ -62,12 +62,12 @@ async function deleteAll<
 export const resetTenantOperations = internalMutation({
   args: {},
   returns: v.object({
-    events: v.number(),
-    eventFieldValues: v.number(),
-    eventRelationships: v.number(),
-    recipeFields: v.number(),
-    recipeVersions: v.number(),
-    eventRecipes: v.number(),
+    services: v.number(),
+    serviceFieldValues: v.number(),
+    serviceRelationships: v.number(),
+    serviceKindFields: v.number(),
+    serviceKindVersions: v.number(),
+    serviceKinds: v.number(),
     fieldDefinitions: v.number(),
     locations: v.number(),
     auditEvents: v.number(),
@@ -75,15 +75,15 @@ export const resetTenantOperations = internalMutation({
   handler: async (ctx) => {
     assertSeedingEnabled();
 
-    // Children first: values and relationships reference events, recipe fields
-    // reference versions, versions reference recipes.
-    const eventFieldValues = await deleteAll(ctx, 'eventFieldValues');
-    const eventRelationships = await deleteAll(ctx, 'eventRelationships');
-    const events = await deleteAll(ctx, 'events');
-    const recipeFields = await deleteAll(ctx, 'recipeFields');
-    const recipeVersions = await deleteAll(ctx, 'recipeVersions');
-    const eventRecipes = await deleteAll(ctx, 'eventRecipes');
-    // Field definitions and locations last: recipe fields and event values were
+    // Children first: values and relationships reference services, serviceKind fields
+    // reference versions, versions reference serviceKinds.
+    const serviceFieldValues = await deleteAll(ctx, 'serviceFieldValues');
+    const serviceRelationships = await deleteAll(ctx, 'serviceRelationships');
+    const services = await deleteAll(ctx, 'services');
+    const serviceKindFields = await deleteAll(ctx, 'serviceKindFields');
+    const serviceKindVersions = await deleteAll(ctx, 'serviceKindVersions');
+    const serviceKinds = await deleteAll(ctx, 'serviceKinds');
+    // Field definitions and locations last: serviceKind fields and service values were
     // the things pointing at them.
     const fieldDefinitions = await deleteAll(ctx, 'fieldDefinitions');
     const locations = await deleteAll(ctx, 'locations');
@@ -97,12 +97,12 @@ export const resetTenantOperations = internalMutation({
     }
 
     return {
-      events,
-      eventFieldValues,
-      eventRelationships,
-      recipeFields,
-      recipeVersions,
-      eventRecipes,
+      services,
+      serviceFieldValues,
+      serviceRelationships,
+      serviceKindFields,
+      serviceKindVersions,
+      serviceKinds,
       fieldDefinitions,
       locations,
       auditEvents,

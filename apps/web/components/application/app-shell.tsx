@@ -214,7 +214,7 @@ function ShellFrame({ children }: ApplicationShellProps) {
   // Nav visibility is presentation only, never authorization (I1); the server is sole authority.
   //
   // Four destinations, in the order a day runs: ask, then plan, then dispatch,
-  // and configuration last. Recipes, locations and field definitions are
+  // and configuration last. Service kinds, locations and field definitions are
   // organization *configuration*, not daily operations, so they live under
   // /settings rather than competing with them here.
   const nav = [

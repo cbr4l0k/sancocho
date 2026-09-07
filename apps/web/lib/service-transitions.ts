@@ -1,4 +1,4 @@
-import type { EventStatus } from '@/lib/status';
+import type { ServiceStatus } from '@/lib/status';
 
 /**
  * The client affordance mirrors the backend's one-step lifecycle. `Record` is
@@ -12,8 +12,8 @@ const nextStatuses = {
   active: ['completed', 'cancelled'],
   completed: [],
   cancelled: [],
-} as const satisfies Record<EventStatus, readonly EventStatus[]>;
+} as const satisfies Record<ServiceStatus, readonly ServiceStatus[]>;
 
-export function legalNextServiceStatuses(status: EventStatus): readonly EventStatus[] {
+export function legalNextServiceStatuses(status: ServiceStatus): readonly ServiceStatus[] {
   return nextStatuses[status];
 }

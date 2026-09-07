@@ -7,8 +7,8 @@ import { ServiceDetailSurface } from '@/components/services/service-detail-surfa
 export default async function ServiceDetailPage({
   params,
 }: {
-  params: Promise<{ id: FunctionArgs<typeof api.events.queries.getEvent>['eventId'] }>;
+  params: Promise<{ id: FunctionArgs<typeof api.services.queries.getService>['serviceId'] }>;
 }) {
-  const { id: eventId } = await params;
-  return <ServiceDetailSurface eventId={eventId} />;
+  const { id: serviceId } = await params;
+  return <ServiceDetailSurface serviceId={serviceId} />;
 }

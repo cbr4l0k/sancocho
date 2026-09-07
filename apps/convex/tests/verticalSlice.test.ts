@@ -12,13 +12,13 @@ const createProject = api.projects.mutations.createProject;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
-const createRecipe = api.recipes.mutations.createRecipe;
-const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
-const addRecipeField = api.recipes.fields.mutations.addRecipeField;
-const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
-const getRecipeVersion = api.recipes.queries.getRecipeVersion;
-const createEventFromRecipe = api.events.mutations.createEventFromRecipe;
-const getEvent = api.events.queries.getEvent;
+const createServiceKind = api.serviceKinds.mutations.createServiceKind;
+const createInitialDraftVersion = api.serviceKinds.mutations.createInitialDraftVersion;
+const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
+const publishServiceKindVersion = api.serviceKinds.mutations.publishServiceKindVersion;
+const getServiceKindVersion = api.serviceKinds.queries.getServiceKindVersion;
+const createServiceFromServiceKind = api.services.mutations.createServiceFromServiceKind;
+const getService = api.services.queries.getService;
 
 // The slice provisions a BUILT-IN definition, which shares the seed opt-in.
 enableSeedMutations();
@@ -29,19 +29,19 @@ const textConfig = { kind: 'text' } as const;
 /**
  * The priority vertical slice named in CLAUDE.md, asserted end to end in one
  * place: sign-in → app user → organization → membership → project → field
- * definitions (including a BUILT-IN) → recipe → draft version → published
- * version → typed Event → retrieval.
+ * definitions (including a BUILT-IN) → serviceKind → draft version → published
+ * version → typed Service → retrieval.
  *
  * Two things only this test covers:
  *
  *  - A built-in field definition travelling the whole way. Composition alone is
  *    covered elsewhere; publishing a version that contains one is what exercises
- *    the built-in branch of `isUsableDefinition` (recipes/model.ts), and reading
- *    the resulting Event is what proves a built-in's `key`/`label` join like any
+ *    the built-in branch of `isUsableDefinition` (serviceKinds/model.ts), and reading
+ *    the resulting Service is what proves a built-in's `key`/`label` join like any
  *    tenant-owned definition.
- *  - The coherence of the derived relationships. The Event's organizationId,
- *    projectId, recipeId, and recipeVersionId must all agree with the entities
- *    created upstream — `recipeId` in particular is derived server-side from the
+ *  - The coherence of the derived relationships. The Service's organizationId,
+ *    projectId, serviceKindId, and serviceKindVersionId must all agree with the entities
+ *    created upstream — `serviceKindId` in particular is derived server-side from the
  *    version and never supplied by the client (I4).
  */
 test('the Stage B vertical slice runs end to end, carries a built-in field, and derives every relationship from the entities upstream', async () => {
@@ -65,9 +65,9 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
   // 4. Field definitions: one global built-in (seeded through the internal
   // mutation, the only door built-ins have) and one tenant-owned field.
   const builtinFieldId = await t.mutation(createBuiltinFieldDefinition, {
-    key: 'eventName',
-    label: 'Event name',
-    semanticType: 'eventName',
+    key: 'serviceName',
+    label: 'Service name',
+    semanticType: 'serviceName',
     config: textConfig,
   });
   const seatsFieldId = await client.mutation(createFieldDefinition, {
@@ -81,25 +81,25 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
   const catalogue = await client.query(listBuiltinFieldDefinitions, { paginationOpts: { numItems: 10, cursor: null } });
   expect(catalogue.page.map((field) => field._id)).toEqual(expect.arrayContaining([builtinFieldId]));
 
-  // 5. Recipe → draft version → composition. A built-in belongs to no
+  // 5. ServiceKind → draft version → composition. A built-in belongs to no
   // organization, so composing it proves the usability predicate admits it.
-  const recipeId = await client.mutation(createRecipe, { organizationId, key: 'airportTransfer', name: 'Airport transfer' });
-  const recipeVersionId = await client.mutation(createInitialDraftVersion, { recipeId });
-  await client.mutation(addRecipeField, { recipeVersionId, fieldDefinitionId: builtinFieldId, required: true, visible: true });
-  await client.mutation(addRecipeField, { recipeVersionId, fieldDefinitionId: seatsFieldId, required: false, visible: true });
+  const serviceKindId = await client.mutation(createServiceKind, { organizationId, key: 'airportTransfer', name: 'Airport transfer' });
+  const serviceKindVersionId = await client.mutation(createInitialDraftVersion, { serviceKindId });
+  await client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId: builtinFieldId, required: true, visible: true });
+  await client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId: seatsFieldId, required: false, visible: true });
 
   // 6. Publish. This is the step the built-in had never reached: publishing
   // re-checks every composed definition, so the version only becomes immutable
   // if the built-in is accepted as usable by this organization.
-  await expect(client.mutation(publishRecipeVersion, { recipeVersionId })).resolves.toBeNull();
-  const publishedVersion = await client.query(getRecipeVersion, { recipeVersionId });
-  expect(publishedVersion.version).toMatchObject({ versionNumber: 1, status: 'published', recipeId, organizationId });
-  expect(publishedVersion.recipeFields.map((field) => field.fieldDefinitionId)).toEqual([builtinFieldId, seatsFieldId]);
+  await expect(client.mutation(publishServiceKindVersion, { serviceKindVersionId })).resolves.toBeNull();
+  const publishedVersion = await client.query(getServiceKindVersion, { serviceKindVersionId });
+  expect(publishedVersion.version).toMatchObject({ versionNumber: 1, status: 'published', serviceKindId, organizationId });
+  expect(publishedVersion.serviceKindFields.map((field) => field.fieldDefinitionId)).toEqual([builtinFieldId, seatsFieldId]);
 
-  // 7. A typed Event carrying a value for the built-in field.
-  const eventId = await client.mutation(createEventFromRecipe, {
+  // 7. A typed Service carrying a value for the built-in field.
+  const serviceId = await client.mutation(createServiceFromServiceKind, {
     projectId,
-    recipeVersionId,
+    serviceKindVersionId,
     name: 'JFK pickup',
     startsAt: 1_700_000_000_000,
     endsAt: 1_700_003_600_000,
@@ -109,27 +109,27 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
     ],
   });
 
-  // 8. Retrieval. Every authoritative link on the stored Event agrees with the
-  // entity it came from, including `recipeId`, which the client never sent.
-  const { event, values } = await client.query(getEvent, { eventId });
-  expect(event).toMatchObject({
-    _id: eventId,
+  // 8. Retrieval. Every authoritative link on the stored Service agrees with the
+  // entity it came from, including `serviceKindId`, which the client never sent.
+  const { service, values } = await client.query(getService, { serviceId });
+  expect(service).toMatchObject({
+    _id: serviceId,
     organizationId,
     projectId,
-    recipeId,
-    recipeVersionId,
+    serviceKindId,
+    serviceKindVersionId,
     name: 'JFK pickup',
     status: 'draft',
     startsAt: 1_700_000_000_000,
   });
-  expect(event.recipeId).toBe(publishedVersion.version.recipeId);
+  expect(service.serviceKindId).toBe(publishedVersion.version.serviceKindId);
 
   // The built-in's stored value comes back joined to the built-in's own key and
   // label, exactly as a tenant-owned definition's does.
   expect(values.find((value) => value.fieldDefinitionId === builtinFieldId)).toEqual({
     fieldDefinitionId: builtinFieldId,
-    key: 'eventName',
-    label: 'Event name',
+    key: 'serviceName',
+    label: 'Service name',
     value: { kind: 'text', value: 'JFK arrivals hall' },
   });
   expect(values.find((value) => value.fieldDefinitionId === seatsFieldId)).toEqual({
@@ -139,14 +139,14 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
     value: { kind: 'number', value: 4 },
   });
 
-  // The stored value row points at the published version's own recipe field row,
-  // so the Event is bound to that snapshot rather than to the live definition.
+  // The stored value row points at the published version's own serviceKind field row,
+  // so the Service is bound to that snapshot rather than to the live definition.
   await t.run(async (ctx) => {
     const stored = await ctx.db
-      .query('eventFieldValues')
-      .withIndex('by_event_field', (q) => q.eq('eventId', eventId).eq('fieldDefinitionId', builtinFieldId))
+      .query('serviceFieldValues')
+      .withIndex('by_service_field', (q) => q.eq('serviceId', serviceId).eq('fieldDefinitionId', builtinFieldId))
       .unique();
-    expect(stored?.recipeFieldId).toBe(publishedVersion.recipeFields[0]?._id);
+    expect(stored?.serviceKindFieldId).toBe(publishedVersion.serviceKindFields[0]?._id);
     expect(stored?.organizationId).toBe(organizationId);
   });
 });

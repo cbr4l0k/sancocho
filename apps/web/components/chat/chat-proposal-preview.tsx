@@ -40,14 +40,14 @@ export function ChatProposalPreview({ proposal }: { proposal: ChatProposal }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="text-sm font-semibold text-ink">
-          {t(proposal.kind === 'recipe' ? 'chat.proposal.recipeTitle' : 'chat.proposal.serviceTitle')}
+          {t(proposal.kind === 'serviceKind' ? 'chat.proposal.serviceKindTitle' : 'chat.proposal.serviceTitle')}
         </p>
         <span className={cn('text-micro font-semibold uppercase tracking-[0.09em]', statusTone[proposal.status])}>
           {t(statusLabelKey)}
         </span>
       </div>
 
-      {proposal.kind === 'recipe' ? <RecipeProposalBody proposal={proposal} /> : <ServiceProposalBody proposal={proposal} />}
+      {proposal.kind === 'serviceKind' ? <ServiceKindProposalBody proposal={proposal} /> : <ServiceProposalBody proposal={proposal} />}
 
       {proposal.status === 'needsResolution' && 'gaps' in proposal && proposal.gaps !== undefined ? (
         <IssueList headingKey="chat.proposal.gapsHeading" items={proposal.gaps} tone="text-tone-hold" />
@@ -60,14 +60,14 @@ export function ChatProposalPreview({ proposal }: { proposal: ChatProposal }) {
   );
 }
 
-function RecipeProposalBody({ proposal }: { proposal: Extract<ChatProposal, { kind: 'recipe' }> }) {
+function ServiceKindProposalBody({ proposal }: { proposal: Extract<ChatProposal, { kind: 'serviceKind' }> }) {
   const t = useTranslations();
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm font-medium text-ink">{proposal.recipeName}</p>
+      <p className="text-sm font-medium text-ink">{proposal.serviceKindName}</p>
       <p className="font-mono text-xs text-ink-3">
-        {t('chat.proposal.recipeKeyLabel')}: {proposal.recipeKey}
+        {t('chat.proposal.serviceKindKeyLabel')}: {proposal.serviceKindKey}
       </p>
       <div className="flex flex-col gap-1.5">
         <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
@@ -99,12 +99,12 @@ function ServiceProposalBody({ proposal }: { proposal: Extract<ChatProposal, { k
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm font-medium text-ink">{proposal.recipeName}</p>
+      <p className="text-sm font-medium text-ink">{proposal.serviceKindName}</p>
       <p className="text-xs text-ink-3">
         {t('chat.proposal.projectLabel')}: {proposal.projectName}
       </p>
       <p className="text-xs text-ink-3">
-        {t('chat.proposal.recipeVersionLabel')}: {proposal.recipeVersionLabel}
+        {t('chat.proposal.serviceKindVersionLabel')}: {proposal.serviceKindVersionLabel}
       </p>
       <div className="flex flex-col gap-1.5">
         <p className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">

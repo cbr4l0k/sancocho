@@ -2,7 +2,7 @@
 
 `seedCordilleraOperations` recreates a representative version of the 2026
 Festival Cordillera ground-transport workbook in an existing Priamo
-organization. It demonstrates published recipe snapshots, Bogotá absolute
+organization. It demonstrates published service kind snapshots, Bogotá absolute
 timestamps, typed service values, realistic lifecycle history, and links among
 arrival, show, departure, passenger, and cargo services. The dataset covers the
 STAGE 3, STAGE 4, CLUB COLOMBIA, OCESA, PROMOTORIA, MOV INTERNOS, and EQUIPO
@@ -29,7 +29,7 @@ bunx convex env remove PRIAMO_ENABLE_SEED
 
 ## What a re-run does
 
-Field definitions, recipes and locations are reused when they match what the
+Field definitions, service kinds and locations are reused when they match what the
 seed would itself have created; services and relationships are a clean-slate
 set, and once the named project holds any service another run skips them
 instead of duplicating.
@@ -37,10 +37,10 @@ instead of duplicating.
 Reuse is deliberately narrow. Several of the seeded keys — `driverName`,
 `vehiclePlate`, `callTime`, `artist` — are ones a working tenant plausibly
 already owns, and adopting one would be **irreversible**: publishing a seed
-recipe against a tenant's own field definition permanently freezes that
+service kind against a tenant's own field definition permanently freezes that
 definition's key, semantic type and config (I2/I3), because a published version
 is never hard-deleted outside the development reset. So the seed matches on key
-*and* config, and refuses with `seedFieldConflict` / `seedRecipeConflict`
+*and* config, and refuses with `seedFieldConflict` / `seedServiceKindConflict`
 rather than quietly taking ownership of configuration it did not author. The
 refusal rolls the whole mutation back; nothing is left half-seeded.
 

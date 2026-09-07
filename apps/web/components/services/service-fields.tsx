@@ -15,11 +15,11 @@ import type { ProjectWindow } from '@/lib/project-window';
 import type { TimestampParts } from '@/lib/timestamps';
 import { cn } from '@/lib/utils';
 
-type RecipeField = FunctionReturnType<typeof api.recipes.fields.queries.listRecipeFields>[number];
+type ServiceKindField = FunctionReturnType<typeof api.serviceKinds.fields.queries.listServiceKindFields>[number];
 type OrganizationId = FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'];
 
 /**
- * The controls a Recipe Version's fields render as.
+ * The controls a Service Kind Version's fields render as.
  *
  * These used to be bare `<label><input/></label>` pairs declared inside the
  * create screen: unstyled, unlabelled to assistive tech beyond the wrapping
@@ -40,7 +40,7 @@ const controlClass = 'text-sm normal-case tracking-normal';
  * days its project spans — so an out-of-range date takes deliberate effort
  * rather than being the default a blank calendar offers. Day granularity cannot
  * express the hours at each edge of the window; the submit-time check
- * (`projectWindowProblem`) and the server (`validateEventWithinProjectWindow`)
+ * (`projectWindowProblem`) and the server (`validateServiceWithinProjectWindow`)
  * are what actually decide.
  */
 export type DateBounds = { min?: string | undefined; max?: string | undefined };
@@ -118,7 +118,7 @@ export function ServiceDynamicField({
   organizationId,
   hasDefault = false,
 }: {
-  field: RecipeField;
+  field: ServiceKindField;
   label: string;
   value: FieldValueFormState;
   onChange: (value: FieldValueFormState) => void;

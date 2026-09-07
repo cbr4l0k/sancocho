@@ -1,9 +1,9 @@
-import type { eventFieldValueValidator } from '@priamo/convex/validators';
+import type { serviceFieldValueValidator } from '@priamo/convex/validators';
 
 import { parseDateForStorage, parseTimeForStorage } from '@/i18n/formats';
 import { timestampFromParts, timestampToParts } from '@/lib/timestamps';
 
-export type EventFieldValue = typeof eventFieldValueValidator.type;
+export type ServiceFieldValue = typeof serviceFieldValueValidator.type;
 
 /** Form state deliberately mirrors every persisted discriminator. */
 export type FieldValueFormState =
@@ -16,9 +16,9 @@ export type FieldValueFormState =
   | { kind: 'time'; value: string }
   | { kind: 'select'; optionId: string }
   | { kind: 'multiSelect'; optionIds: string[] }
-  | { kind: 'location'; locationId?: Extract<EventFieldValue, { kind: 'location' }>['locationId'] };
+  | { kind: 'location'; locationId?: Extract<ServiceFieldValue, { kind: 'location' }>['locationId'] };
 
-export function emptyFieldValueFormState(kind: EventFieldValue['kind']): FieldValueFormState {
+export function emptyFieldValueFormState(kind: ServiceFieldValue['kind']): FieldValueFormState {
   switch (kind) {
     case 'text':
       return { kind, value: '' };
@@ -43,7 +43,7 @@ export function emptyFieldValueFormState(kind: EventFieldValue['kind']): FieldVa
   }
 }
 
-export function toEventFieldValue(state: FieldValueFormState): EventFieldValue | undefined {
+export function toServiceFieldValue(state: FieldValueFormState): ServiceFieldValue | undefined {
   switch (state.kind) {
     case 'text':
     case 'longText':
@@ -75,7 +75,7 @@ export function toEventFieldValue(state: FieldValueFormState): EventFieldValue |
   }
 }
 
-export function fromEventFieldValue(value: EventFieldValue): FieldValueFormState {
+export function fromServiceFieldValue(value: ServiceFieldValue): FieldValueFormState {
   switch (value.kind) {
     case 'text':
     case 'longText':

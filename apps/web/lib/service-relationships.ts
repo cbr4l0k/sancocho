@@ -1,4 +1,4 @@
-/** A relationship is removable here only when this surface owns its source Event. */
+/** A relationship is removable here only when this surface owns its source Service. */
 export function mayRemoveServiceRelationship(direction: 'outgoing' | 'incoming', canEdit: boolean): boolean {
   return direction === 'outgoing' && canEdit;
 }

@@ -29,24 +29,24 @@ import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
 import { formatFieldValue } from '@/lib/field-value-format';
 import {
   emptyFieldValueFormState,
-  fromEventFieldValue,
-  toEventFieldValue,
+  fromServiceFieldValue,
+  toServiceFieldValue,
   type FieldValueFormState,
 } from '@/lib/field-value-form';
 import { projectWindowProblem } from '@/lib/project-window';
 import { roleAtLeast, type Role } from '@/lib/roles';
 import { serviceFieldColumns } from '@/lib/service-columns';
 import { serviceFieldProblem } from '@/lib/service-form-checks';
-import { changedEventFieldValues } from '@/lib/service-value-diff';
-import { serviceStatuses, type EventStatus } from '@/lib/status';
+import { changedServiceFieldValues } from '@/lib/service-value-diff';
+import { serviceStatuses, type ServiceStatus } from '@/lib/status';
 import { timestampFromParts, timestampToParts, type TimestampParts } from '@/lib/timestamps';
 
-type ListArgs = FunctionArgs<typeof api.events.queries.listOrganizationEvents>;
-export type ServiceRow = FunctionReturnType<typeof api.events.queries.listOrganizationEvents>['page'][number];
+type ListArgs = FunctionArgs<typeof api.services.queries.listOrganizationServices>;
+export type ServiceRow = FunctionReturnType<typeof api.services.queries.listOrganizationServices>['page'][number];
 type ServiceField = ServiceRow['fields'][number];
 type OrganizationId = ListArgs['organizationId'];
 type ProjectId = NonNullable<ListArgs['projectId']>;
-type EventId = ServiceRow['event']['_id'];
+type ServiceId = ServiceRow['service']['_id'];
 type FieldDefinitionId = ServiceField['fieldDefinitionId'];
 
 /**
@@ -54,11 +54,11 @@ type FieldDefinitionId = ServiceField['fieldDefinitionId'];
  *
  * Editing lives in a context rather than in the column definitions' closures so
  * that a keystroke does not rebuild every column: the columns depend only on
- * which fields the loaded recipes compose, and the cells subscribe to the draft
+ * which fields the loaded service kinds compose, and the cells subscribe to the draft
  * themselves.
  */
 type RowDraft = {
-  eventId: EventId;
+  serviceId: ServiceId;
   name: string;
   start: TimestampParts;
   end: TimestampParts;
@@ -90,7 +90,7 @@ function useRowEditing(): RowEditing {
 
 /** True while this row is the one being edited — cells switch on this. */
 function isDrafting(editing: RowEditing, row: ServiceRow): boolean {
-  return editing.draft !== null && editing.draft.eventId === row.event._id;
+  return editing.draft !== null && editing.draft.serviceId === row.service._id;
 }
 
 /**
@@ -98,7 +98,7 @@ function isDrafting(editing: RowEditing, row: ServiceRow): boolean {
  *
  * One table serves both the organization-wide Services screen and a project's
  * own services block. It is column-configurable over the union of the fields
- * the loaded recipes compose — an airport transfer's flight number and a
+ * the loaded service kinds compose — an airport transfer's flight number and a
  * shuttle's route are both columns, and the organiser in the toolbar decides
  * which stay visible — and rows are editable in place, because opening a detail
  * screen to correct one time is the slowest possible way to fix a schedule.
@@ -122,11 +122,11 @@ export function ServiceTable({
   const locale = useCanonicalLocale();
   const { currentOrganization } = useCurrentOrganization();
   const [projectId, setProjectId] = useState<ProjectId | ''>(fixedProjectId ?? initialProjectId ?? '');
-  const [status, setStatus] = useState<EventStatus | ''>('');
+  const [status, setStatus] = useState<ServiceStatus | ''>('');
   const scopedProjectId = fixedProjectId ?? (projectId === '' ? undefined : projectId);
 
   const rows = usePaginatedQuery(
-    api.events.queries.listOrganizationEvents,
+    api.services.queries.listOrganizationServices,
     {
       organizationId,
       ...(scopedProjectId === undefined ? {} : { projectId: scopedProjectId }),
@@ -148,7 +148,7 @@ export function ServiceTable({
     const missing = t('services.notSet');
     return [
       selectionColumn<ServiceRow>({ selectAll: t('dataTable.selectAll'), selectRow: t('dataTable.selectRow') }),
-      column.accessor((row) => row.event.name, {
+      column.accessor((row) => row.service.name, {
         id: 'name',
         header: t('services.name'),
         meta: { label: t('services.name') },
@@ -162,29 +162,29 @@ export function ServiceTable({
         sortFn: 'text',
         cell: (info) => <span className="text-ink-2">{info.getValue()}</span>,
       }),
-      column.accessor((row) => row.event.startsAt, {
+      column.accessor((row) => row.service.startsAt, {
         id: 'startsAt',
         header: t('services.startsAt'),
         meta: { label: t('services.startsAt') },
         sortFn: 'basic',
         cell: (info) => <StartsAtCell row={info.row.original} locale={locale} />,
       }),
-      column.accessor((row) => row.event.endsAt, {
+      column.accessor((row) => row.service.endsAt, {
         id: 'endsAt',
         header: t('services.endsAt'),
         meta: { label: t('services.endsAt') },
         sortFn: 'basic',
         cell: (info) => <EndsAtCell row={info.row.original} locale={locale} missing={missing} />,
       }),
-      column.accessor((row) => row.event.status, {
+      column.accessor((row) => row.service.status, {
         id: 'status',
         header: t('services.status'),
         meta: { label: t('services.status') },
         sortFn: 'text',
-        cell: (info) => <StatusChip kind="service" status={info.row.original.event.status} />,
+        cell: (info) => <StatusChip kind="service" status={info.row.original.service.status} />,
       }),
-      // One column per field any loaded recipe composes. The accessor returns
-      // the SAME text the cell shows, so searching and sorting a recipe column
+      // One column per field any loaded service kind composes. The accessor returns
+      // the SAME text the cell shows, so searching and sorting a service kind column
       // agree with it instead of operating on a value union.
       ...fieldColumns.map((fieldColumn) =>
         column.accessor((row) => fieldText(locale, row, fieldColumn.key, missing), {
@@ -208,7 +208,7 @@ export function ServiceTable({
   const table = useDataTable<ServiceRow>({
     data: rows.results,
     columns,
-    getRowId: (row) => row.event._id,
+    getRowId: (row) => row.service._id,
     ...(fixedProjectId === undefined ? {} : { initialState: { columnVisibility: { project: false } } }),
   });
 
@@ -225,7 +225,7 @@ export function ServiceTable({
             scopeNotice={
               fieldColumns.length === 0
                 ? t('dataTable.loadedScope')
-                : `${t('dataTable.loadedScope')} · ${t('services.recipeColumnsNotice')}`
+                : `${t('dataTable.loadedScope')} · ${t('services.serviceKindColumnsNotice')}`
             }
           >
             {fixedProjectId === undefined ? (
@@ -247,7 +247,7 @@ export function ServiceTable({
               value={status}
               onChange={(next) => {
                 editing.cancel();
-                setStatus(serviceStatuses.find((candidate): candidate is EventStatus => candidate === next) ?? '');
+                setStatus(serviceStatuses.find((candidate): candidate is ServiceStatus => candidate === next) ?? '');
               }}
               placeholder={t('services.allStatuses')}
               options={serviceStatuses.map((candidate) => ({
@@ -283,7 +283,7 @@ export function ServiceTable({
   );
 }
 
-/** The text a recipe column shows for one row — also its sort and search value. */
+/** The text a service kind column shows for one row — also its sort and search value. */
 function fieldText(
   locale: ReturnType<typeof useCanonicalLocale>,
   row: ServiceRow,
@@ -291,7 +291,7 @@ function fieldText(
   missing: string,
 ): string {
   const field = row.fields.find((candidate) => candidate.key === fieldKey);
-  // A row whose recipe has no such field is blank, not "not set": the column
+  // A row whose service kind has no such field is blank, not "not set": the column
   // simply does not apply to it.
   if (field === undefined) return '';
   return field.value === undefined ? missing : formatFieldValue(locale, field.config, field.value, missing, field.locationName);
@@ -302,7 +302,7 @@ function NameCell({ row }: { row: ServiceRow }) {
   if (isDrafting(editing, row) && editing.draft !== null)
     return (
       <CellInput
-        aria-label={row.event.name}
+        aria-label={row.service.name}
         value={editing.draft.name}
         onChange={(value) => editing.setName(value)}
       />
@@ -310,9 +310,9 @@ function NameCell({ row }: { row: ServiceRow }) {
   return (
     <LocaleLink
       className="text-ink underline decoration-line-strong underline-offset-4 hover:decoration-accent"
-      to={`/services/${row.event._id}`}
+      to={`/services/${row.service._id}`}
     >
-      {row.event.name}
+      {row.service.name}
     </LocaleLink>
   );
 }
@@ -324,7 +324,7 @@ function StartsAtCell({ row, locale }: { row: ServiceRow; locale: ReturnType<typ
     return (
       <CellTimestamp row={row} label={t('services.startsAt')} value={editing.draft.start} onChange={editing.setStart} />
     );
-  return <span className="font-mono text-xs tabular-nums text-ink">{formatDateTime(locale, row.event.startsAt)}</span>;
+  return <span className="font-mono text-xs tabular-nums text-ink">{formatDateTime(locale, row.service.startsAt)}</span>;
 }
 
 function EndsAtCell({
@@ -342,7 +342,7 @@ function EndsAtCell({
     return <CellTimestamp row={row} label={t('services.endsAt')} value={editing.draft.end} onChange={editing.setEnd} />;
   return (
     <span className="font-mono text-xs tabular-nums text-ink">
-      {row.event.endsAt === undefined ? missing : formatDateTime(locale, row.event.endsAt)}
+      {row.service.endsAt === undefined ? missing : formatDateTime(locale, row.service.endsAt)}
     </span>
   );
 }
@@ -356,7 +356,7 @@ function FieldCell({ row, fieldKey, missing }: { row: ServiceRow; fieldKey: stri
     return (
       <ServiceCellEditor
         field={field}
-        organizationId={row.event.organizationId}
+        organizationId={row.service.organizationId}
         value={editing.draft.values.get(field.fieldDefinitionId) ?? draftValueOf(field)}
         onChange={(next) => editing.setValue(field.fieldDefinitionId, next)}
       />
@@ -395,7 +395,7 @@ function ActionsCell({ row }: { row: ServiceRow }) {
 }
 
 function draftValueOf(field: ServiceField): FieldValueFormState {
-  return field.value === undefined ? emptyFieldValueFormState(field.config.kind) : fromEventFieldValue(field.value);
+  return field.value === undefined ? emptyFieldValueFormState(field.config.kind) : fromServiceFieldValue(field.value);
 }
 
 const cellControlClass =
@@ -505,14 +505,14 @@ function FilterSelect({
  * The edit-one-row state machine, including the checks that run before a write.
  *
  * Every check here mirrors a server rule rather than inventing one: the
- * date ordering and the project window are `events/model.ts`'s, and the per-field
- * rules are the recipe snapshot's. They exist so a mistake is named where it was
+ * date ordering and the project window are `services/model.ts`'s, and the per-field
+ * rules are the service kind snapshot's. They exist so a mistake is named where it was
  * made instead of arriving as a rejected mutation.
  */
 function useRowEditingState(role: Role | undefined): RowEditing {
   const t = useTranslations();
-  const updateCore = useMutation(api.events.mutations.updateEventCoreFields);
-  const updateFields = useMutation(api.events.mutations.updateEventFields);
+  const updateCore = useMutation(api.services.mutations.updateServiceCoreFields);
+  const updateFields = useMutation(api.services.mutations.updateServiceFields);
   const [draft, setDraft] = useState<RowDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -522,18 +522,18 @@ function useRowEditingState(role: Role | undefined): RowEditing {
       role !== undefined &&
       roleAtLeast(role, 'planner') &&
       row.projectStatus !== 'archived' &&
-      row.event.status !== 'completed' &&
-      row.event.status !== 'cancelled',
+      row.service.status !== 'completed' &&
+      row.service.status !== 'cancelled',
     [role],
   );
 
   const begin = useCallback((row: ServiceRow) => {
     setError(null);
     setDraft({
-      eventId: row.event._id,
-      name: row.event.name,
-      start: timestampToParts(row.event.startsAt),
-      end: row.event.endsAt === undefined ? { date: '', time: '' } : timestampToParts(row.event.endsAt),
+      serviceId: row.service._id,
+      name: row.service.name,
+      start: timestampToParts(row.service.startsAt),
+      end: row.service.endsAt === undefined ? { date: '', time: '' } : timestampToParts(row.service.endsAt),
       values: new Map(),
     });
   }, []);
@@ -558,12 +558,12 @@ function useRowEditingState(role: Role | undefined): RowEditing {
   const save = useCallback(
     (row: ServiceRow) => {
       void (async () => {
-        if (draft === null || draft.eventId !== row.event._id) return;
+        if (draft === null || draft.serviceId !== row.service._id) return;
         const startsAt = timestampFromParts(draft.start);
         const endBlank = draft.end.date === '' && draft.end.time === '';
         const endsAt = endBlank ? undefined : timestampFromParts(draft.end);
         if (startsAt === undefined || (!endBlank && endsAt === undefined) || (endsAt !== undefined && endsAt < startsAt)) {
-          setError(t('errors.eventDatesInvalid'));
+          setError(t('errors.serviceDatesInvalid'));
           return;
         }
         const outside = projectWindowProblem(
@@ -572,7 +572,7 @@ function useRowEditingState(role: Role | undefined): RowEditing {
           endsAt,
         );
         if (outside !== undefined) {
-          setError(t(outside === 'before' ? 'errors.eventBeforeProjectWindow' : 'errors.eventAfterProjectWindow'));
+          setError(t(outside === 'before' ? 'errors.serviceBeforeProjectWindow' : 'errors.serviceAfterProjectWindow'));
           return;
         }
 
@@ -582,7 +582,7 @@ function useRowEditingState(role: Role | undefined): RowEditing {
         const edited = new Map(
           row.fields.map((field) => [
             field.fieldDefinitionId,
-            toEventFieldValue(draft.values.get(field.fieldDefinitionId) ?? draftValueOf(field)),
+            toServiceFieldValue(draft.values.get(field.fieldDefinitionId) ?? draftValueOf(field)),
           ]),
         );
         for (const field of row.fields)
@@ -597,14 +597,14 @@ function useRowEditingState(role: Role | undefined): RowEditing {
         setError(null);
         try {
           const core = {
-            eventId: row.event._id,
-            ...(draft.name === row.event.name ? {} : { name: draft.name }),
-            ...(startsAt === row.event.startsAt ? {} : { startsAt }),
-            ...(endsAt === row.event.endsAt ? {} : { endsAt: endsAt ?? null }),
+            serviceId: row.service._id,
+            ...(draft.name === row.service.name ? {} : { name: draft.name }),
+            ...(startsAt === row.service.startsAt ? {} : { startsAt }),
+            ...(endsAt === row.service.endsAt ? {} : { endsAt: endsAt ?? null }),
           };
           if (Object.keys(core).length > 1) await updateCore(core);
-          const changes = changedEventFieldValues(original, edited);
-          if (changes.length > 0) await updateFields({ eventId: row.event._id, values: changes });
+          const changes = changedServiceFieldValues(original, edited);
+          if (changes.length > 0) await updateFields({ serviceId: row.service._id, values: changes });
           setDraft(null);
         } catch (caught) {
           setError(t(errorMessageKey(presentConvexError(caught))));

@@ -11,7 +11,7 @@ const seedCordilleraOperations = internal.seed.cordillera.seedCordilleraOperatio
 const issuer = 'https://example.clerk.accounts.dev';
 const slug = 'cordillera-demo';
 const projectName = 'Cordillera 2026';
-const festivalRecipeKeys = [
+const festivalServiceKindKeys = [
   'festivalArtistDisposition',
   'festivalArtistTransfer',
   'festivalCoordination',
@@ -34,7 +34,7 @@ test('the Cordillera seed writes the real operating vocabulary and all seven ope
   const { organizationId } = await tenant(t);
 
   const result = await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
-  expect(result).toEqual({ fieldDefinitions: 18, recipes: 6, locations: 10, services: 90, relationships: 37, projectName });
+  expect(result).toEqual({ fieldDefinitions: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37, projectName });
 
   await t.run(async (ctx) => {
     const memberships = await ctx.db.query('organizationMemberships').withIndex('by_org_user', (q) => q.eq('organizationId', organizationId)).collect();
@@ -51,15 +51,15 @@ test('the Cordillera seed writes the real operating vocabulary and all seven ope
     expect(project).toMatchObject({ description: 'Festival Cordillera — Parque Simón Bolívar, Bogotá' });
 
     const locations = await ctx.db.query('locations').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
-    const events = await ctx.db.query('events').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect();
-    const relationships = (await ctx.db.query('eventRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId);
+    const services = await ctx.db.query('services').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect();
+    const relationships = (await ctx.db.query('serviceRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId);
     expect(locations).toHaveLength(10);
-    expect(events).toHaveLength(90);
+    expect(services).toHaveLength(90);
     expect(relationships).toHaveLength(37);
 
     // These names are the sheet-level coverage markers: STAGE 3, STAGE 4,
     // CLUB COLOMBIA, OCESA, PROMOTORIA, MOV INTERNOS, and EQUIPO.
-    const names = events.map((event) => event.name);
+    const names = services.map((service) => service.name);
     expect(names).toEqual(expect.arrayContaining([
       expect.stringContaining('Latin Brothers'),
       expect.stringContaining('Kei Linch'),
@@ -79,22 +79,22 @@ test('re-running is idempotent for keyed configuration and clean-slate operation
 
   const before = await t.run(async (ctx) => ({
     fields: (await ctx.db.query('fieldDefinitions').withIndex('by_org_key', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    recipes: (await ctx.db.query('eventRecipes').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).filter((recipe) => festivalRecipeKeys.includes(recipe.key)).length,
+    serviceKinds: (await ctx.db.query('serviceKinds').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).filter((serviceKind) => festivalServiceKindKeys.includes(serviceKind.key)).length,
     locations: (await ctx.db.query('locations').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    events: (await ctx.db.query('events').withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    relationships: (await ctx.db.query('eventRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId).length,
+    services: (await ctx.db.query('services').withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId)).collect()).length,
+    relationships: (await ctx.db.query('serviceRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId).length,
   }));
 
   await expect(t.mutation(seedCordilleraOperations, { organizationSlug: slug })).resolves.toMatchObject({ services: 90, relationships: 37 });
 
   const after = await t.run(async (ctx) => ({
     fields: (await ctx.db.query('fieldDefinitions').withIndex('by_org_key', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    recipes: (await ctx.db.query('eventRecipes').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).filter((recipe) => festivalRecipeKeys.includes(recipe.key)).length,
+    serviceKinds: (await ctx.db.query('serviceKinds').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).filter((serviceKind) => festivalServiceKindKeys.includes(serviceKind.key)).length,
     locations: (await ctx.db.query('locations').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    events: (await ctx.db.query('events').withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId)).collect()).length,
-    relationships: (await ctx.db.query('eventRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId).length,
+    services: (await ctx.db.query('services').withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId)).collect()).length,
+    relationships: (await ctx.db.query('serviceRelationships').collect()).filter((relationship) => relationship.organizationId === organizationId).length,
   }));
-  expect(before).toEqual({ fields: 18, recipes: 6, locations: 10, events: 90, relationships: 37 });
+  expect(before).toEqual({ fields: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37 });
   expect(after).toEqual(before);
 }, 20_000);
 
@@ -104,53 +104,53 @@ test('published snapshots, service ownership, lifecycle audits, and mixed vocabu
   await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
 
   await t.run(async (ctx) => {
-    const recipes = (await ctx.db.query('eventRecipes').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect())
-      .filter((recipe) => festivalRecipeKeys.includes(recipe.key));
-    expect(recipes.map((recipe) => recipe.key).sort()).toEqual(festivalRecipeKeys);
-    for (const recipe of recipes) {
-      expect(recipe.status).toBe('active');
-      const versions = await ctx.db.query('recipeVersions').withIndex('by_recipe_version', (q) => q.eq('recipeId', recipe._id)).collect();
+    const serviceKinds = (await ctx.db.query('serviceKinds').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect())
+      .filter((serviceKind) => festivalServiceKindKeys.includes(serviceKind.key));
+    expect(serviceKinds.map((serviceKind) => serviceKind.key).sort()).toEqual(festivalServiceKindKeys);
+    for (const serviceKind of serviceKinds) {
+      expect(serviceKind.status).toBe('active');
+      const versions = await ctx.db.query('serviceKindVersions').withIndex('by_serviceKind_version', (q) => q.eq('serviceKindId', serviceKind._id)).collect();
       expect(versions).toHaveLength(1);
       const version = versions[0];
-      if (version === undefined) throw new Error('Expected a published recipe version');
+      if (version === undefined) throw new Error('Expected a published serviceKind version');
       expect(version.status).toBe('published');
-      const recipeFields = await ctx.db.query('recipeFields').withIndex('by_version', (q) => q.eq('recipeVersionId', version._id)).collect();
-      expect(recipeFields.length).toBeGreaterThan(0);
-      expect(recipeFields.every((field) => field.config !== undefined)).toBe(true);
+      const serviceKindFields = await ctx.db.query('serviceKindFields').withIndex('by_version', (q) => q.eq('serviceKindVersionId', version._id)).collect();
+      expect(serviceKindFields.length).toBeGreaterThan(0);
+      expect(serviceKindFields.every((field) => field.config !== undefined)).toBe(true);
     }
 
     const project = (await ctx.db.query('projects').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect()).find((row) => row.name === projectName);
     if (project === undefined) throw new Error('Expected the Cordillera project');
-    const events = await ctx.db.query('events').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect();
-    for (const event of events) {
-      expect(event.organizationId).toBe(project.organizationId);
-      const version = await ctx.db.get(event.recipeVersionId);
-      const recipe = await ctx.db.get(event.recipeId);
-      expect(version).toMatchObject({ status: 'published', recipeId: event.recipeId, organizationId: project.organizationId });
-      expect(recipe).toMatchObject({ status: 'active', organizationId: project.organizationId });
+    const services = await ctx.db.query('services').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect();
+    for (const service of services) {
+      expect(service.organizationId).toBe(project.organizationId);
+      const version = await ctx.db.get(service.serviceKindVersionId);
+      const serviceKind = await ctx.db.get(service.serviceKindId);
+      expect(version).toMatchObject({ status: 'published', serviceKindId: service.serviceKindId, organizationId: project.organizationId });
+      expect(serviceKind).toMatchObject({ status: 'active', organizationId: project.organizationId });
     }
 
-    const terminalEvents = events.filter((event) => event.status === 'completed' || event.status === 'cancelled');
-    expect(terminalEvents.some((event) => event.status === 'completed')).toBe(true);
-    expect(terminalEvents.some((event) => event.status === 'cancelled')).toBe(true);
-    for (const event of terminalEvents) {
+    const terminalServices = services.filter((service) => service.status === 'completed' || service.status === 'cancelled');
+    expect(terminalServices.some((service) => service.status === 'completed')).toBe(true);
+    expect(terminalServices.some((service) => service.status === 'cancelled')).toBe(true);
+    for (const service of terminalServices) {
       const audits = await ctx.db.query('auditEvents').withIndex('by_org_entity', (q) =>
-        q.eq('organizationId', organizationId).eq('entityType', 'event').eq('entityId', event._id),
+        q.eq('organizationId', organizationId).eq('entityType', 'service').eq('entityId', service._id),
       ).collect();
-      const advances = audits.filter((audit) => audit.action === 'event.statusChanged');
-      if (event.status === 'completed') {
+      const advances = audits.filter((audit) => audit.action === 'service.statusChanged');
+      if (service.status === 'completed') {
         expect(advances).toHaveLength(4);
         expect(advances.map((audit) => audit.metadata.previousStatus)).toEqual(['draft', 'planned', 'confirmed', 'active']);
       } else {
         expect(advances).toHaveLength(2);
         expect(advances.map((audit) => audit.metadata.previousStatus)).toEqual(['draft', 'planned']);
-        expect(audits.some((audit) => audit.action === 'event.cancelled' && audit.metadata.previousStatus === 'confirmed')).toBe(true);
+        expect(audits.some((audit) => audit.action === 'service.cancelled' && audit.metadata.previousStatus === 'confirmed')).toBe(true);
       }
     }
 
-    const composedEvent = events.find((event) => event.name.includes('Latin Brothers') && event.name.startsWith('Llegada'));
-    if (composedEvent === undefined) throw new Error('Expected a Latin Brothers arrival');
-    const storedValues = await ctx.db.query('eventFieldValues').withIndex('by_event_field', (q) => q.eq('eventId', composedEvent._id)).collect();
+    const composedService = services.find((service) => service.name.includes('Latin Brothers') && service.name.startsWith('Llegada'));
+    if (composedService === undefined) throw new Error('Expected a Latin Brothers arrival');
+    const storedValues = await ctx.db.query('serviceFieldValues').withIndex('by_service_field', (q) => q.eq('serviceId', composedService._id)).collect();
     const definitions = await Promise.all(storedValues.map((stored) => ctx.db.get(stored.fieldDefinitionId)));
     expect(definitions.some((definition) => definition?.key === 'artist' && definition.scope === 'organization')).toBe(true);
     expect(definitions.some((definition) => definition?.key === 'passengerCount' && definition.scope === 'builtin')).toBe(true);
@@ -162,7 +162,7 @@ test('the seed refuses to adopt — and permanently freeze — a tenant field it
   const { client, organizationId } = await tenant(t);
 
   // A tenant that already owns `driverName` for its own purposes, with a
-  // different config than the seed's. Publishing a seed recipe against it would
+  // different config than the seed's. Publishing a seed serviceKind against it would
   // freeze that definition forever (I2/I3), so the seed must refuse instead.
   await client.mutation(api.fields.mutations.createFieldDefinition, {
     organizationId,
@@ -177,11 +177,11 @@ test('the seed refuses to adopt — and permanently freeze — a tenant field it
 
   // The refusal rolls the whole mutation back: nothing was half-seeded.
   await t.run(async (ctx) => {
-    const events = await ctx.db.query('events').withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId)).collect();
-    const recipes = (await ctx.db.query('eventRecipes').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect())
-      .filter((recipe) => festivalRecipeKeys.includes(recipe.key));
-    expect(events).toHaveLength(0);
-    expect(recipes).toHaveLength(0);
+    const services = await ctx.db.query('services').withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId)).collect();
+    const serviceKinds = (await ctx.db.query('serviceKinds').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect())
+      .filter((serviceKind) => festivalServiceKindKeys.includes(serviceKind.key));
+    expect(services).toHaveLength(0);
+    expect(serviceKinds).toHaveLength(0);
   });
 }, 20_000);
 

@@ -2,14 +2,14 @@ import { v } from 'convex/values';
 
 import { internalMutation } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
-import { changeEventStatus, createEventFromRecipe } from '../events/model';
+import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { invalidInput } from '../lib/errors';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { createProject } from '../projects/model';
-import { provisionStarterRecipes } from '../recipes/builtins';
-import type { eventFieldValueValidator } from '../validators';
+import { provisionStarterServiceKinds } from '../serviceKinds/builtins';
+import type { serviceFieldValueValidator } from '../validators';
 import { resolveSeedOwnerContext } from './identity';
 
 /**
@@ -25,7 +25,7 @@ import { resolveSeedOwnerContext } from './identity';
  * wall-clock time. Colombia is UTC-5 year round and observes no DST, so the
  * offset is a constant rather than a date-dependent lookup — but the stored
  * value is still a complete instant, never a wall-clock string, which is the
- * rule an Event's `startsAt` exists to demonstrate.
+ * rule an Service's `startsAt` exists to demonstrate.
  */
 const bogotaUtcOffsetHours = -5;
 
@@ -65,16 +65,16 @@ const locations: readonly {
   { key: 'fontibonDepot', name: 'Base de operaciones Fontibón', type: 'depot', address: 'Calle 17 #96-50, Fontibón, Bogotá', latitude: 4.6790, longitude: -74.1460 },
 ];
 
-type Value = typeof eventFieldValueValidator.type;
+type Value = typeof serviceFieldValueValidator.type;
 
 const text = (value: string): Value => ({ kind: 'text', value });
 const longText = (value: string): Value => ({ kind: 'longText', value });
 const count = (value: number): Value => ({ kind: 'number', value });
 
 /**
- * Each service names the starter recipe it is created from, and supplies a value
- * for exactly the built-in fields that recipe composes — a value for a field the
- * version does not contain is rejected by the event model, as it should be.
+ * Each service names the starter serviceKind it is created from, and supplies a value
+ * for exactly the built-in fields that serviceKind composes — a value for a field the
+ * version does not contain is rejected by the service model, as it should be.
  */
 type ServiceStatus = 'draft' | 'planned' | 'confirmed' | 'active' | 'completed' | 'cancelled';
 
@@ -94,7 +94,7 @@ function transitionsTo(target: ServiceStatus): readonly ServiceStatus[] {
 }
 
 const services: readonly {
-  recipeKey: string;
+  serviceKindKey: string;
   name: string;
   startsAt: number;
   endsAt?: number;
@@ -104,7 +104,7 @@ const services: readonly {
   values: Partial<Record<Exclude<BuiltinFieldKey, 'pickupLocation' | 'destination'>, Value>>;
 }[] = [
   {
-    recipeKey: 'airportArrivalTransfer',
+    serviceKindKey: 'airportArrivalTransfer',
     name: 'Llegada AV205 — artista principal',
     startsAt: bogota(2026, 8, 16, 14, 20),
     endsAt: bogota(2026, 8, 16, 15, 40),
@@ -122,7 +122,7 @@ const services: readonly {
     },
   },
   {
-    recipeKey: 'airportArrivalTransfer',
+    serviceKindKey: 'airportArrivalTransfer',
     name: 'Llegada LA4080 — banda de soporte',
     startsAt: bogota(2026, 8, 16, 18, 45),
     endsAt: bogota(2026, 8, 16, 20, 5),
@@ -140,7 +140,7 @@ const services: readonly {
     },
   },
   {
-    recipeKey: 'shuttleService',
+    serviceKindKey: 'shuttleService',
     name: 'Shuttle hotel → Simón Bolívar (día 1)',
     startsAt: bogota(2026, 8, 17, 15, 0),
     endsAt: bogota(2026, 8, 17, 16, 0),
@@ -153,7 +153,7 @@ const services: readonly {
     },
   },
   {
-    recipeKey: 'shuttleService',
+    serviceKindKey: 'shuttleService',
     name: 'Shuttle Simón Bolívar → hotel (cierre día 1)',
     startsAt: bogota(2026, 8, 18, 1, 30),
     endsAt: bogota(2026, 8, 18, 2, 40),
@@ -166,7 +166,7 @@ const services: readonly {
     },
   },
   {
-    recipeKey: 'pointToPointTransfer',
+    serviceKindKey: 'pointToPointTransfer',
     name: 'Traslado prensa Corferias → Movistar Arena',
     startsAt: bogota(2026, 8, 18, 10, 0),
     endsAt: bogota(2026, 8, 18, 10, 45),
@@ -182,7 +182,7 @@ const services: readonly {
     },
   },
   {
-    recipeKey: 'airportDepartureTransfer',
+    serviceKindKey: 'airportDepartureTransfer',
     name: 'Salida AV8020 — equipo de producción',
     startsAt: bogota(2026, 8, 19, 9, 15),
     endsAt: bogota(2026, 8, 19, 10, 30),
@@ -216,10 +216,10 @@ export const seedBogotaOperations = internalMutation({
 
     const { organization, seeded } = await resolveSeedOwnerContext(ctx, args.organizationSlug);
 
-    // The catalogue and starter recipes are prerequisites, and both are
+    // The catalogue and starter serviceKinds are prerequisites, and both are
     // idempotent, so this doubles as the repair path after a reset.
     const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
-    await provisionStarterRecipes(seeded, organization._id, fieldIds);
+    await provisionStarterServiceKinds(seeded, organization._id, fieldIds);
 
     const locationIds = new Map<LocationKey, Id<'locations'>>();
     for (const location of locations) {
@@ -266,19 +266,19 @@ export const seedBogotaOperations = internalMutation({
     }
 
     for (const service of services) {
-      const recipe = await ctx.db
-        .query('eventRecipes')
-        .withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', service.recipeKey))
+      const serviceKind = await ctx.db
+        .query('serviceKinds')
+        .withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', service.serviceKindKey))
         .unique();
-      if (recipe === null) {
-        return invalidInput('seedRecipeMissing', `Starter recipe is missing: ${service.recipeKey}`);
+      if (serviceKind === null) {
+        return invalidInput('seedServiceKindMissing', `Starter serviceKind is missing: ${service.serviceKindKey}`);
       }
       const version = await ctx.db
-        .query('recipeVersions')
-        .withIndex('by_recipe_status', (q) => q.eq('recipeId', recipe._id).eq('status', 'published'))
+        .query('serviceKindVersions')
+        .withIndex('by_serviceKind_status', (q) => q.eq('serviceKindId', serviceKind._id).eq('status', 'published'))
         .unique();
       if (version === null) {
-        return invalidInput('seedRecipeVersionMissing', `Starter recipe has no published version: ${service.recipeKey}`);
+        return invalidInput('seedServiceKindVersionMissing', `Starter serviceKind has no published version: ${service.serviceKindKey}`);
       }
 
       const values: { fieldDefinitionId: Id<'fieldDefinitions'>; value: Value }[] = [
@@ -290,16 +290,16 @@ export const seedBogotaOperations = internalMutation({
         values.push({ fieldDefinitionId: requireField(key as BuiltinFieldKey), value });
       }
 
-      const eventId = await createEventFromRecipe(seeded, {
+      const serviceId = await createServiceFromServiceKind(seeded, {
         projectId,
-        recipeVersionId: version._id,
+        serviceKindVersionId: version._id,
         name: service.name,
         startsAt: service.startsAt,
         ...(service.endsAt === undefined ? {} : { endsAt: service.endsAt }),
         values,
       });
       for (const status of transitionsTo(service.status)) {
-        await changeEventStatus(seeded, { eventId, status });
+        await changeServiceStatus(seeded, { serviceId, status });
       }
     }
 

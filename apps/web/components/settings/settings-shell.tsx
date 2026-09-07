@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 /**
  * Settings is where an organization is *configured*, as opposed to operated.
  *
- * Recipes, locations and field definitions moved here from the top-level nav
+ * Service kinds, locations and field definitions moved here from the top-level nav
  * because they are set up once by whoever administers the tenant and then left
  * alone — putting them beside Projects and Services implied a planner would open
  * them daily, and made the field editor look like an operational screen.
@@ -28,9 +28,9 @@ import { cn } from '@/lib/utils';
  */
 const sections = [
   { to: '/settings', labelKey: 'settings.sections.organization', adminOnly: false },
-  // Recipes stay open to planners: composing a recipe from the existing field
+  // Service kinds stay open to planners: composing a service kind from the existing field
   // vocabulary is planning work, and the server still requires `planner` for it.
-  { to: '/settings/recipes', labelKey: 'settings.sections.recipes', adminOnly: false },
+  { to: '/settings/service-kinds', labelKey: 'settings.sections.serviceKinds', adminOnly: false },
   { to: '/settings/fields', labelKey: 'settings.sections.fields', adminOnly: true },
   { to: '/settings/locations', labelKey: 'settings.sections.locations', adminOnly: true },
 ] as const;

@@ -13,7 +13,7 @@ demonstration page at `/[locale]`. It deliberately builds **no product screens**
 
 **A calm operations console, not a dashboard.**
 
-Priamo coordinates ground transport for events: people read it at 05:00 in an
+Priamo coordinates ground transport for services: people read it at 05:00 in an
 operations room, at density, under time pressure. The interface is clean, dark,
 and modern: a neutral near-black ground, generously rounded cards and pill
 controls, strong type hierarchy, generous breathing room, and colour used
@@ -116,7 +116,7 @@ aligns whether or not it is mono.
 ### Spanish is the sizing constraint
 
 Spanish strings run 15–30% longer than English ("Cancelar el servicio" against
-"Cancel"; "Versiones de receta" against "Recipe versions"). Therefore:
+"Cancel"; "Versiones de tipo de servicio" against "Service Kind versions"). Therefore:
 
 - **Buttons** fix height, never width. `whitespace-nowrap` plus content-driven
   width means a long label makes a wider button, never a clipped one.
@@ -202,7 +202,7 @@ Two independent channels:
 
 - **Shape = lifecycle phase.** The colour-blind-safe channel, drawn in CSS. Shape
   is shared across sets: a hollow ring means "provisional" whether it is a
-  project, a recipe, a version or a service.
+  project, a service kind, a version or a service.
 - **Tone = disposition.** How an operator should feel about it. `completed` and
   `archived` are both terminal (square) but tell you different things.
 
@@ -224,13 +224,13 @@ Two independent channels:
 | | `active` | dot | go |
 | | `completed` | square | done |
 | | `archived` | square | shelf |
-| recipe | `draft` | ring | mute |
+| service kind | `draft` | ring | mute |
 | | `active` | dot | go |
 | | `archived` | square | shelf |
-| recipe version | `draft` | ring | mute |
+| service kind version | `draft` | ring | mute |
 | | `published` | dot | go |
 | | `retired` | square | shelf |
-| service (backend `Event`) | `draft` | ring | mute |
+| service (backend `Service`) | `draft` | ring | mute |
 | | `planned` | bar | hold |
 | | `confirmed` | diamond | go |
 | | `active` | pulse | live |
@@ -242,14 +242,14 @@ Two independent channels:
 ### Why it cannot silently break
 
 Every map is `as const satisfies Record<Union, StatusToken>` where the union is
-derived from the backend validator (`typeof eventStatusValidator.type`, imported
+derived from the backend validator (`typeof serviceStatusValidator.type`, imported
 with `import type` from `@priamo/convex/validators`). A status added in
 `apps/convex/convex/validators/index.ts` fails `tsc` in `lib/status.ts` — it
 cannot ship as an uncoloured chip.
 
 Nothing switches on a raw status string. `StatusChip` takes a **discriminated
-union** (`{ kind: 'service'; status: EventStatus } | …`), so
-`<StatusChip kind="recipe" status="planned" />` — an easy mistake, since several
+union** (`{ kind: 'service'; status: ServiceStatus } | …`), so
+`<StatusChip kind="serviceKind" status="planned" />` — an easy mistake, since several
 sets share member names — does not compile. Each token also carries its
 catalogue path as a literal (`labelKey`), so `t()` never receives a key built by
 string concatenation.
@@ -261,9 +261,9 @@ member a compile error there too.
 
 ### Domain vocabulary
 
-The backend's `Event` is called a **Service / Servicio** in the interface. Code
-says `Event`; every user-visible string says Service. `serviceStatusTokens` is
-keyed by the backend's `EventStatus` and named for the UI.
+The backend's `Service` is called a **Service / Servicio** in the interface. Code
+says `Service`; every user-visible string says Service. `serviceStatusTokens` is
+keyed by the backend's `ServiceStatus` and named for the UI.
 
 ---
 
@@ -329,7 +329,7 @@ field description — it never pretends to have queried the server.
 ## 7. Forms
 
 - **Labels above the control**, left-aligned, `text-xs` weight 500 (§3).
-- **Required is marked; optional is not.** Recipe fields are optional by default
+- **Required is marked; optional is not.** Service Kind fields are optional by default
   in the backend, so `required` is the exception worth flagging. The marker is
   an accent bullet plus a screen-reader-only "Obligatorio" — never colour alone.
 - **Descriptions** sit under the control in `text-xs text-ink-3`, wired through
@@ -339,8 +339,8 @@ field description — it never pretends to have queried the server.
   `Field.Root` owns touched/dirty/valid, so no screen hand-rolls "only show the
   error after blur". Default `validationMode` is `onSubmit` with re-validation on
   change afterwards; use `onBlur` for fields with expensive validation.
-- **Explicit save, never autosave.** Recipes are versioned configuration and
-  Events are operational records with an audit trail; a keystroke is not an
+- **Explicit save, never autosave.** Service Kinds are versioned configuration and
+  Services are operational records with an audit trail; a keystroke is not an
   intent to write. Forms end in a `primary` "Guardar" and a `ghost` "Cancelar",
   in that order.
 - **Destructive actions confirm in a dialog**, never inline and never with an
@@ -533,16 +533,16 @@ mirrors that split. Operational surfaces sit at the top level —
 `/{locale}/chat`, `/{locale}/projects` and `/{locale}/services`. Configuration
 lives under settings:
 `/{locale}/settings` (organization, including the read-only member roster),
-`/{locale}/settings/recipes`, `/{locale}/settings/fields`, and
-`/{locale}/settings/locations`. Recipes, Field Definitions and Locations are
+`/{locale}/settings/service-kinds`, `/{locale}/settings/fields`, and
+`/{locale}/settings/locations`. Service Kinds, Field Definitions and Locations are
 *configuration an operator sets up once*, not daily work, so promoting them to
 the top level alongside Services would have flattened that distinction — the
 one the whole architecture rests on.
 
 Locale is always the short URL segment (`es` or `en`). Entity details are
 deep-linkable beneath their own surface: `/es/projects/{id}`,
-`/es/services/{id}`, `/es/services/new`, `/es/settings/recipes/{id}`,
-`/es/settings/recipes/{id}/draft`, `/es/settings/fields/{id}`, and
+`/es/services/{id}`, `/es/services/new`, `/es/settings/service-kinds/{id}`,
+`/es/settings/service-kinds/{id}/draft`, `/es/settings/fields/{id}`, and
 `/es/settings/locations/{id}`. Detail screens inherit the same shell.
 
 The guard order is deliberate: Clerk authentication first, then Convex user

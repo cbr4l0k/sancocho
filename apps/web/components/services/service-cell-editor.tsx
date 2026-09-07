@@ -10,18 +10,18 @@ import { datetimeDateBounds, fieldInputBounds } from '@/lib/field-input-bounds';
 import type { FieldValueFormState } from '@/lib/field-value-form';
 import { cn } from '@/lib/utils';
 
-type ServiceField = FunctionReturnType<typeof api.events.queries.listOrganizationEvents>['page'][number]['fields'][number];
+type ServiceField = FunctionReturnType<typeof api.services.queries.listOrganizationServices>['page'][number]['fields'][number];
 type OrganizationId = FunctionArgs<typeof api.locations.queries.listLocations>['organizationId'];
 type LocationId = Extract<NonNullable<ServiceField['value']>, { kind: 'location' }>['locationId'];
 
 /**
- * The control a recipe field renders as inside a table cell.
+ * The control a service kind field renders as inside a table cell.
  *
  * It is a separate, deliberately plainer set from `service-fields.tsx`: the
  * form controls there carry their own label, required marker and help text
  * because a form is read top to bottom, whereas a cell already sits under a
  * column header and has one line of room. The rules behind them are the same
- * ones — `fieldInputBounds` puts the recipe snapshot's range on the control,
+ * ones — `fieldInputBounds` puts the service kind snapshot's range on the control,
  * and `serviceFieldProblem` checks the result before the row is saved.
  *
  * `longText` is edited on a single line here on purpose: a cell is not the

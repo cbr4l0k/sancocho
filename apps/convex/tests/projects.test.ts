@@ -172,7 +172,7 @@ test('project authoring is closed to operators and viewers and open from planner
   const projectId = await planner.client.mutation(createProject, { organizationId, name: 'Planned' });
   const archivable = await planner.client.mutation(createProject, { organizationId, name: 'Archivable' });
 
-  // The floor is planner, not operator: an operator runs events, it does not
+  // The floor is planner, not operator: an operator runs services, it does not
   // author the projects they live in. Testing only a viewer would leave the
   // floor free to slip a rank, which is why both ranks below planner are here.
   for (const { client } of [viewer, operator]) {

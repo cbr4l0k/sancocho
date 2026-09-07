@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  *
  * - The label sits **above** the control, left-aligned. Side-by-side labels need
  *   a fixed label column, and a fixed column is the first thing Spanish breaks.
- * - **Required** is marked, optional is not. Recipe fields are optional by
+ * - **Required** is marked, optional is not. Service Kind fields are optional by
  *   default in the backend, so `required` is the exception worth flagging: an
  *   accent bullet plus a screen-reader-only word, never colour alone.
  * - Validation messages appear **below the control, inline**, and the control

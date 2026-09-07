@@ -29,7 +29,7 @@ type ProjectPatch = ProjectDates & {
 
 /**
  * Descriptions are free-form planning notes, bounded like every other free-text
- * column in the codebase (field/recipe descriptions 2000, location addresses
+ * column in the codebase (field/serviceKind descriptions 2000, location addresses
  * 500, entity names 200). Unbounded, they were the one place a tenant could
  * store megabytes: `listProjects` pages whole documents, projects are never
  * deleted, and enough oversized rows would push a page past Convex's
@@ -167,18 +167,18 @@ export async function updateProject(
 }
 
 /**
- * Archiving is deliberately allowed no matter how many Events the project holds,
- * and it is what makes those Events read-only.
+ * Archiving is deliberately allowed no matter how many Services the project holds,
+ * and it is what makes those Services read-only.
  *
- * The alternative — refusing to archive a project that has events — was
- * rejected: a project with events is exactly the project worth archiving, and a
+ * The alternative — refusing to archive a project that has services — was
+ * rejected: a project with services is exactly the project worth archiving, and a
  * reference guard would make the most-used projects the only unarchivable ones.
- * Events are never hard-deleted and there is no cascade, so archival freezes
- * rather than destroys: the events stay readable, listable, and interpretable
- * under their own recipe versions forever.
+ * Services are never hard-deleted and there is no cascade, so archival freezes
+ * rather than destroys: the services stay readable, listable, and interpretable
+ * under their own serviceKind versions forever.
  *
- * The enforcing half of this policy lives in events/model.ts
- * (`assertProjectAcceptsEventWrites`), which refuses every event write — field
+ * The enforcing half of this policy lives in services/model.ts
+ * (`assertProjectAcceptsServiceWrites`), which refuses every service write — field
  * edits, core-field edits, and status transitions including cancellation — for an
  * archived project. The two doors must agree: relaxing one without the other
  * either leaves archived projects quietly mutable or makes them un-archivable.
@@ -229,10 +229,10 @@ export async function requireProjectAccess(
  * The only status policy statement for projects. draft | active | completed may
  * move between each other freely for now — no forward-only lifecycle is
  * specified yet — though `completed` does stop the project from receiving NEW
- * events (see `assertProjectAcceptsNewEvents` in events/model.ts), while leaving
- * the events it already has editable. Archiving is deliberately not reachable
+ * services (see `assertProjectAcceptsNewServices` in services/model.ts), while leaving
+ * the services it already has editable. Archiving is deliberately not reachable
  * here: it is its own operation so it keeps its own audit action and its
- * documented read-only-events policy. Archived is terminal; unarchiving is
+ * documented read-only-services policy. Archived is terminal; unarchiving is
  * unsupported.
  */
 function assertProjectStatusTransition(current: ProjectStatus, next: ProjectStatus): void {

@@ -2,30 +2,30 @@ import { v } from 'convex/values';
 
 import type { Id } from '../_generated/dataModel';
 import { internalMutation } from '../_generated/server';
-import { changeEventStatus, createEventFromRecipe } from '../events/model';
+import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { createFieldDefinition, sameFieldConfig } from '../fields/model';
 import { invalidInput } from '../lib/errors';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { createProject } from '../projects/model';
-import { addRecipeField } from '../recipes/fields/model';
-import { createInitialDraftVersion, createRecipe, publishRecipeVersion } from '../recipes/model';
+import { addServiceKindField } from '../serviceKinds/fields/model';
+import { createInitialDraftVersion, createServiceKind, publishServiceKindVersion } from '../serviceKinds/model';
 import { createRelationship } from '../relationships/model';
-import type { eventFieldValueValidator, fieldConfigValidator, eventStatusValidator } from '../validators';
+import type { serviceFieldValueValidator, fieldConfigValidator, serviceStatusValidator } from '../validators';
 import { resolveSeedOwnerContext } from './identity';
 
 /**
  * Reproduces the operating vocabulary and representative line items from the
  * Cordillera 2026 ground-transport workbook inside an existing organization.
- * Organization fields and recipes are independently idempotent by indexed key.
+ * Organization fields and serviceKinds are independently idempotent by indexed key.
  * Locations, Services, and relationships are a clean-slate demonstration set:
  * once the named project contains any Service, a re-run treats it as complete
  * and skips those three sets instead of duplicating them.
  *
  * The mutation runs as the organization's own owner, so every write passes the
  * ordinary domain authorization, role, ownership, validation, audit, and
- * lifecycle gates. Colombia is UTC-5 year round; every Event timestamp below is
+ * lifecycle gates. Colombia is UTC-5 year round; every Service timestamp below is
  * therefore an absolute instant derived from Bogotá wall clock with no DST.
  */
 
@@ -36,8 +36,8 @@ function bogota(year: number, month: number, day: number, hour: number, minute: 
 }
 
 type FieldConfig = typeof fieldConfigValidator.type;
-type Value = typeof eventFieldValueValidator.type;
-type ServiceStatus = typeof eventStatusValidator.type;
+type Value = typeof serviceFieldValueValidator.type;
+type ServiceStatus = typeof serviceStatusValidator.type;
 
 const text = (value: string): Value => ({ kind: 'text', value });
 const longText = (value: string): Value => ({ kind: 'longText', value });
@@ -137,14 +137,14 @@ function billingLabel(billing: string): string {
   return billingLabels.get(billing) ?? billing;
 }
 
-type RecipeSeed = {
-  key: RecipeKey;
+type ServiceKindSeed = {
+  key: ServiceKindKey;
   name: string;
   description: string;
   composition: readonly { key: FieldKey; required: boolean }[];
 };
 
-type RecipeKey =
+type ServiceKindKey =
   | 'festivalArtistTransfer'
   | 'festivalArtistDisposition'
   | 'festivalInternalMovement'
@@ -166,7 +166,7 @@ function composition(entries: readonly (readonly [FieldKey, boolean])[]): readon
   return entries.map(([key, required]) => ({ key, required }));
 }
 
-const recipes = [
+const serviceKinds = [
   { key: 'festivalArtistTransfer', name: 'Traslado de artista', description: 'Traslado puntual de un artista y su party entre aeropuerto, hotel y venue.', composition: composition(artistComposition) },
   { key: 'festivalArtistDisposition', name: 'Disponibilidad de artista', description: 'Vehículo a disposición de un artista durante la jornada de prueba de sonido y show.', composition: composition(artistComposition) },
   { key: 'festivalInternalMovement', name: 'Movimiento interno', description: 'Vehículo en disponibilidad para movimientos de producción dentro del venue.', composition: composition([
@@ -192,7 +192,7 @@ const recipes = [
     ['vehicleQuantity', true], ['unitRate', true], ['callTime', false], ['contactPerson', false],
     ['supplierStatus', false], ['driverName', false], ['driverPhone', false], ['notes', false],
   ]) },
-] as const satisfies readonly RecipeSeed[];
+] as const satisfies readonly ServiceKindSeed[];
 
 type LocationKey =
   | 'eldoradoT1' | 'eldoradoT2' | 'simonBolivar' | 'clubColombiaStage' | 'wyndham'
@@ -217,7 +217,7 @@ const locations: readonly {
 type FieldValue = { key: FieldKey; value: Value };
 type Service = {
   seedKey: string;
-  recipeKey: RecipeKey;
+  serviceKindKey: ServiceKindKey;
   name: string;
   startsAt: number;
   endsAt?: number;
@@ -311,7 +311,7 @@ function artistServices(): Service[] {
     const showStatus = artistStatus(index, 'show', artist.show[0]);
     const departureStatus = artistStatus(index, 'departure', artist.departure[0]);
     result.push({
-      seedKey: `${artist.key}-arrival`, recipeKey: 'festivalArtistTransfer',
+      seedKey: `${artist.key}-arrival`, serviceKindKey: 'festivalArtistTransfer',
       name: `Llegada aeropuerto — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.arrival),
       endsAt: at([artist.arrival[0], artist.arrival[1] + 1, artist.arrival[2]]), status: arrivalStatus,
       pickup: 'eldoradoT1', destination: artist.hotel,
@@ -322,7 +322,7 @@ function artistServices(): Service[] {
         ...operationalValues(arrivalStatus, index)],
     });
     result.push({
-      seedKey: `${artist.key}-show`, recipeKey: 'festivalArtistDisposition',
+      seedKey: `${artist.key}-show`, serviceKindKey: 'festivalArtistDisposition',
       name: `Disponibilidad show — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.show),
       endsAt: at([artist.show[0], artist.show[1] + 12, artist.show[2]]), status: showStatus,
       pickup: artist.hotel, destination: 'simonBolivar',
@@ -333,7 +333,7 @@ function artistServices(): Service[] {
         ...operationalValues(showStatus, index + 1)],
     });
     result.push({
-      seedKey: `${artist.key}-departure`, recipeKey: 'festivalArtistTransfer',
+      seedKey: `${artist.key}-departure`, serviceKindKey: 'festivalArtistTransfer',
       name: `Salida aeropuerto — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.departure),
       endsAt: at([artist.departure[0], artist.departure[1] + 1, artist.departure[2]]), status: departureStatus,
       pickup: artist.hotel, destination: 'eldoradoT1',
@@ -360,7 +360,7 @@ const standaloneArtists: readonly {
 function standaloneServices(): Service[] {
   return standaloneArtists.map((artist, index) => ({
     seedKey: artist.key,
-    recipeKey: 'festivalArtistDisposition',
+    serviceKindKey: 'festivalArtistDisposition',
     name: `Disponibilidad show — ${artist.artist} (${vehicleLabel(artist.vehicle)})`,
     startsAt: bogota(2026, 9, artist.day, artist.hour, artist.minute),
     endsAt: bogota(2026, 9, artist.day, artist.hour + 12, artist.minute),
@@ -390,7 +390,7 @@ const cargoRows: readonly { key: string; artist: string; stage: Stage; vehicle: 
 
 function cargoServices(): Service[] {
   return cargoRows.map((row, index) => ({
-    seedKey: row.key, recipeKey: row.rate === 980000 ? 'festivalArtistDisposition' : 'festivalArtistTransfer',
+    seedKey: row.key, serviceKindKey: row.rate === 980000 ? 'festivalArtistDisposition' : 'festivalArtistTransfer',
     name: `${row.rate === 980000 ? 'Disponibilidad' : 'Llegada'} carga — ${row.artist} (${vehicleLabel(row.vehicle)})`,
     startsAt: bogota(2026, 9, row.day, row.hour, 0),
     endsAt: bogota(2026, 9, row.day, row.hour + (row.rate === 980000 ? 12 : 2), 0),
@@ -409,7 +409,7 @@ function partnerServices(): Service[] {
   for (const day of [12, 13] as const) {
     for (let vehicle = 1; vehicle <= 6; vehicle += 1) {
       result.push({
-        seedKey: `club-${day}-${vehicle}`, recipeKey: 'festivalPartnerService',
+        seedKey: `club-${day}-${vehicle}`, serviceKindKey: 'festivalPartnerService',
         name: `Sprinter ${vehicle} Club Colombia — ${day}/09`, startsAt: bogota(2026, 9, day, 12, 0),
         endsAt: bogota(2026, 9, day + 1, 0, 0), status: day === 12 ? 'active' : 'confirmed',
         pickup: 'clubColombiaStage', destination: 'clubColombiaStage',
@@ -428,7 +428,7 @@ function partnerServices(): Service[] {
   for (const [index, row] of partnerRows.entries()) {
     const duration = row.modality === 'trayecto' ? 2 : 12;
     const status: ServiceStatus = row.day === 11 ? 'completed' : row.day === 12 ? 'active' : 'confirmed';
-    result.push({ seedKey: row.key, recipeKey: 'festivalPartnerService', name: `Servicio ${billingLabel(row.billing)} — ${row.day}/09 (${vehicleLabel(row.vehicle)})`,
+    result.push({ seedKey: row.key, serviceKindKey: 'festivalPartnerService', name: `Servicio ${billingLabel(row.billing)} — ${row.day}/09 (${vehicleLabel(row.vehicle)})`,
       startsAt: bogota(2026, 9, row.day, row.hour, 0), endsAt: bogota(2026, 9, row.day, row.hour + duration, 0), status,
       pickup: 'paramoOffice', destination: 'simonBolivar', values: [...commonValues({ billing: row.billing, vehicle: row.vehicle, modality: row.modality, rate: row.rate }), ...operationalValues(status, index + 50)] });
   }
@@ -441,7 +441,7 @@ function internalServices(): Service[] {
     { day: 13, vehicle: 'sprinter' as const, rate: 810000 }, { day: 13, vehicle: 'cargoTruck' as const, rate: 980000 },
   ];
   return rows.map((row, index) => ({
-    seedKey: `internal-${index}`, recipeKey: 'festivalInternalMovement', name: `Movimiento interno ${vehicleLabel(row.vehicle)} — ${row.day}/09`,
+    seedKey: `internal-${index}`, serviceKindKey: 'festivalInternalMovement', name: `Movimiento interno ${vehicleLabel(row.vehicle)} — ${row.day}/09`,
     startsAt: bogota(2026, 9, row.day, 8, 0), endsAt: bogota(2026, 9, row.day, 20, 0), status: row.day === 12 ? 'active' : 'confirmed',
     pickup: 'simonBolivar', destination: 'clubColombiaStage',
     values: [...commonValues({ stage: 'general', billing: 'interno', vehicle: row.vehicle, modality: 'disponibilidad12h', rate: row.rate }),
@@ -463,7 +463,7 @@ function crewServices(): Service[] {
   ];
   return rows.map((row, index) => {
     const duration = row.modality === 'ruta' ? 3 : row.modality === 'trayecto' ? 2 : 12;
-    return { seedKey: `crew-${row.day}-${row.shift}`, recipeKey: 'festivalCrewShuttle', name: `${row.modality === 'ruta' ? `Ruta ${row.shift}` : row.shift} equipo Páramo — ${row.day}/09`,
+    return { seedKey: `crew-${row.day}-${row.shift}`, serviceKindKey: 'festivalCrewShuttle', name: `${row.modality === 'ruta' ? `Ruta ${row.shift}` : row.shift} equipo Páramo — ${row.day}/09`,
       startsAt: bogota(2026, 9, row.day, row.hour, 0), endsAt: bogota(2026, 9, row.day, row.hour + duration, 0), status: row.status,
       pickup: row.modality === 'ruta' ? 'paramoOffice' : 'fontibonDepot', destination: 'simonBolivar',
       values: [...commonValues({ billing: 'equipo', vehicle: 'h1', modality: row.modality, rate: 640000 }),
@@ -477,23 +477,23 @@ const coordinationServices: readonly Service[] = [
   // Every person in this seed is invented and every number is in the reserved
   // 555 range: the source workbook names real coordinators and drivers, and a
   // demonstration dataset in an open repository must never carry them.
-  { seedKey: 'coord-airport', recipeKey: 'festivalCoordination', name: 'Coordinación aeropuerto', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'eldoradoT1', values: [
+  { seedKey: 'coord-airport', serviceKindKey: 'festivalCoordination', name: 'Coordinación aeropuerto', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'eldoradoT1', values: [
     { key: 'stageName', value: select('general') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('disponibilidad12h') },
     { key: 'vehicleQuantity', value: number(1) }, { key: 'unitRate', value: number(0) }, { key: 'callTime', value: time('07:00') },
     { key: 'contactPerson', value: text('Andrés Villalba — 317 5550107') }, { key: 'supplierStatus', value: select('confirmado') },
     { key: 'driverName', value: text('Andrés Villalba') }, { key: 'driverPhone', value: text('317 5550107') },
   ] },
-  { seedKey: 'coord-venue-stage3', recipeKey: 'festivalCoordination', name: 'Coordinación venue AM — Stage 3', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'simonBolivar', values: [
+  { seedKey: 'coord-venue-stage3', serviceKindKey: 'festivalCoordination', name: 'Coordinación venue AM — Stage 3', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'simonBolivar', values: [
     { key: 'stageName', value: select('stage3') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('disponibilidad12h') },
     { key: 'vehicleQuantity', value: number(1) }, { key: 'unitRate', value: number(490000) }, { key: 'callTime', value: time('07:00') },
     { key: 'supplierStatus', value: select('confirmado') }, { key: 'driverName', value: text('Mónica Salazar') }, { key: 'driverPhone', value: text('315 5550104') },
   ] },
-  { seedKey: 'coord-venue-stage4', recipeKey: 'festivalCoordination', name: 'Coordinación venue PM — Stage 4', startsAt: bogota(2026, 9, 13, 14, 0), endsAt: bogota(2026, 9, 14, 2, 0), status: 'confirmed', destination: 'simonBolivar', values: [
+  { seedKey: 'coord-venue-stage4', serviceKindKey: 'festivalCoordination', name: 'Coordinación venue PM — Stage 4', startsAt: bogota(2026, 9, 13, 14, 0), endsAt: bogota(2026, 9, 14, 2, 0), status: 'confirmed', destination: 'simonBolivar', values: [
     { key: 'stageName', value: select('stage4') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('disponibilidad12h') },
     { key: 'vehicleQuantity', value: number(1) }, { key: 'unitRate', value: number(490000) }, { key: 'callTime', value: time('14:00') },
     { key: 'supplierStatus', value: select('confirmado') }, { key: 'driverName', value: text('Sergio Bernal') }, { key: 'driverPhone', value: text('316 5550105') },
   ] },
-  { seedKey: 'marking', recipeKey: 'festivalCoordination', name: 'Marcación de vehículos', startsAt: bogota(2026, 9, 12, 8, 0), endsAt: bogota(2026, 9, 12, 10, 0), status: 'confirmed', destination: 'simonBolivar', values: [
+  { seedKey: 'marking', serviceKindKey: 'festivalCoordination', name: 'Marcación de vehículos', startsAt: bogota(2026, 9, 12, 8, 0), endsAt: bogota(2026, 9, 12, 10, 0), status: 'confirmed', destination: 'simonBolivar', values: [
     { key: 'stageName', value: select('general') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('trayecto') },
     { key: 'vehicleQuantity', value: number(1) }, { key: 'unitRate', value: number(300000) },
     { key: 'notes', value: longText('Marcación plastificada, 2 piezas por vehículo el día del show.') },
@@ -536,7 +536,7 @@ function transitionsTo(target: ServiceStatus): readonly ServiceStatus[] {
 export const seedCordilleraOperations = internalMutation({
   args: { organizationSlug: v.string(), projectName: v.optional(v.string()) },
   returns: v.object({
-    fieldDefinitions: v.number(), recipes: v.number(), locations: v.number(),
+    fieldDefinitions: v.number(), serviceKinds: v.number(), locations: v.number(),
     services: v.number(), relationships: v.number(), projectName: v.string(),
   }),
   handler: async (ctx, args) => {
@@ -550,7 +550,7 @@ export const seedCordilleraOperations = internalMutation({
     // Reuse is by key AND by config: several of these keys (`driverName`,
     // `vehiclePlate`, `callTime`, `artist`) are ones a real tenant plausibly
     // already owns, and adopting one would be irreversible. Publishing a seed
-    // recipe against a tenant's own field permanently freezes that definition's
+    // serviceKind against a tenant's own field permanently freezes that definition's
     // key, semanticType and config (I2/I3), because a published version is never
     // hard-deleted. So the seed reuses only a field it would itself have
     // created, and otherwise refuses rather than quietly taking ownership.
@@ -569,35 +569,35 @@ export const seedCordilleraOperations = internalMutation({
       return id;
     }
 
-    const recipeIds = new Map<RecipeKey, Id<'eventRecipes'>>();
-    for (const recipe of recipes) {
-      const existing = await ctx.db.query('eventRecipes').withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', recipe.key)).unique();
+    const serviceKindIds = new Map<ServiceKindKey, Id<'serviceKinds'>>();
+    for (const serviceKind of serviceKinds) {
+      const existing = await ctx.db.query('serviceKinds').withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', serviceKind.key)).unique();
       if (existing !== null) {
         // Same reasoning as the fields above, with a heavier consequence: the
-        // seed would otherwise attach 90 permanently undeletable Events to a
-        // recipe version the tenant — not the seed — authored. Reuse requires
-        // an active recipe whose published version composes exactly this
-        // recipe's fields, in this order.
-        const published = await ctx.db.query('recipeVersions').withIndex('by_recipe_status', (q) => q.eq('recipeId', existing._id).eq('status', 'published')).unique();
+        // seed would otherwise attach 90 permanently undeletable Services to a
+        // serviceKind version the tenant — not the seed — authored. Reuse requires
+        // an active serviceKind whose published version composes exactly this
+        // serviceKind's fields, in this order.
+        const published = await ctx.db.query('serviceKindVersions').withIndex('by_serviceKind_status', (q) => q.eq('serviceKindId', existing._id).eq('status', 'published')).unique();
         if (existing.status !== 'active' || published === null) {
-          return invalidInput('seedRecipeConflict', `The organization already owns a different recipe keyed ${recipe.key}`);
+          return invalidInput('seedServiceKindConflict', `The organization already owns a different serviceKind keyed ${serviceKind.key}`);
         }
-        const composed = await ctx.db.query('recipeFields').withIndex('by_version', (q) => q.eq('recipeVersionId', published._id)).collect();
+        const composed = await ctx.db.query('serviceKindFields').withIndex('by_version', (q) => q.eq('serviceKindVersionId', published._id)).collect();
         const actual = [...composed].sort((left, right) => left.position - right.position).map((field) => field.fieldDefinitionId);
-        const expected = recipe.composition.map((entry) => requireField(entry.key));
+        const expected = serviceKind.composition.map((entry) => requireField(entry.key));
         if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) {
-          return invalidInput('seedRecipeConflict', `The organization already owns a different recipe keyed ${recipe.key}`);
+          return invalidInput('seedServiceKindConflict', `The organization already owns a different serviceKind keyed ${serviceKind.key}`);
         }
-        recipeIds.set(recipe.key, existing._id);
+        serviceKindIds.set(serviceKind.key, existing._id);
         continue;
       }
-      const recipeId = await createRecipe(seeded, { organizationId: organization._id, key: recipe.key, name: recipe.name, description: recipe.description });
-      const versionId = await createInitialDraftVersion(seeded, recipeId);
-      for (const [position, entry] of recipe.composition.entries()) {
-        await addRecipeField(seeded, { recipeVersionId: versionId, fieldDefinitionId: requireField(entry.key), required: entry.required, visible: true, position });
+      const serviceKindId = await createServiceKind(seeded, { organizationId: organization._id, key: serviceKind.key, name: serviceKind.name, description: serviceKind.description });
+      const versionId = await createInitialDraftVersion(seeded, serviceKindId);
+      for (const [position, entry] of serviceKind.composition.entries()) {
+        await addServiceKindField(seeded, { serviceKindVersionId: versionId, fieldDefinitionId: requireField(entry.key), required: entry.required, visible: true, position });
       }
-      await publishRecipeVersion(seeded, versionId);
-      recipeIds.set(recipe.key, recipeId);
+      await publishServiceKindVersion(seeded, versionId);
+      serviceKindIds.set(serviceKind.key, serviceKindId);
     }
 
     const projectName = args.projectName ?? defaultProject.name;
@@ -607,9 +607,9 @@ export const seedCordilleraOperations = internalMutation({
       organizationId: organization._id, name: projectName, description: defaultProject.description,
       startsAt: defaultProject.startsAt, endsAt: defaultProject.endsAt,
     });
-    const existingService = await ctx.db.query('events').withIndex('by_project', (q) => q.eq('projectId', projectId)).first();
+    const existingService = await ctx.db.query('services').withIndex('by_project', (q) => q.eq('projectId', projectId)).first();
     if (existingService !== null) {
-      return { fieldDefinitions: fieldDefinitions.length, recipes: recipes.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
+      return { fieldDefinitions: fieldDefinitions.length, serviceKinds: serviceKinds.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
     }
 
     // Locations carry no per-organization name uniqueness constraint, and are
@@ -638,50 +638,50 @@ export const seedCordilleraOperations = internalMutation({
       if (id === undefined) return invalidInput('seedLocationMissing', `Seed location is missing: ${key}`);
       return id;
     }
-    function requireRecipe(key: RecipeKey): Id<'eventRecipes'> {
-      const id = recipeIds.get(key);
-      if (id === undefined) return invalidInput('seedRecipeMissing', `Seed recipe is missing: ${key}`);
+    function requireServiceKind(key: ServiceKindKey): Id<'serviceKinds'> {
+      const id = serviceKindIds.get(key);
+      if (id === undefined) return invalidInput('seedServiceKindMissing', `Seed serviceKind is missing: ${key}`);
       return id;
     }
 
-    const publishedVersions = new Map<RecipeKey, Id<'recipeVersions'>>();
-    for (const recipe of recipes) {
-      const version = await ctx.db.query('recipeVersions').withIndex('by_recipe_status', (q) => q.eq('recipeId', requireRecipe(recipe.key)).eq('status', 'published')).unique();
-      if (version === null) return invalidInput('seedRecipeVersionMissing', `Seed recipe has no published version: ${recipe.key}`);
-      publishedVersions.set(recipe.key, version._id);
+    const publishedVersions = new Map<ServiceKindKey, Id<'serviceKindVersions'>>();
+    for (const serviceKind of serviceKinds) {
+      const version = await ctx.db.query('serviceKindVersions').withIndex('by_serviceKind_status', (q) => q.eq('serviceKindId', requireServiceKind(serviceKind.key)).eq('status', 'published')).unique();
+      if (version === null) return invalidInput('seedServiceKindVersionMissing', `Seed serviceKind has no published version: ${serviceKind.key}`);
+      publishedVersions.set(serviceKind.key, version._id);
     }
-    function requireVersion(key: RecipeKey): Id<'recipeVersions'> {
+    function requireVersion(key: ServiceKindKey): Id<'serviceKindVersions'> {
       const id = publishedVersions.get(key);
-      if (id === undefined) return invalidInput('seedRecipeVersionMissing', `Seed recipe has no published version: ${key}`);
+      if (id === undefined) return invalidInput('seedServiceKindVersionMissing', `Seed serviceKind has no published version: ${key}`);
       return id;
     }
 
-    const eventIds = new Map<string, Id<'events'>>();
+    const serviceIds = new Map<string, Id<'services'>>();
     for (const service of services) {
       const values: { fieldDefinitionId: Id<'fieldDefinitions'>; value: Value }[] = [];
       if (service.pickup !== undefined) values.push({ fieldDefinitionId: requireField('pickupLocation'), value: { kind: 'location', locationId: requireLocation(service.pickup) } });
       values.push({ fieldDefinitionId: requireField('destination'), value: { kind: 'location', locationId: requireLocation(service.destination) } });
       for (const entry of service.values) values.push({ fieldDefinitionId: requireField(entry.key), value: entry.value });
-      const eventId = await createEventFromRecipe(seeded, {
-        projectId, recipeVersionId: requireVersion(service.recipeKey), name: service.name, startsAt: service.startsAt,
+      const serviceId = await createServiceFromServiceKind(seeded, {
+        projectId, serviceKindVersionId: requireVersion(service.serviceKindKey), name: service.name, startsAt: service.startsAt,
         ...(service.endsAt === undefined ? {} : { endsAt: service.endsAt }), values,
       });
-      eventIds.set(service.seedKey, eventId);
+      serviceIds.set(service.seedKey, serviceId);
     }
 
-    function requireEvent(key: string): Id<'events'> {
-      const id = eventIds.get(key);
+    function requireService(key: string): Id<'services'> {
+      const id = serviceIds.get(key);
       if (id === undefined) return invalidInput('seedServiceMissing', `Seed service is missing: ${key}`);
       return id;
     }
     for (const relationship of relationships) {
-      await createRelationship(seeded, { sourceEventId: requireEvent(relationship.source), targetEventId: requireEvent(relationship.target), type: relationship.type });
+      await createRelationship(seeded, { sourceServiceId: requireService(relationship.source), targetServiceId: requireService(relationship.target), type: relationship.type });
     }
     for (const service of services) {
-      const eventId = requireEvent(service.seedKey);
-      for (const status of transitionsTo(service.status)) await changeEventStatus(seeded, { eventId, status });
+      const serviceId = requireService(service.seedKey);
+      for (const status of transitionsTo(service.status)) await changeServiceStatus(seeded, { serviceId, status });
     }
 
-    return { fieldDefinitions: fieldDefinitions.length, recipes: recipes.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
+    return { fieldDefinitions: fieldDefinitions.length, serviceKinds: serviceKinds.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
   },
 });

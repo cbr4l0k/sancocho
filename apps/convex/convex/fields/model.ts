@@ -45,13 +45,13 @@ const fieldKeyPattern = /^[a-z][a-zA-Z0-9]*$/;
  */
 const maxFieldDescriptionLength = 2000;
 
-// Recipe versions admit at most 200 fields, so resolving their definitions
+// ServiceKind versions admit at most 200 fields, so resolving their definitions
 // needs no larger caller-controlled lookup batch.
 const maxFieldDefinitionIdsPerLookup = 200;
 
 /**
  * The three columns that carry a field's historical meaning. Changing any of
- * them under a published or retired recipe version would reinterpret Events
+ * them under a published or retired serviceKind version would reinterpret Services
  * that were already validated against it (I2/I3).
  */
 const historicalMeaningFields = ['key', 'semanticType', 'config'] as const;
@@ -155,7 +155,7 @@ export async function updateFieldDefinition(ctx: MutationCtx, fieldDefinitionId:
 
   const changesHistoricalMeaning = historicalMeaningFields.some((column) => changedFields.includes(column));
   if (changesHistoricalMeaning && (await isReferencedByPublishedVersion(ctx, fieldDefinitionId))) {
-    return invalidInput('fieldHistoricalFrozen', 'Fields referenced by published or retired recipe versions may only update label or description');
+    return invalidInput('fieldHistoricalFrozen', 'Fields referenced by published or retired serviceKind versions may only update label or description');
   }
   if (update.label !== undefined) {
     // Store the trimmed label the validator returns, never the raw argument.
@@ -201,7 +201,7 @@ export async function archiveFieldDefinition(ctx: MutationCtx, fieldDefinitionId
   const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, organizationConfigurationRole);
   // Idempotent: re-archiving neither re-patches nor writes a second audit row.
   if (field.status === 'archived') return;
-  // #8/#9 must exclude archived fields when composing new recipe drafts.
+  // #8/#9 must exclude archived fields when composing new serviceKind drafts.
   await ctx.db.patch(fieldDefinitionId, { status: 'archived' });
   await recordAuditEvent(ctx, {
     organizationId: field.organizationId,
@@ -216,12 +216,12 @@ export async function archiveFieldDefinition(ctx: MutationCtx, fieldDefinitionId
 export async function deleteFieldDefinition(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>): Promise<void> {
   const { field, access } = await requireOrganizationFieldAccess(ctx, fieldDefinitionId, organizationConfigurationRole);
   // Both reference tables are checked first-hit through their by_field indexes.
-  // recipeFields covers configuration references; eventFieldValues covers
-  // operational data, so a field carrying stored Event values survives even if
-  // no recipe still lists it (defense in depth ahead of #10).
-  const recipeReference = await ctx.db.query('recipeFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
-  if (recipeReference !== null) return invalidInput('fieldDeleteBlocked', 'Referenced field definitions cannot be deleted; archive the field instead');
-  const valueReference = await ctx.db.query('eventFieldValues').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
+  // serviceKindFields covers configuration references; serviceFieldValues covers
+  // operational data, so a field carrying stored Service values survives even if
+  // no serviceKind still lists it (defense in depth ahead of #10).
+  const serviceKindReference = await ctx.db.query('serviceKindFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
+  if (serviceKindReference !== null) return invalidInput('fieldDeleteBlocked', 'Referenced field definitions cannot be deleted; archive the field instead');
+  const valueReference = await ctx.db.query('serviceFieldValues').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId)).first();
   if (valueReference !== null) return invalidInput('fieldDeleteBlocked', 'Referenced field definitions cannot be deleted; archive the field instead');
   await recordAuditEvent(ctx, {
     organizationId: field.organizationId,
@@ -269,7 +269,7 @@ export async function getFieldDefinitionsByIds(
   fieldDefinitionIds: Id<'fieldDefinitions'>[],
 ): Promise<Doc<'fieldDefinitions'>[]> {
   // Check the raw request before authorization or lookups: repeated ids must
-  // not let a caller exceed the recipe-version-sized work budget.
+  // not let a caller exceed the serviceKind-version-sized work budget.
   if (fieldDefinitionIds.length > maxFieldDefinitionIdsPerLookup) {
     return invalidInput('fieldLookupTooLarge', `Field definition lookup cannot exceed ${maxFieldDefinitionIdsPerLookup} ids`);
   }
@@ -279,7 +279,7 @@ export async function getFieldDefinitionsByIds(
   const definitions: Doc<'fieldDefinitions'>[] = [];
   for (const fieldDefinitionId of uniqueIds) {
     const definition = await ctx.db.get(fieldDefinitionId);
-    // Archived definitions remain resolvable: historical recipe versions must
+    // Archived definitions remain resolvable: historical serviceKind versions must
     // stay interpretable after a definition is archived (I3), unlike new-draft
     // composition where isUsableDefinition deliberately excludes them.
     if (definition !== null && (definition.organizationId === undefined || definition.organizationId === organizationId)) {
@@ -292,26 +292,26 @@ export async function getFieldDefinitionsByIds(
 }
 
 /**
- * Streams the `recipeFields.by_field` index and returns on the first published
+ * Streams the `serviceKindFields.by_field` index and returns on the first published
  * or retired hit, so the work is bounded by the position of that hit rather
- * than by the field's total recipe usage — which grows by one row per published
+ * than by the field's total serviceKind usage — which grows by one row per published
  * version and is never pruned (I6 in spirit: no unbounded materialization).
  * Retired versions count because they remain historically interpretable (I3).
  *
- * CROSS-MODULE COUPLING — read with `getEvent` in events/model.ts. That query
- * joins `key` and `label` from the LIVE definition onto an event's stored
+ * CROSS-MODULE COUPLING — read with `getService` in services/model.ts. That query
+ * joins `key` and `label` from the LIVE definition onto an service's stored
  * values. Including retired versions here is precisely what makes the `key` half
- * of that join safe: an event can only reference a published or retired version,
- * so counting both freezes the key of every definition any event could reference,
- * for that event's whole lifetime. Narrowing this to published-only would let a
- * retired version's definition be re-keyed, and every historical event would
+ * of that join safe: an service can only reference a published or retired version,
+ * so counting both freezes the key of every definition any service could reference,
+ * for that service's whole lifetime. Narrowing this to published-only would let a
+ * retired version's definition be re-keyed, and every historical service would
  * silently start reporting a different key for the same stored value — I3 broken
  * with nothing failing here. `label` is deliberately left mutable: it is a
  * display string with no identity meaning.
  */
 export async function isReferencedByPublishedVersion(ctx: MutationCtx, fieldDefinitionId: Id<'fieldDefinitions'>): Promise<boolean> {
-  for await (const reference of ctx.db.query('recipeFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId))) {
-    const version = await ctx.db.get(reference.recipeVersionId);
+  for await (const reference of ctx.db.query('serviceKindFields').withIndex('by_field', (q) => q.eq('fieldDefinitionId', fieldDefinitionId))) {
+    const version = await ctx.db.get(reference.serviceKindVersionId);
     if (version?.status === 'published' || version?.status === 'retired') return true;
   }
   return false;
@@ -397,7 +397,7 @@ function assertSemanticCompatibility(semanticType: SemanticType | undefined, con
  *
  * A tenant hits one clear, immediate rejection at configuration time rather
  * than a mysterious failure later, when something has to resolve the whole
- * bound field list to interpret an event.
+ * bound field list to interpret an service.
  *
  * `.take(max + 1)` bounds this to at most `max + 1` documents regardless of
  * how many fields this org has ever created in total (I6) — it reads only
@@ -426,8 +426,8 @@ async function assertSemanticTypeCapacity(
  * Validates the *contents* of a config, which the Convex union only
  * structurally types. An incoherent config (unparseable date bound, NaN
  * numeric bound, inverted range, empty or ambiguous option set) would be copied
- * verbatim into the immutable publish-time recipeFields snapshot and become the
- * permanent rule set for historical Events (I3) — so it must never be stored.
+ * verbatim into the immutable publish-time serviceKindFields snapshot and become the
+ * permanent rule set for historical Services (I3) — so it must never be stored.
  */
 export function assertValidFieldConfig(config: FieldConfig): void {
   switch (config.kind) {
@@ -485,7 +485,7 @@ export function assertValidFieldConfig(config: FieldConfig): void {
         return invalidInput('fieldSelectOptionsInvalid', 'Maximum selections must not be less than minimum selections');
       }
       // An unsatisfiable requirement must be rejected at configuration time, not
-      // discovered later by every Event that fails validation against it.
+      // discovered later by every Service that fails validation against it.
       if (config.minSelections !== undefined && config.minSelections > config.options.length) {
         return invalidInput('fieldSelectOptionsInvalid', 'Minimum selections must not exceed the number of options');
       }
@@ -518,7 +518,7 @@ function assertUsableOptions(options: readonly SelectOption[]): void {
 }
 
 /**
- * Structural equality over the config union, shared with recipe composition's
+ * Structural equality over the config union, shared with serviceKind composition's
  * no-op detection. `JSON.stringify` was key-order sensitive, so an identical
  * config whose properties happened to arrive in a different order read as a
  * change — a spurious audit row, and (once referenced) a spurious immutability

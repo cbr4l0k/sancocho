@@ -1,11 +1,11 @@
 import type {
   archivalStatusValidator,
-  eventStatusValidator,
+  serviceStatusValidator,
   fieldDataTypeValidator,
   locationTypeValidator,
   projectStatusValidator,
-  recipeStatusValidator,
-  recipeVersionStatusValidator,
+  serviceKindStatusValidator,
+  serviceKindVersionStatusValidator,
   relationshipTypeValidator,
   roleValidator,
 } from '@priamo/convex/validators';
@@ -18,9 +18,9 @@ export type TranslationShape<Value> = Value extends string
     : never;
 
 type ProjectStatus = typeof projectStatusValidator.type;
-type RecipeStatus = typeof recipeStatusValidator.type;
-type RecipeVersionStatus = typeof recipeVersionStatusValidator.type;
-type EventStatus = typeof eventStatusValidator.type;
+type ServiceKindStatus = typeof serviceKindStatusValidator.type;
+type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
+type ServiceStatus = typeof serviceStatusValidator.type;
 type ArchivalStatus = typeof archivalStatusValidator.type;
 type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
@@ -171,7 +171,7 @@ export type MessageSchema = {
     statuses: Record<ArchivalStatus, string>;
     semanticTypes: Record<SemanticTypeMessageKey, { label: string; description: string }>;
   };
-  recipes: {
+  serviceKinds: {
     title: string;
     create: string;
     createTitle: string;
@@ -199,7 +199,7 @@ export type MessageSchema = {
     newVersionFrom: string;
     publishDraft: string;
     draftEditor: string;
-    backToRecipe: string;
+    backToServiceKind: string;
     draftEditorNote: string;
     archivedNotice: string;
     immutableNotice: string;
@@ -237,8 +237,8 @@ export type MessageSchema = {
     tightenRulesVersionOnly: string;
     locationDefaultWarning: string;
     editDraft: string;
-    statuses: Record<RecipeStatus, string>;
-    versionStatuses: Record<RecipeVersionStatus, string>;
+    statuses: Record<ServiceKindStatus, string>;
+    versionStatuses: Record<ServiceKindVersionStatus, string>;
   };
   services: {
     title: string;
@@ -254,30 +254,30 @@ export type MessageSchema = {
     notSet: string;
     createTitle: string;
     create: string;
-    chooseRecipe: string;
+    chooseServiceKind: string;
     project: string;
     projectFilter: string;
     allProjects: string;
     projectWindow: string;
     projectWindowOpenStart: string;
     projectWindowOpenEnd: string;
-    recipe: string;
+    serviceKind: string;
     selectPlaceholder: string;
-    chooseRecipeHint: string;
+    chooseServiceKindHint: string;
     noProjectsHint: string;
-    noRecipesHint: string;
+    noServiceKindsHint: string;
     projectUnavailable: string;
-    recipeUnavailable: string;
+    serviceKindUnavailable: string;
     permissionNotice: string;
     serviceDetails: string;
     edit: string;
     editTitle: string;
     save: string;
     valuesTitle: string;
-    recipeVersionTitle: string;
-    recipeVersionDescription: string;
-    recipeVersionNumber: string;
-    recipeVersionRetired: string;
+    serviceKindVersionTitle: string;
+    serviceKindVersionDescription: string;
+    serviceKindVersionNumber: string;
+    serviceKindVersionRetired: string;
     statusActions: string;
     advanceTo: string;
     cancel: string;
@@ -294,8 +294,8 @@ export type MessageSchema = {
     saveRow: string;
     cancelRow: string;
     rowReadOnly: string;
-    recipeColumnsNotice: string;
-    statuses: Record<EventStatus, string>;
+    serviceKindColumnsNotice: string;
+    statuses: Record<ServiceStatus, string>;
   };
   locations: {
     title: string;
@@ -375,13 +375,13 @@ export type MessageSchema = {
     assistantLabel: string;
     timestampLabel: string;
     proposal: {
-      recipeTitle: string;
+      serviceKindTitle: string;
       serviceTitle: string;
       statusValid: string;
       statusNeedsResolution: string;
       statusInvalid: string;
-      recipeKeyLabel: string;
-      recipeVersionLabel: string;
+      serviceKindKeyLabel: string;
+      serviceKindVersionLabel: string;
       projectLabel: string;
       fieldsHeading: string;
       valuesHeading: string;
@@ -399,7 +399,7 @@ export type MessageSchema = {
       organization: string;
       fields: string;
       locations: string;
-      recipes: string;
+      serviceKinds: string;
     };
     adminOnlyTitle: string;
     adminOnlyBody: string;
@@ -448,22 +448,22 @@ export type MessageSchema = {
     fieldLookupTooLarge: string;
     fieldConfigInvalid: string;
     fieldValueInvalid: string;
-    recipeKeyInvalid: string;
-    recipeDescriptionTooLong: string;
-    recipeArchived: string;
-    recipePublishedVersionRequired: string;
-    recipeVersionNotDraft: string;
-    recipeDraftInvalid: string;
-    eventRecipeUnavailable: string;
-    eventFieldsInvalid: string;
-    eventDatesInvalid: string;
-    eventBeforeProjectWindow: string;
-    eventAfterProjectWindow: string;
-    eventProjectReadOnly: string;
-    eventProjectUnavailable: string;
-    eventReadOnly: string;
-    eventTerminal: string;
-    eventStatusTransitionInvalid: string;
+    serviceKindKeyInvalid: string;
+    serviceKindDescriptionTooLong: string;
+    serviceKindArchived: string;
+    serviceKindPublishedVersionRequired: string;
+    serviceKindVersionNotDraft: string;
+    serviceKindDraftInvalid: string;
+    serviceKindUnavailable: string;
+    serviceFieldsInvalid: string;
+    serviceDatesInvalid: string;
+    serviceBeforeProjectWindow: string;
+    serviceAfterProjectWindow: string;
+    serviceProjectReadOnly: string;
+    serviceProjectUnavailable: string;
+    serviceReadOnly: string;
+    serviceTerminal: string;
+    serviceStatusTransitionInvalid: string;
     locationArchived: string;
     locationArchiveRequired: string;
     locationDeleteBlocked: string;
@@ -475,7 +475,7 @@ export type MessageSchema = {
     chat: string;
     projects: string;
     services: string;
-    recipes: string;
+    serviceKinds: string;
     locations: string;
     fields: string;
     settings: string;

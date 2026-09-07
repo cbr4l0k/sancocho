@@ -44,8 +44,8 @@ to edit for every new action. The property that matters (a key not on the list c
 the database) holds either way.
 
 `changedFields`, `clonedFromVersion`, `fieldCount`, `fieldDefinitionId`, `key`, `name`,
-`position`, `previousRole`, `previousStatus`, `recipeVersionId`, `role`, `slug`,
-`sourceEventId`, `status`, `targetEventId`, `type`, `versionNumber`.
+`position`, `previousRole`, `previousStatus`, `serviceKindVersionId`, `role`, `slug`,
+`sourceServiceId`, `status`, `targetServiceId`, `type`, `versionNumber`.
 
 ### Reject versus truncate
 
@@ -57,7 +57,7 @@ real regression the 121-test suite would otherwise have shipped:
 | Caller-influenced values (`name`, `key`, `slug`, …) | **Rejected** over the bound | Every one is already bounded far below 512 by its own validator (names 200, keys 64, slugs 63, the rest code-owned literals or document ids), so exceeding it means domain validation was bypassed |
 | Server-generated summaries (`changedFields`) | **Truncated** to whole comma-separated entries plus `+N more` | Their length tracks how much the user legitimately changed. A 200-field version yields ~6.6 KB; throwing there would roll back a valid edit and blame the user's input for the log's own limit |
 
-The regression: the 512-character cap broke `updateEventFields` whenever roughly 15 or more
+The regression: the 512-character cap broke `updateServiceFields` whenever roughly 15 or more
 field values changed in one call, because that path audits a comma-joined list of 32-character
 ids. No existing test edited more than two values at once.
 

@@ -100,7 +100,7 @@ Enumerated, and every entry is a required negative test in #71 and #87.
 3. Any **other Assignment**, including another Provider's Assignment on the same Service
    and the coordinator's own supply lines.
 4. Any **other Provider's** existence, rates, execution state, or drivers.
-5. **Service Kinds** (the versioned configuration formerly called Event Recipes), their
+5. **Service Kinds** and their versioned configuration, including their
    versions, their fields, or the Field Definition catalogue.
 6. The **Locations** catalogue. It sees the specific locations its own projection names,
    as values on the projection, never as a browsable tenant catalogue.
@@ -135,8 +135,8 @@ the registry declares today, that means the Service's description, `luggage.coun
 carries no `semanticType` at all, whatever it is called.
 
 **There is no tenant-settable per-field audience flag, and there will not be one.**
-`recipeFields.visible` is presentation metadata and is not an authorization rule (see
-[`events.md`](events.md#visibility)); it must never be repurposed as one.
+`serviceKindFields.visible` is presentation metadata and is not an authorization rule (see
+[`services.md`](services.md#visibility)); it must never be repurposed as one.
 
 The trade this makes is symmetric, and both halves are deliberate:
 
@@ -239,8 +239,8 @@ Nowhere, yet. Sequencing:
 
 | Issue | Stage | What it lands |
 | --- | --- | --- |
-| #82 | `stage:M` | The rename: `events → services`, recipe machinery → Service Kinds |
-| #92 | `stage:M` | The new `events` table between Project and Service |
+| #82 | `stage:M` | The Service and Service Kind vocabulary migration |
+| #92 | `stage:M` | The future Event table between Project and Service |
 | #71 | `stage:N` | The `Principal` union, `providerAccessGrants`, the single `requireAssignmentAccess` gate, the closed capability set |
 | #86 | `stage:P` | Provider Organization accounts: invite, verified claim, single-shot link, revocation |
 | #87 | `stage:P` | The portal read surface and the one definition of the semantic projection |

@@ -1,10 +1,10 @@
 import type { fieldConfigValidator } from '@priamo/convex/validators';
-import type { EventFieldValue } from './field-value-form';
+import type { ServiceFieldValue } from './field-value-form';
 type FieldConfig = typeof fieldConfigValidator.type;
-/** Client feedback only; events/model.ts remains the authoritative validation gate. */
+/** Client feedback only; services/model.ts remains the authoritative validation gate. */
 export function serviceFieldProblem(
   config: FieldConfig,
-  value: EventFieldValue | undefined,
+  value: ServiceFieldValue | undefined,
   required: boolean,
   hasDefault: boolean,
 ): 'required' | 'invalid' | undefined {

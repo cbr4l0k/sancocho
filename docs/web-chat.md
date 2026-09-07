@@ -22,10 +22,10 @@ Why, in order of weight:
    UI-only issue would smuggle a schema decision into a ticket that explicitly excludes
    one.
 2. **Nothing here is authoritative data.** Per #33 and I11, the assistant never writes
-   directly; a proposal only becomes a real Recipe or Service once a human accepts it into
+   directly; a proposal only becomes a real Service Kind or Service once a human accepts it into
    the existing form and submits the existing mutation. The conversation transcript itself
    is scratch space for getting there, not a record Priamo needs to keep — the actual
-   product artifacts (recipes, services) are what get persisted, through the paths that
+   product artifacts (service kinds, services) are what get persisted, through the paths that
    already persist them.
 3. **In-memory is honest about what the stub is.** #32 explicitly forbids network calls
    and model-shaped code in the bundle. A conversation that survives reload would imply
@@ -72,7 +72,7 @@ tells the backend, not what the backend must do with it.
 **Note for whoever wires a real model** (also called out in #33): a user prompting in
 Spanish will get Spanish-labeled proposals, and those labels are tenant-authored content
 that gets stored and rendered exactly as produced — never translated on the way into a
-form. That is consistent with the rest of the console (recipe/field/project names are
+form. That is consistent with the rest of the console (service kind/field/project names are
 never translated) but easy to mistake for a bug the first time someone sees it.
 
 ---
@@ -114,7 +114,7 @@ exercised without a flaky stub.
 
 ## 4. Proposal payloads: provisional shapes, not #33's types
 
-The canned bank includes at least one turn per proposal kind (`recipe`, `service`) and
+The canned bank includes at least one turn per proposal kind (`serviceKind`, `service`) and
 covers every review state #33 will need a card for: `valid`, `needsResolution` (an
 unresolved reference — an unknown location, an archived field), and `invalid` (failed
 validation, e.g. a non-`lowerCamelCase` key or a duplicate field key).
@@ -128,7 +128,7 @@ This issue's `ChatProposalPreview` component
 summary — proof that a realistic typed payload flows from backend to UI — and not a
 preview of #33's eventual design.
 
-`ChatRecipeProposalField.dataType` reuses the backend's own `FieldDataType` union rather
+`ChatServiceKindProposalField.dataType` reuses the backend's own `FieldDataType` union rather
 than inventing a parallel vocabulary, and the preview reuses the existing
 `fields.dataTypes` catalogue entries for its labels instead of adding new ones.
 

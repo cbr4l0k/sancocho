@@ -23,12 +23,12 @@ type LocationListFilters = { type?: LocationType; status?: ArchivalStatus; searc
 
 /**
  * Location field values reference the live Location entity. Later Location edits
- * are therefore visible from historical Events. Audit-grade location snapshots
+ * are therefore visible from historical Services. Audit-grade location snapshots
  * would require a future revision system and are deliberately not built here.
  *
  * Accepted consequence of that same choice: archiving a location degrades every
- * already-published (immutable) recipe version that defaults to it, because a
- * default pointing at an archived location fails `validateRecipeFieldDefaultValue`
+ * already-published (immutable) serviceKind version that defaults to it, because a
+ * default pointing at an archived location fails `validateServiceKindFieldDefaultValue`
  * — and there is no unarchive. Deletion is guarded (see `deleteLocation`) so the
  * reference can never dangle; archival is allowed to make it unusable.
  *
@@ -36,7 +36,7 @@ type LocationListFilters = { type?: LocationType; status?: ArchivalStatus; searc
  * defaults while being refused for *new* selections is a revision-system
  * question (per-version location snapshots, or a "referenced by a published
  * version" archival guard). It is deliberately left to that future revision,
- * not decided here: either answer would be guesswork before Events exist (#10).
+ * not decided here: either answer would be guesswork before Services exist (#10).
  */
 
 /**
@@ -171,7 +171,7 @@ export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations
 export async function archiveLocation(ctx: MutationCtx, locationId: Id<'locations'>): Promise<void> {
   const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status === 'archived') return;
-  // Event writes reject archived locations through the shared location-default check (#10).
+  // Service writes reject archived locations through the shared location-default check (#10).
   await ctx.db.patch(locationId, { status: 'archived' });
   await recordAuditEvent(ctx, {
     organizationId: location.organizationId,
@@ -187,17 +187,17 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
   const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status !== 'archived') return invalidInput('locationArchiveRequired', 'Locations must be archived before deletion');
   // Both tables that can reference a location are checked first-hit through
-  // their indexes, mirroring `deleteFieldDefinition`. `eventFieldValues` covers
-  // operational data; `recipeFields.defaultLocationId` covers configuration
+  // their indexes, mirroring `deleteFieldDefinition`. `serviceFieldValues` covers
+  // operational data; `serviceKindFields.defaultLocationId` covers configuration
   // defaults, and it is the structural half of the guarantee: a published
-  // recipe version is immutable (I2), so a default it carries can never be
+  // serviceKind version is immutable (I2), so a default it carries can never be
   // repaired. Deleting the location out from under one would leave a dangling
-  // reference that fails every later event creation and clone-then-publish,
+  // reference that fails every later service creation and clone-then-publish,
   // permanently disabling that version (I3). Archival, not deletion, is the
   // lifecycle path for a location that is still referenced anywhere.
-  const eventReference = await ctx.db.query('eventFieldValues').withIndex('by_location', (q) => q.eq('locationId', locationId)).first();
-  if (eventReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
-  const defaultReference = await ctx.db.query('recipeFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).first();
+  const serviceReference = await ctx.db.query('serviceFieldValues').withIndex('by_location', (q) => q.eq('locationId', locationId)).first();
+  if (serviceReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
+  const defaultReference = await ctx.db.query('serviceKindFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).first();
   if (defaultReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
   await recordAuditEvent(ctx, {
     organizationId: location.organizationId,
@@ -217,21 +217,21 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
  * The single statement of "may this organization store a reference to this
  * location?": it must exist, belong to that organization, and still be active.
  *
- * Both writers of a location reference use it — `recipeFields.defaultValue`
+ * Both writers of a location reference use it — `serviceKindFields.defaultValue`
  * (configuration defaults, at publish and composition) and
- * `eventFieldValues.value` (operational data, through the event validation
+ * `serviceFieldValues.value` (operational data, through the service validation
  * gate) — so a default and a stored value can never be held to different
  * reference rules. The pure `validateFieldValueAgainstConfig` deliberately
  * stops at the discriminator; this is the half that needs a database read.
  *
  * Failure is always the generic error, never a specific one: the location id
  * arrives from the caller, so a foreign, archived, or fabricated id must be
- * indistinguishable or publishing and event creation become tenant probes
+ * indistinguishable or publishing and service creation become tenant probes
  * (I1/I9).
  *
  * It lives here rather than beside the pure value helpers because it is a
  * statement about the location lifecycle, and because the import direction only
- * works this way: `recipes/` and `events/` already depend on `locations/`, and
+ * works this way: `serviceKinds/` and `services/` already depend on `locations/`, and
  * nothing under `locations/` depends on either.
  */
 export async function assertUsableLocation(

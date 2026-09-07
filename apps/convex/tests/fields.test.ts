@@ -19,13 +19,13 @@ const listFieldDefinitions = api.fields.queries.listFieldDefinitions;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 const getFieldDefinitionsByIds = api.fields.queries.getFieldDefinitionsByIds;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
-const createRecipe = api.recipes.mutations.createRecipe;
-const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
-const clonePublishedVersionToDraft = api.recipes.mutations.clonePublishedVersionToDraft;
-const publishRecipeVersion = api.recipes.mutations.publishRecipeVersion;
-const addRecipeField = api.recipes.fields.mutations.addRecipeField;
-const removeRecipeField = api.recipes.fields.mutations.removeRecipeField;
-const listRecipeFields = api.recipes.fields.queries.listRecipeFields;
+const createServiceKind = api.serviceKinds.mutations.createServiceKind;
+const createInitialDraftVersion = api.serviceKinds.mutations.createInitialDraftVersion;
+const clonePublishedVersionToDraft = api.serviceKinds.mutations.clonePublishedVersionToDraft;
+const publishServiceKindVersion = api.serviceKinds.mutations.publishServiceKindVersion;
+const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
+const removeServiceKindField = api.serviceKinds.fields.mutations.removeServiceKindField;
+const listServiceKindFields = api.serviceKinds.fields.queries.listServiceKindFields;
 
 // Built-in creation shares the seed deployment opt-in (it squats a key in every
 // tenant's namespace permanently); several tests below drive it.
@@ -57,11 +57,11 @@ test('field keys are indexed-unique and organization fields cannot shadow built-
   const orgA = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-keys-a' });
   const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'fields-keys-b' });
 
-  await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
-  await expect(t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Duplicate', config: textConfig })).rejects.toMatchObject({
+  await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' });
+  await expect(t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Duplicate', config: textConfig })).rejects.toMatchObject({
     data: { code: 'fieldKeyTaken' },
   });
-  await expect(owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'eventName', label: 'Shadow', config: textConfig })).rejects.toMatchObject({
+  await expect(owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'serviceName', label: 'Shadow', config: textConfig })).rejects.toMatchObject({
     data: { code: 'fieldKeyShadowsBuiltin' },
   });
   await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'pickupNote', label: 'Pickup note', config: textConfig });
@@ -75,7 +75,7 @@ test('renaming a key is held to exactly the rules creation is held to', async ()
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-rename' });
-  await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
+  await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' });
   const taken = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'pickupNote', label: 'Pickup note', config: textConfig });
   const renaming = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'dropoffNote', label: 'Dropoff note', config: textConfig });
 
@@ -83,7 +83,7 @@ test('renaming a key is held to exactly the rules creation is held to', async ()
     data: { code: 'fieldKeyTaken' },
   });
   // Create-then-rename must not be a back door into shadowing a global built-in.
-  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'eventName' })).rejects.toMatchObject({
+  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'serviceName' })).rejects.toMatchObject({
     data: { code: 'fieldKeyShadowsBuiltin' },
   });
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: renaming, key: 'Bad_key' })).rejects.toMatchObject({
@@ -247,7 +247,7 @@ test('built-in fields are not editable through the public field mutations', asyn
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-builtin-guard' });
-  const fieldDefinitionId = await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
+  const fieldDefinitionId = await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' });
 
   // A built-in belongs to no organization, so no membership can ever reach it;
   // the caller learns nothing about it beyond the generic error (I9).
@@ -255,7 +255,7 @@ test('built-in fields are not editable through the public field mutations', asyn
   await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   await t.run(async (ctx) => {
-    expect(await ctx.db.get(fieldDefinitionId)).toMatchObject({ scope: 'builtin', label: 'Event name' });
+    expect(await ctx.db.get(fieldDefinitionId)).toMatchObject({ scope: 'builtin', label: 'Service name' });
   });
 });
 
@@ -319,7 +319,7 @@ test('authoring fields is admin+; planners and operators are refused generically
     await expect(below.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
   }
 
-  // Reading is unaffected: planners compose recipes from this catalogue.
+  // Reading is unaffected: planners compose serviceKinds from this catalogue.
   await expect(planner.client.query(listFieldDefinitions, { organizationId, paginationOpts: { numItems: 10, cursor: null } })).resolves.toMatchObject({
     page: [{ _id: fieldDefinitionId }],
   });
@@ -329,7 +329,7 @@ test('semantic compatibility is enforced on creation and update, and absent sema
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-semantics' });
-  await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'badDate', label: 'Bad date', semanticType: 'eventDate', config: textConfig })).rejects.toMatchObject({
+  await expect(owner.client.mutation(createFieldDefinition, { organizationId, key: 'badDate', label: 'Bad date', semanticType: 'serviceDate', config: textConfig })).rejects.toMatchObject({
     data: { code: 'fieldSemanticIncompatible' },
   });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'plainText', label: 'Plain text', config: textConfig });
@@ -341,10 +341,10 @@ test('semantic compatibility is enforced on creation and update, and absent sema
 
   // Adding a semantic type the current config cannot carry, and changing the
   // config out from under an existing semantic type, are both incompatible.
-  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventDate' })).rejects.toMatchObject({
+  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'serviceDate' })).rejects.toMatchObject({
     data: { code: 'fieldSemanticIncompatible' },
   });
-  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventName' })).resolves.toBeNull();
+  await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'serviceName' })).resolves.toBeNull();
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({
     data: { code: 'fieldSemanticIncompatible' },
   });
@@ -352,7 +352,7 @@ test('semantic compatibility is enforced on creation and update, and absent sema
     const field = await ctx.db.get(fieldDefinitionId);
     if (field === null) throw new Error('Expected field');
     // Capabilities come from the code-owned registry, never from tenant data.
-    expect(capabilitiesForField(field)).toEqual(['eventName']);
+    expect(capabilitiesForField(field)).toEqual(['serviceName']);
     expect(field.config).toEqual(textConfig);
   });
 });
@@ -401,16 +401,16 @@ test('a field bound to a counting semantic type must declare an integer number c
     fieldDefinitionId, config: { kind: 'number' },
   })).rejects.toMatchObject({ data: { code: 'fieldSemanticIncompatible' } });
 
-  // A semantic type with no `requiresInteger` flag (e.g. `eventName`, a
+  // A semantic type with no `requiresInteger` flag (e.g. `serviceName`, a
   // `text` type) is entirely unaffected by this rule.
   await expect(owner.client.mutation(createFieldDefinition, {
-    organizationId, key: 'plainTitle', label: 'Title', semanticType: 'eventName', config: textConfig,
+    organizationId, key: 'plainTitle', label: 'Title', semanticType: 'serviceName', config: textConfig,
   })).resolves.not.toBeNull();
 });
 
 /**
  * `getTrackedFieldDefinitions{ForType}` resolves a field list on every
- * `createEventFromRecipe`/`updateEventFields`/`changeEventStatus` call.
+ * `createServiceFromServiceKind`/`updateServiceFields`/`changeServiceStatus` call.
  * Without a cap, an org binding an unusually large number of custom fields
  * to the same tracked semantic type could push those writes past Convex's
  * per-transaction read limit — service creation would break, not a
@@ -467,14 +467,14 @@ test('published and retired references preserve field meaning while allowing pre
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-immutable' });
 
   for (const status of ['published', 'retired'] as const) {
-    const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: `${status}Title`, label: 'Event title', semanticType: 'eventName', config: textConfig });
+    const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: `${status}Title`, label: 'Service title', semanticType: 'serviceName', config: textConfig });
     // Both references are built through the real composition/publish path, so
     // the rule is proven against states the API can actually reach.
-    await referenceFieldFromRecipeVersion(owner, organizationId, fieldDefinitionId, status);
+    await referenceFieldFromServiceKindVersion(owner, organizationId, fieldDefinitionId, status);
 
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, key: 'changedTitle' })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, config: longTextConfig })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
-    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'eventDescription' })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
+    await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, semanticType: 'serviceDescription' })).rejects.toMatchObject({ data: { code: IMMUTABLE_MEANING } });
     await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId, label: 'Renamed', description: 'Still interpretable' })).resolves.toBeNull();
   }
 });
@@ -485,12 +485,12 @@ test('a read-modify-write client may resubmit an unchanged referenced field', as
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-echo' });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
     organizationId,
-    key: 'eventTitle',
-    label: 'Event title',
-    semanticType: 'eventName',
+    key: 'serviceTitle',
+    label: 'Service title',
+    semanticType: 'serviceName',
     config: { kind: 'text', minLength: 1, maxLength: 80 },
   });
-  await referenceFieldFromRecipeVersion(owner, organizationId, fieldDefinitionId, 'published');
+  await referenceFieldFromServiceKindVersion(owner, organizationId, fieldDefinitionId, 'published');
 
   // Immutability is gated on what actually changes, not on which arguments the
   // client happened to send back — including a config whose keys arrive in a
@@ -498,14 +498,14 @@ test('a read-modify-write client may resubmit an unchanged referenced field', as
   await expect(
     owner.client.mutation(updateFieldDefinition, {
       fieldDefinitionId,
-      key: 'eventTitle',
-      semanticType: 'eventName',
+      key: 'serviceTitle',
+      semanticType: 'serviceName',
       config: { maxLength: 80, kind: 'text', minLength: 1 },
-      label: 'Event headline',
+      label: 'Service headline',
     }),
   ).resolves.toBeNull();
   await t.run(async (ctx) => {
-    expect(await ctx.db.get(fieldDefinitionId)).toMatchObject({ label: 'Event headline', key: 'eventTitle' });
+    expect(await ctx.db.get(fieldDefinitionId)).toMatchObject({ label: 'Service headline', key: 'serviceTitle' });
     const audits = await ctx.db
       .query('auditEvents')
       .withIndex('by_org_entity', (q) => q.eq('organizationId', organizationId).eq('entityType', 'fieldDefinition').eq('entityId', fieldDefinitionId))
@@ -520,7 +520,7 @@ test('draft-only references allow config edits; references block deletion but no
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-references' });
   const referenced = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'draftField', label: 'Draft', config: textConfig });
-  await referenceFieldFromRecipeVersion(owner, organizationId, referenced, 'draft');
+  await referenceFieldFromServiceKindVersion(owner, organizationId, referenced, 'draft');
   await expect(owner.client.mutation(updateFieldDefinition, { fieldDefinitionId: referenced, config: longTextConfig })).resolves.toBeNull();
   await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId: referenced })).rejects.toMatchObject({ data: { code: 'fieldDeleteBlocked' } });
   await expect(owner.client.mutation(archiveFieldDefinition, { fieldDefinitionId: referenced })).resolves.toBeNull();
@@ -532,13 +532,13 @@ test('draft-only references allow config edits; references block deletion but no
   });
 });
 
-test('stored event values also protect a field from deletion', async () => {
+test('stored service values also protect a field from deletion', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-values' });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'valuedField', label: 'Valued', config: textConfig });
-  // No recipe row points at this field; only operational data does (#10).
-  await insertEventFieldValueReference(t, organizationId, fieldDefinitionId);
+  // No serviceKind row points at this field; only operational data does (#10).
+  await insertServiceFieldValueReference(t, organizationId, fieldDefinitionId);
 
   await expect(owner.client.mutation(deleteFieldDefinition, { fieldDefinitionId })).rejects.toMatchObject({
     data: { code: 'fieldDeleteBlocked' },
@@ -580,7 +580,7 @@ test('listFieldDefinitions is membership-gated, tenant-scoped, and paginated', a
   const orgA = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-list-a' });
   const orgB = await owner.client.mutation(createOrganization, { name: 'B', slug: 'fields-list-b' });
   await owner.client.mutation(addMember, { organizationId: orgA, userId: member.userId, role: 'viewer' });
-  await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
+  await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' });
   const ours = [
     await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'oneField', label: 'One', config: textConfig }),
     await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'twoField', label: 'Two', config: textConfig }),
@@ -609,7 +609,7 @@ test('listBuiltinFieldDefinitions serves every authenticated user and only built
   const owner = await provision(t, 'owner');
   const outsider = await provision(t, 'outsider');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-builtins' });
-  const builtinId = await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' });
+  const builtinId = await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' });
   await owner.client.mutation(createFieldDefinition, { organizationId, key: 'tenantField', label: 'Tenant', config: textConfig });
 
   // Built-ins are the shared catalog: membership in nothing is still enough.
@@ -629,7 +629,7 @@ test('field-definition search covers labels and keys while preserving scopes and
   const labelMatch = await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'arrivalPoint', label: 'Arrival terminal', config: textConfig });
   const keyMatch = await owner.client.mutation(createFieldDefinition, { organizationId: orgA, key: 'pickupWindow', label: 'Pickup window', config: textConfig });
   await owner.client.mutation(createFieldDefinition, { organizationId: orgB, key: 'foreignNeedle', label: 'Foreign needle', config: textConfig });
-  const builtin = await t.mutation(createBuiltinFieldDefinition, { key: 'builtinNeedle', label: 'Builtin needle', config: textConfig, semanticType: 'eventName' });
+  const builtin = await t.mutation(createBuiltinFieldDefinition, { key: 'builtinNeedle', label: 'Builtin needle', config: textConfig, semanticType: 'serviceName' });
 
   await expect(member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage, search: 'terminal' })).resolves.toMatchObject({ page: [{ _id: labelMatch }] });
   await expect(member.client.query(listFieldDefinitions, { organizationId: orgA, paginationOpts: firstPage, search: 'pickupwindow' })).resolves.toMatchObject({ page: [{ _id: keyMatch }] });
@@ -644,9 +644,9 @@ test('listBuiltinFieldDefinitions walks the catalogue by cursor without repeatin
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-builtin-pages' });
   const builtins = [
-    await t.mutation(createBuiltinFieldDefinition, { key: 'eventName', label: 'Event name', config: textConfig, semanticType: 'eventName' }),
-    await t.mutation(createBuiltinFieldDefinition, { key: 'eventDescription', label: 'Event description', config: longTextConfig, semanticType: 'eventDescription' }),
-    await t.mutation(createBuiltinFieldDefinition, { key: 'eventDay', label: 'Event day', config: { kind: 'date' }, semanticType: 'eventDate' }),
+    await t.mutation(createBuiltinFieldDefinition, { key: 'serviceName', label: 'Service name', config: textConfig, semanticType: 'serviceName' }),
+    await t.mutation(createBuiltinFieldDefinition, { key: 'serviceDescription', label: 'Service description', config: longTextConfig, semanticType: 'serviceDescription' }),
+    await t.mutation(createBuiltinFieldDefinition, { key: 'serviceDay', label: 'Service day', config: { kind: 'date' }, semanticType: 'serviceDate' }),
   ];
   // A tenant field sits on the same table; the index prefix is what keeps it out.
   await owner.client.mutation(createFieldDefinition, { organizationId, key: 'tenantField', label: 'Tenant', config: textConfig });
@@ -672,10 +672,10 @@ test('getFieldDefinitionsByIds resolves organization definitions and built-ins',
   const owner = await provision(t, 'owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'A', slug: 'fields-by-ids' });
   const builtin = await t.mutation(createBuiltinFieldDefinition, {
-    key: 'eventName',
-    label: 'Event name',
+    key: 'serviceName',
+    label: 'Service name',
     config: textConfig,
-    semanticType: 'eventName',
+    semanticType: 'serviceName',
   });
   const ours = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'pickupNote', label: 'Pickup note', config: textConfig });
 
@@ -826,60 +826,60 @@ test('field lifecycle writes attributed audit rows naming what changed', async (
 });
 
 /**
- * Composes `fieldDefinitionId` into a recipe version and drives that version to
+ * Composes `fieldDefinitionId` into a serviceKind version and drives that version to
  * `status` through the ordinary public API — compose, publish, and (for
  * `retired`) publish a successor.
  *
  * It used to be a direct `ctx.db` insert, which fabricated a state the API
- * cannot produce (a published version hanging under a still-draft recipe) and
+ * cannot produce (a published version hanging under a still-draft serviceKind) and
  * therefore proved the immutability rules only against an impossible shape.
  *
  * The `retired` case needs the successor to compose a DECOY field rather than
  * this one: if v2 kept the field, the definition would still be referenced by a
  * PUBLISHED version and the retired half of the rule would never be exercised.
  */
-async function referenceFieldFromRecipeVersion(
+async function referenceFieldFromServiceKindVersion(
   owner: Awaited<ReturnType<typeof provision>>,
   organizationId: Id<'organizations'>,
   fieldDefinitionId: Id<'fieldDefinitions'>,
   status: 'draft' | 'published' | 'retired',
 ) {
-  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key: `recipeFor${status}`, name: 'Fixture recipe' });
-  const versionId = await owner.client.mutation(createInitialDraftVersion, { recipeId });
-  await owner.client.mutation(addRecipeField, { recipeVersionId: versionId, fieldDefinitionId, required: false, visible: true });
+  const serviceKindId = await owner.client.mutation(createServiceKind, { organizationId, key: `serviceKindFor${status}`, name: 'Fixture serviceKind' });
+  const versionId = await owner.client.mutation(createInitialDraftVersion, { serviceKindId });
+  await owner.client.mutation(addServiceKindField, { serviceKindVersionId: versionId, fieldDefinitionId, required: false, visible: true });
   if (status === 'draft') return versionId;
-  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: versionId });
+  await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: versionId });
   if (status === 'published') return versionId;
 
   const decoy = await owner.client.mutation(createFieldDefinition, { organizationId, key: `decoyFor${status}`, label: 'Decoy', config: textConfig });
-  const successorId = await owner.client.mutation(clonePublishedVersionToDraft, { recipeId });
-  for (const row of await owner.client.query(listRecipeFields, { recipeVersionId: successorId })) {
-    await owner.client.mutation(removeRecipeField, { recipeFieldId: row._id });
+  const successorId = await owner.client.mutation(clonePublishedVersionToDraft, { serviceKindId });
+  for (const row of await owner.client.query(listServiceKindFields, { serviceKindVersionId: successorId })) {
+    await owner.client.mutation(removeServiceKindField, { serviceKindFieldId: row._id });
   }
-  await owner.client.mutation(addRecipeField, { recipeVersionId: successorId, fieldDefinitionId: decoy, required: false, visible: true });
+  await owner.client.mutation(addServiceKindField, { serviceKindVersionId: successorId, fieldDefinitionId: decoy, required: false, visible: true });
   // Publishing the successor retires v1 in the same transaction, so the field
   // under test is now referenced by a retired version and by nothing else.
-  await owner.client.mutation(publishRecipeVersion, { recipeVersionId: successorId });
+  await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: successorId });
   return versionId;
 }
 
 /**
- * Models operational data referencing a field while no recipe row does: the
- * fixture's recipeFields row deliberately points at a decoy field, so only
- * eventFieldValues.by_field can protect the field under test.
+ * Models operational data referencing a field while no serviceKind row does: the
+ * fixture's serviceKindFields row deliberately points at a decoy field, so only
+ * serviceFieldValues.by_field can protect the field under test.
  */
-async function insertEventFieldValueReference(
+async function insertServiceFieldValueReference(
   t: ReturnType<typeof convexTest>,
   organizationId: Id<'organizations'>,
   fieldDefinitionId: Id<'fieldDefinitions'>,
 ) {
   await t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', { organizationId, name: 'Fixture project', status: 'draft' });
-    const recipeId = await ctx.db.insert('eventRecipes', { organizationId, key: 'valuesRecipe', name: 'Fixture recipe', status: 'draft' });
-    const recipeVersionId = await ctx.db.insert('recipeVersions', { organizationId, recipeId, versionNumber: 1, status: 'published' });
+    const serviceKindId = await ctx.db.insert('serviceKinds', { organizationId, key: 'valuesServiceKind', name: 'Fixture serviceKind', status: 'draft' });
+    const serviceKindVersionId = await ctx.db.insert('serviceKindVersions', { organizationId, serviceKindId, versionNumber: 1, status: 'published' });
     const decoyFieldId = await ctx.db.insert('fieldDefinitions', { scope: 'organization', organizationId, key: 'decoyField', label: 'Decoy', status: 'active', config: textConfig });
-    const recipeFieldId = await ctx.db.insert('recipeFields', { organizationId, recipeVersionId, fieldDefinitionId: decoyFieldId, position: 1, required: false, visible: true, config: textConfig });
-    const eventId = await ctx.db.insert('events', { organizationId, projectId, recipeId, recipeVersionId, name: 'Fixture event', status: 'draft', startsAt: 0 });
-    await ctx.db.insert('eventFieldValues', { organizationId, eventId, recipeFieldId, fieldDefinitionId, value: { kind: 'text', value: 'stored' } });
+    const serviceKindFieldId = await ctx.db.insert('serviceKindFields', { organizationId, serviceKindVersionId, fieldDefinitionId: decoyFieldId, position: 1, required: false, visible: true, config: textConfig });
+    const serviceId = await ctx.db.insert('services', { organizationId, projectId, serviceKindId, serviceKindVersionId, name: 'Fixture service', status: 'draft', startsAt: 0 });
+    await ctx.db.insert('serviceFieldValues', { organizationId, serviceId, serviceKindFieldId, fieldDefinitionId, value: { kind: 'text', value: 'stored' } });
   });
 }

@@ -186,7 +186,7 @@ On DigitalOcean App Platform, create the service from the image pushed in sectio
 ## 6. Seeding and the destructive tenant reset
 
 **`PRIAMO_ENABLE_SEED` gates `seed/reset:resetTenantOperations`**, which
-hard-deletes an organization's events, recipes, and locations, and the seed
+hard-deletes an organization's services, service kinds, and locations, and the seed
 mutations beside it. Leave the flag unset on production. If you ever need it,
 turn it on and off again in the same sitting:
 

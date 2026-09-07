@@ -17,13 +17,13 @@ const deleteLocation = api.locations.mutations.deleteLocation;
 const getLocation = api.locations.queries.getLocation;
 const listLocations = api.locations.queries.listLocations;
 const createField = api.fields.mutations.createFieldDefinition;
-const createRecipe = api.recipes.mutations.createRecipe;
-const createDraft = api.recipes.mutations.createInitialDraftVersion;
-const publishVersion = api.recipes.mutations.publishRecipeVersion;
-const cloneVersion = api.recipes.mutations.clonePublishedVersionToDraft;
-const addRecipeField = api.recipes.fields.mutations.addRecipeField;
-const updateRecipeField = api.recipes.fields.mutations.updateRecipeField;
-const listRecipeFields = api.recipes.fields.queries.listRecipeFields;
+const createServiceKind = api.serviceKinds.mutations.createServiceKind;
+const createDraft = api.serviceKinds.mutations.createInitialDraftVersion;
+const publishVersion = api.serviceKinds.mutations.publishServiceKindVersion;
+const cloneVersion = api.serviceKinds.mutations.clonePublishedVersionToDraft;
+const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
+const updateServiceKindField = api.serviceKinds.fields.mutations.updateServiceKindField;
+const listServiceKindFields = api.serviceKinds.fields.queries.listServiceKindFields;
 
 const inaccessible = 'notFoundOrInaccessible';
 const unauthenticated = 'unauthenticated';
@@ -54,30 +54,30 @@ async function makeLocation(t: SchemaTest) {
 }
 
 /**
- * Inserts the smallest event graph that makes `locationId` a live
- * `eventFieldValues.locationId` reference, and returns the value row's id so a
+ * Inserts the smallest service graph that makes `locationId` a live
+ * `serviceFieldValues.locationId` reference, and returns the value row's id so a
  * test can remove exactly that reference again. Written directly to the tables
- * because event creation is issue #10; the mirror column is set here the way
+ * because service creation is issue #10; the mirror column is set here the way
  * `locationIdFromValue` will set it there.
  */
-async function referenceLocationFromEventValue(
+async function referenceLocationFromServiceValue(
   t: SchemaTest,
   organizationId: Id<'organizations'>,
   locationId: Id<'locations'>,
-): Promise<Id<'eventFieldValues'>> {
+): Promise<Id<'serviceFieldValues'>> {
   return t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', { organizationId, name: 'Reference project', status: 'draft' });
-    const recipeId = await ctx.db.insert('eventRecipes', { organizationId, key: 'referenceRecipe', name: 'Reference recipe', status: 'draft' });
-    const recipeVersionId = await ctx.db.insert('recipeVersions', { organizationId, recipeId, versionNumber: 1, status: 'draft' });
+    const serviceKindId = await ctx.db.insert('serviceKinds', { organizationId, key: 'referenceServiceKind', name: 'Reference serviceKind', status: 'draft' });
+    const serviceKindVersionId = await ctx.db.insert('serviceKindVersions', { organizationId, serviceKindId, versionNumber: 1, status: 'draft' });
     const fieldDefinitionId = await ctx.db.insert('fieldDefinitions', { scope: 'organization', organizationId, key: 'site', label: 'Site', status: 'active', config: { kind: 'location' } });
-    const recipeFieldId = await ctx.db.insert('recipeFields', { organizationId, recipeVersionId, fieldDefinitionId, position: 0, required: false, visible: true, config: { kind: 'location' } });
-    const eventId = await ctx.db.insert('events', { organizationId, projectId, recipeId, recipeVersionId, name: 'Reference event', status: 'draft', startsAt: 0 });
-    return ctx.db.insert('eventFieldValues', { organizationId, eventId, recipeFieldId, fieldDefinitionId, value: { kind: 'location', locationId }, locationId });
+    const serviceKindFieldId = await ctx.db.insert('serviceKindFields', { organizationId, serviceKindVersionId, fieldDefinitionId, position: 0, required: false, visible: true, config: { kind: 'location' } });
+    const serviceId = await ctx.db.insert('services', { organizationId, projectId, serviceKindId, serviceKindVersionId, name: 'Reference service', status: 'draft', startsAt: 0 });
+    return ctx.db.insert('serviceFieldValues', { organizationId, serviceId, serviceKindFieldId, fieldDefinitionId, value: { kind: 'location', locationId }, locationId });
   });
 }
 
-/** A location-typed recipe field on a fresh draft version of its own recipe. */
-async function makeLocationRecipeField(
+/** A location-typed serviceKind field on a fresh draft version of its own serviceKind. */
+async function makeLocationServiceKindField(
   t: SchemaTest,
   owner: Awaited<ReturnType<typeof provision>>,
   organizationId: Id<'organizations'>,
@@ -85,15 +85,15 @@ async function makeLocationRecipeField(
   locationId: Id<'locations'>,
 ) {
   const fieldDefinitionId = await owner.client.mutation(createField, { organizationId, key: `${key}Site`, label: `${key} site`, config: { kind: 'location' } });
-  const recipeId = await owner.client.mutation(createRecipe, { organizationId, key, name: `${key} plan` });
-  const recipeVersionId = await owner.client.mutation(createDraft, { recipeId });
-  const recipeFieldId = await owner.client.mutation(addRecipeField, { recipeVersionId, fieldDefinitionId, required: false, visible: true, defaultValue: { kind: 'location', locationId } });
-  return { fieldDefinitionId, recipeId, recipeVersionId, recipeFieldId };
+  const serviceKindId = await owner.client.mutation(createServiceKind, { organizationId, key, name: `${key} plan` });
+  const serviceKindVersionId = await owner.client.mutation(createDraft, { serviceKindId });
+  const serviceKindFieldId = await owner.client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId, required: false, visible: true, defaultValue: { kind: 'location', locationId } });
+  return { fieldDefinitionId, serviceKindId, serviceKindVersionId, serviceKindFieldId };
 }
 
 function countDefaultReferences(t: SchemaTest, locationId: Id<'locations'>): Promise<number> {
   return t.run(async (ctx) => {
-    const rows = await ctx.db.query('recipeFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).collect();
+    const rows = await ctx.db.query('serviceKindFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).collect();
     return rows.length;
   });
 }
@@ -409,11 +409,11 @@ test('archival is idempotent, keeps the location readable, and locks every updat
   expect(audits.find((audit) => audit.action === 'location.archived')?.metadata).toMatchObject({ previousStatus: 'active' });
 });
 
-test('deletion requires archival and no indexed event reference, and audits lifecycle writes', async () => {
+test('deletion requires archival and no indexed service reference, and audits lifecycle writes', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: 'locationArchiveRequired' } });
-  const valueId = await referenceLocationFromEventValue(t, organizationId, locationId);
+  const valueId = await referenceLocationFromServiceValue(t, organizationId, locationId);
   await owner.client.mutation(archiveLocation, { locationId });
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
@@ -440,8 +440,8 @@ test('deletion requires archival and no indexed event reference, and audits life
 test('a location a published version defaults to cannot be deleted, and clones carry the guard', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, locationId } = await makeLocation(t);
-  const { recipeId, recipeVersionId } = await makeLocationRecipeField(t, owner, organizationId, 'published', locationId);
-  await owner.client.mutation(publishVersion, { recipeVersionId });
+  const { serviceKindId, serviceKindVersionId } = await makeLocationServiceKindField(t, owner, organizationId, 'published', locationId);
+  await owner.client.mutation(publishVersion, { serviceKindVersionId });
   expect(await countDefaultReferences(t, locationId)).toBe(1);
 
   // Nothing but the published version's immutable default references it, and
@@ -450,31 +450,31 @@ test('a location a published version defaults to cannot be deleted, and clones c
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
   // A clone re-derives the mirror, so the cloned draft is guarded too.
-  const clonedVersionId = await owner.client.mutation(cloneVersion, { recipeId });
+  const clonedVersionId = await owner.client.mutation(cloneVersion, { serviceKindId });
   expect(await countDefaultReferences(t, locationId)).toBe(2);
-  const clonedFields = await owner.client.query(listRecipeFields, { recipeVersionId: clonedVersionId });
+  const clonedFields = await owner.client.query(listServiceKindFields, { serviceKindVersionId: clonedVersionId });
   expect(clonedFields.map((field) => field.defaultLocationId)).toEqual([locationId]);
   const clonedField = clonedFields[0];
-  if (clonedField === undefined) throw new Error('cloned recipe field missing');
+  if (clonedField === undefined) throw new Error('cloned serviceKind field missing');
 
   // Clearing the clone's default leaves the published version's reference, which
   // still holds the location.
-  await owner.client.mutation(updateRecipeField, { recipeFieldId: clonedField._id, defaultValue: null });
+  await owner.client.mutation(updateServiceKindField, { serviceKindFieldId: clonedField._id, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(1);
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 });
 
-test('clearing a draft recipe field default releases the location for deletion', async () => {
+test('clearing a draft serviceKind field default releases the location for deletion', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId } = await makeLocation(t);
   const locationId = await owner.client.mutation(createLocation, { organizationId, name: 'Draft default', type: 'hotel' });
-  const { recipeFieldId } = await makeLocationRecipeField(t, owner, organizationId, 'draft', locationId);
+  const { serviceKindFieldId } = await makeLocationServiceKindField(t, owner, organizationId, 'draft', locationId);
   expect(await countDefaultReferences(t, locationId)).toBe(1);
 
   await owner.client.mutation(archiveLocation, { locationId });
   await expect(owner.client.mutation(deleteLocation, { locationId })).rejects.toMatchObject({ data: { code: referenced } });
 
-  await owner.client.mutation(updateRecipeField, { recipeFieldId, defaultValue: null });
+  await owner.client.mutation(updateServiceKindField, { serviceKindFieldId, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(0);
   await expect(owner.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
 });

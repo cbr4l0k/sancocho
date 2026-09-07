@@ -13,12 +13,12 @@ const provisionExistingOrganizations = internal.seed.mutations.provisionExisting
 
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
-const archiveRecipe = api.recipes.mutations.archiveRecipe;
-const createRecipe = api.recipes.mutations.createRecipe;
-const createInitialDraftVersion = api.recipes.mutations.createInitialDraftVersion;
-const getRecipeVersion = api.recipes.queries.getRecipeVersion;
-const getRecipe = api.recipes.queries.getRecipe;
-const listPublishedRecipes = api.recipes.queries.listPublishedRecipes;
+const archiveServiceKind = api.serviceKinds.mutations.archiveServiceKind;
+const createServiceKind = api.serviceKinds.mutations.createServiceKind;
+const createInitialDraftVersion = api.serviceKinds.mutations.createInitialDraftVersion;
+const getServiceKindVersion = api.serviceKinds.queries.getServiceKindVersion;
+const getServiceKind = api.serviceKinds.queries.getServiceKind;
+const listPublishedServiceKinds = api.serviceKinds.queries.listPublishedServiceKinds;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 const listFieldDefinitions = api.fields.queries.listFieldDefinitions;
 const getFieldDefinitionsByIds = api.fields.queries.getFieldDefinitionsByIds;
@@ -44,7 +44,7 @@ const expectedCompositions = new Map<string, readonly [string, boolean][]>([
   ['shuttleService', [['pickupLocation', true], ['destination', true], ['passengerCount', true], ['notes', false]]],
 ]);
 
-test('a new organization atomically receives the shared catalogue and four published starter recipes', async () => {
+test('a new organization atomically receives the shared catalogue and four published starter serviceKinds', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'starter-owner');
   const organizationId = await owner.mutation(createOrganization, { name: 'Starter', slug: 'starter-provisioning' });
@@ -57,24 +57,24 @@ test('a new organization atomically receives the shared catalogue and four publi
   ]);
   expect(await owner.query(listFieldDefinitions, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
 
-  const recipes = await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-  expect(recipes.page.map((entry) => [entry.recipe.key, entry.recipe.name]).sort((left, right) => String(left[0]).localeCompare(String(right[0])))).toEqual([
+  const serviceKinds = await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+  expect(serviceKinds.page.map((entry) => [entry.serviceKind.key, entry.serviceKind.name]).sort((left, right) => String(left[0]).localeCompare(String(right[0])))).toEqual([
     ['airportArrivalTransfer', 'Airport Arrival Transfer'],
     ['airportDepartureTransfer', 'Airport Departure Transfer'],
     ['pointToPointTransfer', 'Point to Point Transfer'],
     ['shuttleService', 'Shuttle Service'],
   ]);
-  expect(recipes.page.every((entry) => entry.publishedVersion.versionNumber === 1 && entry.publishedVersion.publishedAt !== undefined)).toBe(true);
+  expect(serviceKinds.page.every((entry) => entry.publishedVersion.versionNumber === 1 && entry.publishedVersion.publishedAt !== undefined)).toBe(true);
 
-  for (const entry of recipes.page) {
-    const version = await owner.query(getRecipeVersion, { recipeVersionId: entry.publishedVersion._id });
-    const definitionIds = version.recipeFields.map((field) => field.fieldDefinitionId);
+  for (const entry of serviceKinds.page) {
+    const version = await owner.query(getServiceKindVersion, { serviceKindVersionId: entry.publishedVersion._id });
+    const definitionIds = version.serviceKindFields.map((field) => field.fieldDefinitionId);
     const definitions = await owner.query(getFieldDefinitionsByIds, { organizationId, fieldDefinitionIds: definitionIds });
     const keys = new Map(definitions.map((definition) => [definition._id, definition.key]));
-    expect(version.recipeFields
+    expect(version.serviceKindFields
       .sort((left, right) => left.position - right.position)
       .map((field) => [keys.get(field.fieldDefinitionId), field.required]))
-      .toEqual(expectedCompositions.get(entry.recipe.key));
+      .toEqual(expectedCompositions.get(entry.serviceKind.key));
   }
 });
 
@@ -90,32 +90,32 @@ test('catalogue provisioning is shared across organizations and remains opaque t
     expect(await ctx.db.query('fieldDefinitions').withIndex('by_org_key', (q) => q.eq('organizationId', undefined)).collect()).toHaveLength(9);
   });
 
-  const firstRecipes = await owner.query(listPublishedRecipes, { organizationId: firstOrganizationId, paginationOpts: firstPage });
-  expect((await owner.query(listPublishedRecipes, { organizationId: secondOrganizationId, paginationOpts: firstPage })).page).toHaveLength(4);
-  const recipeId = firstRecipes.page[0]?.recipe._id;
-  if (recipeId === undefined) throw new Error('Expected a provisioned starter recipe');
-  await expect(outsider.query(listPublishedRecipes, { organizationId: firstOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
-  await expect(outsider.query(getRecipe, { recipeId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  const firstServiceKinds = await owner.query(listPublishedServiceKinds, { organizationId: firstOrganizationId, paginationOpts: firstPage });
+  expect((await owner.query(listPublishedServiceKinds, { organizationId: secondOrganizationId, paginationOpts: firstPage })).page).toHaveLength(4);
+  const serviceKindId = firstServiceKinds.page[0]?.serviceKind._id;
+  if (serviceKindId === undefined) throw new Error('Expected a provisioned starter serviceKind');
+  await expect(outsider.query(listPublishedServiceKinds, { organizationId: firstOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.query(getServiceKind, { serviceKindId })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(outsider.query(listFieldDefinitions, { organizationId: firstOrganizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
-test('listPublishedRecipes omits archived and draft-only recipes and is membership-gated', async () => {
+test('listPublishedServiceKinds omits archived and draft-only serviceKinds and is membership-gated', async () => {
   const t = convexTest(schema, modules);
   const owner = await provision(t, 'picker-owner');
   const outsider = await provision(t, 'picker-outsider');
   const organizationId = await owner.mutation(createOrganization, { name: 'Picker', slug: 'picker-provisioning' });
-  const before = await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-  const archived = before.page.find((entry) => entry.recipe.key === 'shuttleService');
-  if (archived === undefined) throw new Error('Expected the provisioned shuttle recipe');
-  await owner.mutation(archiveRecipe, { recipeId: archived.recipe._id });
-  const draftRecipeId = await owner.mutation(createRecipe, { organizationId, key: 'draftOnlyTransfer', name: 'Draft only transfer' });
-  await owner.mutation(createInitialDraftVersion, { recipeId: draftRecipeId });
+  const before = await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+  const archived = before.page.find((entry) => entry.serviceKind.key === 'shuttleService');
+  if (archived === undefined) throw new Error('Expected the provisioned shuttle serviceKind');
+  await owner.mutation(archiveServiceKind, { serviceKindId: archived.serviceKind._id });
+  const draftServiceKindId = await owner.mutation(createServiceKind, { organizationId, key: 'draftOnlyTransfer', name: 'Draft only transfer' });
+  await owner.mutation(createInitialDraftVersion, { serviceKindId: draftServiceKindId });
 
-  const after = await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-  expect(after.page.map((entry) => entry.recipe.key).sort()).toEqual([
+  const after = await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+  expect(after.page.map((entry) => entry.serviceKind.key).sort()).toEqual([
     'airportArrivalTransfer', 'airportDepartureTransfer', 'pointToPointTransfer',
   ]);
-  await expect(outsider.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('the backfill provisions organizations that predate starter provisioning, idempotently', async () => {
@@ -124,27 +124,27 @@ test('the backfill provisions organizations that predate starter provisioning, i
   const organizationId = await owner.mutation(createOrganization, { name: 'Legacy', slug: 'legacy-provisioning' });
 
   // Emulate a tenant created before `createOrganization` provisioned anything by
-  // stripping its recipes back out at the table level. Raw writes manufacture
+  // stripping its serviceKinds back out at the table level. Raw writes manufacture
   // the pre-change state only; every assertion below still reads through the
   // ordinary public query.
   await t.run(async (ctx) => {
-    for (const version of await ctx.db.query('recipeVersions').collect()) await ctx.db.delete(version._id);
-    for (const field of await ctx.db.query('recipeFields').collect()) await ctx.db.delete(field._id);
-    for (const recipe of await ctx.db.query('eventRecipes').collect()) await ctx.db.delete(recipe._id);
+    for (const version of await ctx.db.query('serviceKindVersions').collect()) await ctx.db.delete(version._id);
+    for (const field of await ctx.db.query('serviceKindFields').collect()) await ctx.db.delete(field._id);
+    for (const serviceKind of await ctx.db.query('serviceKinds').collect()) await ctx.db.delete(serviceKind._id);
   });
-  expect(await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
+  expect(await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
 
   process.env[seedOptInVariable] = 'true';
   try {
     await t.mutation(provisionExistingOrganizations, {});
-    const restored = await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
-    expect(restored.page.map((entry) => entry.recipe.key).sort()).toEqual([
+    const restored = await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
+    expect(restored.page.map((entry) => entry.serviceKind.key).sort()).toEqual([
       'airportArrivalTransfer', 'airportDepartureTransfer', 'pointToPointTransfer', 'shuttleService',
     ]);
 
-    // Idempotent: a second sweep must not duplicate a recipe or a version.
+    // Idempotent: a second sweep must not duplicate a serviceKind or a version.
     await t.mutation(provisionExistingOrganizations, {});
-    const again = await owner.query(listPublishedRecipes, { organizationId, paginationOpts: firstPage });
+    const again = await owner.query(listPublishedServiceKinds, { organizationId, paginationOpts: firstPage });
     expect(again.page.length).toBe(4);
   } finally {
     delete process.env[seedOptInVariable];

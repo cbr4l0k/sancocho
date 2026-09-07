@@ -1,9 +1,9 @@
 import type {
   archivalStatusValidator,
-  eventStatusValidator,
+  serviceStatusValidator,
   projectStatusValidator,
-  recipeStatusValidator,
-  recipeVersionStatusValidator,
+  serviceKindStatusValidator,
+  serviceKindVersionStatusValidator,
 } from '@priamo/convex/validators';
 
 /**
@@ -13,7 +13,7 @@ import type {
  *
  * - `shape` encodes the **lifecycle phase**. It is the colour-blind-safe channel
  *   and is deliberately shared across sets: a hollow ring means "provisional"
- *   whether the thing is a project, a recipe, a version or a service.
+ *   whether the thing is a project, a service kind, a version or a service.
  * - `tone` encodes the **disposition** — how the operator should feel about it.
  *   `completed` and `archived` are both terminal (square), but one is teal and
  *   the other is grey.
@@ -45,9 +45,9 @@ export type StatusShape =
 export type StatusTone = 'mute' | 'hold' | 'go' | 'live' | 'done' | 'stop' | 'shelf';
 
 export type ProjectStatus = typeof projectStatusValidator.type;
-export type RecipeStatus = typeof recipeStatusValidator.type;
-export type RecipeVersionStatus = typeof recipeVersionStatusValidator.type;
-export type EventStatus = typeof eventStatusValidator.type;
+export type ServiceKindStatus = typeof serviceKindStatusValidator.type;
+export type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
+export type ServiceStatus = typeof serviceStatusValidator.type;
 export type ArchivalStatus = typeof archivalStatusValidator.type;
 
 /**
@@ -57,9 +57,9 @@ export type ArchivalStatus = typeof archivalStatusValidator.type;
  */
 export type StatusLabelKey =
   | `projects.statuses.${ProjectStatus}`
-  | `recipes.statuses.${RecipeStatus}`
-  | `recipes.versionStatuses.${RecipeVersionStatus}`
-  | `services.statuses.${EventStatus}`
+  | `serviceKinds.statuses.${ServiceKindStatus}`
+  | `serviceKinds.versionStatuses.${ServiceKindVersionStatus}`
+  | `services.statuses.${ServiceStatus}`
   | `fields.statuses.${ArchivalStatus}`;
 
 /** Everything the interface needs to render one status, resolved by key. */
@@ -76,19 +76,19 @@ export const projectStatusTokens = {
   archived: { tone: 'shelf', shape: 'square', labelKey: 'projects.statuses.archived' },
 } as const satisfies Record<ProjectStatus, StatusToken>;
 
-export const recipeStatusTokens = {
-  draft: { tone: 'mute', shape: 'ring', labelKey: 'recipes.statuses.draft' },
-  active: { tone: 'go', shape: 'dot', labelKey: 'recipes.statuses.active' },
-  archived: { tone: 'shelf', shape: 'square', labelKey: 'recipes.statuses.archived' },
-} as const satisfies Record<RecipeStatus, StatusToken>;
+export const serviceKindStatusTokens = {
+  draft: { tone: 'mute', shape: 'ring', labelKey: 'serviceKinds.statuses.draft' },
+  active: { tone: 'go', shape: 'dot', labelKey: 'serviceKinds.statuses.active' },
+  archived: { tone: 'shelf', shape: 'square', labelKey: 'serviceKinds.statuses.archived' },
+} as const satisfies Record<ServiceKindStatus, StatusToken>;
 
-export const recipeVersionStatusTokens = {
-  draft: { tone: 'mute', shape: 'ring', labelKey: 'recipes.versionStatuses.draft' },
-  published: { tone: 'go', shape: 'dot', labelKey: 'recipes.versionStatuses.published' },
-  retired: { tone: 'shelf', shape: 'square', labelKey: 'recipes.versionStatuses.retired' },
-} as const satisfies Record<RecipeVersionStatus, StatusToken>;
+export const serviceKindVersionStatusTokens = {
+  draft: { tone: 'mute', shape: 'ring', labelKey: 'serviceKinds.versionStatuses.draft' },
+  published: { tone: 'go', shape: 'dot', labelKey: 'serviceKinds.versionStatuses.published' },
+  retired: { tone: 'shelf', shape: 'square', labelKey: 'serviceKinds.versionStatuses.retired' },
+} as const satisfies Record<ServiceKindVersionStatus, StatusToken>;
 
-/** Backend `Event`; the interface calls it a Service. */
+/** Backend `Service`; the interface calls it a Service. */
 export const serviceStatusTokens = {
   draft: { tone: 'mute', shape: 'ring', labelKey: 'services.statuses.draft' },
   planned: { tone: 'hold', shape: 'bar', labelKey: 'services.statuses.planned' },
@@ -96,7 +96,7 @@ export const serviceStatusTokens = {
   active: { tone: 'live', shape: 'pulse', labelKey: 'services.statuses.active' },
   completed: { tone: 'done', shape: 'square', labelKey: 'services.statuses.completed' },
   cancelled: { tone: 'stop', shape: 'cross', labelKey: 'services.statuses.cancelled' },
-} as const satisfies Record<EventStatus, StatusToken>;
+} as const satisfies Record<ServiceStatus, StatusToken>;
 
 /** Shared by field definitions and locations, which archive rather than delete. */
 export const archivalStatusTokens = {
@@ -105,28 +105,28 @@ export const archivalStatusTokens = {
 } as const satisfies Record<ArchivalStatus, StatusToken>;
 
 /** The set a chip belongs to. Chosen at the call site, never inferred. */
-export type StatusKind = 'project' | 'recipe' | 'recipeVersion' | 'service' | 'archival';
+export type StatusKind = 'project' | 'serviceKind' | 'serviceKindVersion' | 'service' | 'archival';
 
 /**
- * Discriminated on `kind`, so `<StatusChip kind="recipe" status="planned" />`
+ * Discriminated on `kind`, so `<StatusChip kind="serviceKind" status="planned" />`
  * — a real and easy mistake, since several sets share member names — will not
  * compile.
  */
 export type StatusSelection =
   | { kind: 'project'; status: ProjectStatus }
-  | { kind: 'recipe'; status: RecipeStatus }
-  | { kind: 'recipeVersion'; status: RecipeVersionStatus }
-  | { kind: 'service'; status: EventStatus }
+  | { kind: 'serviceKind'; status: ServiceKindStatus }
+  | { kind: 'serviceKindVersion'; status: ServiceKindVersionStatus }
+  | { kind: 'service'; status: ServiceStatus }
   | { kind: 'archival'; status: ArchivalStatus };
 
 export function statusToken(selection: StatusSelection): StatusToken {
   switch (selection.kind) {
     case 'project':
       return projectStatusTokens[selection.status];
-    case 'recipe':
-      return recipeStatusTokens[selection.status];
-    case 'recipeVersion':
-      return recipeVersionStatusTokens[selection.status];
+    case 'serviceKind':
+      return serviceKindStatusTokens[selection.status];
+    case 'serviceKindVersion':
+      return serviceKindVersionStatusTokens[selection.status];
     case 'service':
       return serviceStatusTokens[selection.status];
     case 'archival':
@@ -145,19 +145,19 @@ export function statusToken(selection: StatusSelection): StatusToken {
 type CoversExactly<Listed extends Union, Union> = [Union] extends [Listed] ? true : never;
 
 export const projectStatuses = ['draft', 'active', 'completed', 'archived'] as const;
-export const recipeStatuses = ['draft', 'active', 'archived'] as const;
-export const recipeVersionStatuses = ['draft', 'published', 'retired'] as const;
+export const serviceKindStatuses = ['draft', 'active', 'archived'] as const;
+export const serviceKindVersionStatuses = ['draft', 'published', 'retired'] as const;
 export const serviceStatuses = ['draft', 'planned', 'confirmed', 'active', 'completed', 'cancelled'] as const;
 export const archivalStatuses = ['active', 'archived'] as const;
 
 const _projectStatusesInSync: CoversExactly<(typeof projectStatuses)[number], ProjectStatus> = true;
-const _recipeStatusesInSync: CoversExactly<(typeof recipeStatuses)[number], RecipeStatus> = true;
-const _recipeVersionStatusesInSync: CoversExactly<(typeof recipeVersionStatuses)[number], RecipeVersionStatus> = true;
-const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], EventStatus> = true;
+const _serviceKindStatusesInSync: CoversExactly<(typeof serviceKindStatuses)[number], ServiceKindStatus> = true;
+const _serviceKindVersionStatusesInSync: CoversExactly<(typeof serviceKindVersionStatuses)[number], ServiceKindVersionStatus> = true;
+const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], ServiceStatus> = true;
 const _archivalStatusesInSync: CoversExactly<(typeof archivalStatuses)[number], ArchivalStatus> = true;
 
 void _projectStatusesInSync;
-void _recipeStatusesInSync;
-void _recipeVersionStatusesInSync;
+void _serviceKindStatusesInSync;
+void _serviceKindVersionStatusesInSync;
 void _serviceStatusesInSync;
 void _archivalStatusesInSync;

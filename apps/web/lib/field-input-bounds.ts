@@ -11,7 +11,7 @@ type FieldConfig = typeof fieldConfigValidator.type;
  * after the fact; nothing was telling the CONTROL about them, so a field
  * configured to accept 1–8 passengers offered an unbounded number spinner and a
  * date field with a range offered the whole calendar. These are affordances
- * only — the recipe snapshot is enforced by `fields/values.ts` server-side, and
+ * only — the service kind snapshot is enforced by `fields/values.ts` server-side, and
  * a browser that ignores them changes nothing.
  */
 export type FieldInputBounds = {

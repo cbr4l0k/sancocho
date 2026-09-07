@@ -2,7 +2,7 @@ import type { fieldConfigValidator } from '@priamo/convex/validators';
 
 import { formatDate, formatDateTime, formatNumber, formatTime } from '@/i18n/formats';
 import type { CanonicalLocale } from '@/i18n/locales';
-import type { EventFieldValue } from '@/lib/field-value-form';
+import type { ServiceFieldValue } from '@/lib/field-value-form';
 
 type FieldConfig = typeof fieldConfigValidator.type;
 
@@ -11,12 +11,12 @@ type FieldConfig = typeof fieldConfigValidator.type;
  *
  * It lives here rather than inside a surface because two surfaces now render
  * the same values — the detail screen's value list and the Services table's
- * recipe-driven columns — and because the table uses this string as the
+ * service-kind-driven columns — and because the table uses this string as the
  * column's accessor value, so searching and sorting a column agree with what
  * the cell displays instead of operating on a discriminated union nobody can
  * compare.
  *
- * `config` is the event's IMMUTABLE recipe snapshot, which is what resolves a
+ * `config` is the service's IMMUTABLE service kind snapshot, which is what resolves a
  * select's option ids to labels: an option renamed in the live field definition
  * must not silently retitle a historical value (I3). Option labels and location
  * names are tenant-authored text, rendered exactly as stored and never
@@ -25,7 +25,7 @@ type FieldConfig = typeof fieldConfigValidator.type;
 export function formatFieldValue(
   locale: CanonicalLocale,
   config: FieldConfig,
-  value: EventFieldValue,
+  value: ServiceFieldValue,
   /** Shown when a reference cannot be named — the id itself is not information. */
   fallback: string,
   locationName?: string | undefined,

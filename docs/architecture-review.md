@@ -77,7 +77,7 @@ apps/convex/
     validators/                 # shared Convex validators: roles, statuses, dataTypes,
                                 # temporal formats, validation-rule shapes, field-value union
     auth/                       # ensureUser, current-user queries
-    organizations/  projects/  fields/  recipes/  events/
+    organizations/  projects/  fields/  serviceKinds/  services/
     locations/  relationships/  audit/  seed/  internal/
     # each domain dir: queries.ts, mutations.ts, model.ts (domain logic, not exported as API)
   tests/                        # vitest + convex-test, one file per domain concern
@@ -93,8 +93,8 @@ functions, so they are reusable and unit-testable through the public surface.
 ## 4. Schema & index strategy
 
 Tables (issue #3 names): `users`, `organizations`, `organizationMemberships`,
-`projects`, `fieldDefinitions`, `eventRecipes`, `recipeVersions`, `recipeFields`,
-`events`, `eventFieldValues`, `locations`, `eventRelationships`, `auditEvents`.
+`projects`, `fieldDefinitions`, `serviceKinds`, `serviceKindVersions`, `serviceKindFields`,
+`services`, `serviceFieldValues`, `locations`, `serviceRelationships`, `auditEvents`.
 
 Decisions:
 
@@ -102,7 +102,7 @@ Decisions:
   server-side from the parent entity in the same mutation (I4) — never accepted from
   the client. This gives every tenant list an indexed access path and makes
   ownership checks one indexed read instead of a join walk. The stored entity graph
-  (e.g. event → recipeVersion → recipe) remains the authority; the denormalized
+  (e.g. service → serviceKindVersion → service kind) remains the authority; the denormalized
   field is an optimization that must agree with it, and creation code derives it,
   never copies it from args.
 - Index naming: `by_<field>[_<field>...]`, fields in index order.
@@ -114,13 +114,13 @@ Decisions:
 | organizationMemberships | `by_org_user` (unique), `by_user` |
 | projects | `by_org` |
 | fieldDefinitions | `by_org_key` (unique per org; built-ins indexed with `organizationId: undefined`), `by_org` |
-| eventRecipes | `by_org_key` (unique), `by_org` |
-| recipeVersions | `by_recipe_version` (unique), `by_recipe_status` (one draft / one published) |
-| recipeFields | `by_version_field` (unique), `by_version` (ordered fetch) |
-| events | `by_project`, `by_project_startsAt`, `by_recipeVersion` (reference checks) |
-| eventFieldValues | `by_event_field` (unique), `by_field` (reference checks) |
+| serviceKinds | `by_org_key` (unique), `by_org` |
+| serviceKindVersions | `by_serviceKind_version` (unique), `by_serviceKind_status` (one draft / one published) |
+| serviceKindFields | `by_version_field` (unique), `by_version` (ordered fetch) |
+| services | `by_project`, `by_project_startsAt`, `by_serviceKindVersion` (reference checks) |
+| serviceFieldValues | `by_service_field` (unique), `by_field` (reference checks) |
 | locations | `by_org` |
-| eventRelationships | `by_source_target_type` (unique), `by_target` |
+| serviceRelationships | `by_source_target_type` (unique), `by_target` |
 | auditEvents | `by_org` (creation-time ordered) |
 
 Built-in field definitions store no `organizationId`; the "custom keys must not
@@ -165,30 +165,30 @@ decisions. Clerk organization/role claims, if present, are ignored.
 - Data types: `text, longText, number, boolean, date, datetime, time, select,
   multiSelect, location`. **No `reference` data type** and no validator shape that
   could smuggle one in.
-- **Historical immutability trigger = first reference by a published recipe
+- **Historical immutability trigger = first reference by a published service kind
   version.** Enforced at mutation time: updating `key`/`dataType`/`semanticType`/
-  capability-relevant config checks (indexed, via `recipeFields.by_field` on the
+  capability-relevant config checks (indexed, via `serviceKindFields.by_field` on the
   definition + version status) whether any published version references the field;
   if so, only `label`/`description` edits pass. Cheap check, no scan.
-- **Select options are snapshotted into the recipe field config when the row is
+- **Select options are snapshotted into the service kind field config when the row is
   composed into a draft version, and the snapshot is coherence-validated at
   publish** (issue #7's option-semantics decision, refined by #8): composing a
-  draft copies the definition's config, and a recipe may narrow it (tighter
+  draft copies the definition's config, and a service kind may narrow it (tighter
   bounds, a subset of options) for its own use (#9). Publishing then verifies the
   snapshot still agrees with the definition — same config kind, and snapshot
   option ids still a subset of the definition's — so a stale snapshot fails
   publishing instead of shipping dead options. From publish onward the row is
   immutable, so later edits to the field definition's options can never change
-  what a historical event validates against (I3). The field definition's own
+  what a historical service validates against (I3). The field definition's own
   option list is only the source for *future* drafts.
 
-## 8. Recipe & version lifecycle
+## 8. Service Kind & version lifecycle
 
-- `eventRecipes`: `draft|active|archived`. `recipeVersions`: `draft|published|retired`,
-  at most one draft **and at most one published** per recipe (`by_recipe_status`
+- `serviceKinds`: `draft|active|archived`. `serviceKindVersions`: `draft|published|retired`,
+  at most one draft **and at most one published** per service kind (`by_serviceKind_status`
   read-before-write).
 - Version numbers are server-assigned in the publishing/creating transaction:
-  highest existing via `by_recipe_version` descending + 1 (I7). Clients never send
+  highest existing via `by_serviceKind_version` descending + 1 (I7). Clients never send
   version numbers; the validator simply has no such argument.
 - Publishing (single mutation): authorize → verify draft state → validate the full
   field configuration (field definitions exist and belong to the org, semantics
@@ -197,34 +197,34 @@ decisions. Clerk organization/role claims, if present, are ignored.
   draft `published` → write audit event. All-or-nothing under the mutation's
   transaction.
 - Published/retired versions are immutable (I2): mutations that touch
-  `recipeVersions`/`recipeFields` first check `status === "draft"`; there is no
+  `serviceKindVersions`/`serviceKindFields` first check `status === "draft"`; there is no
   status-editing mutation — status only changes through lifecycle operations.
-- New events may only reference the currently published version; existing events
-  keep their `recipeVersionId` forever and validate against it even after
+- New services may only reference the currently published version; existing services
+  keep their `serviceKindVersionId` forever and validate against it even after
   retirement (I3).
 
-## 9. Events & typed field values
+## 9. Services & typed field values
 
-- `events` holds universal properties only: project, recipeVersion (+ derived
-  recipe/org), name, status (`draft|planned|confirmed|active|completed|cancelled`),
-  canonical `startsAt` (absolute ms timestamp — never redefined by recipe datetime
+- `services` holds universal properties only: project, serviceKindVersion (+ derived
+  service kind/org), name, status (`draft|planned|confirmed|active|completed|cancelled`),
+  canonical `startsAt` (absolute ms timestamp — never redefined by service kind datetime
   fields), optional `endsAt >= startsAt`.
-- `eventFieldValues`: one row per event+field (`by_event_field` unique), carrying
-  `eventId`, `recipeFieldId`, `fieldDefinitionId`, and a **discriminated-union
+- `serviceFieldValues`: one row per service+field (`by_service_field` unique), carrying
+  `serviceId`, `serviceKindFieldId`, `fieldDefinitionId`, and a **discriminated-union
   value validator** — one branch per data type
   (`{ kind: "number", value: v.number() }`, `{ kind: "date", value: YYYY-MM-DD
   string }`, `{ kind: "location", locationId: v.id("locations") }`, …). Impossible
   states are unrepresentable; there is no string/JSON fallback branch (I8). The
   union lives in `validators/` and is shared by schema, mutation args, and tests.
-  A separate table (vs. embedding in the event doc) is chosen because the
+  A separate table (vs. embedding in the service doc) is chosen because the
   uniqueness constraint, per-field reference checks, and field-level updates all
-  want indexed rows; one event's values are a bounded set, so fetching them with
-  `.collect()` via `by_event_field` is fine (I6 exemption).
-- Validation is centralized in `events/model.ts`:
-  `validateEventAgainstRecipe(version, fields, values)` used by both
-  `createEventFromRecipe` and `updateEventFields` — the latter loads the event's
+  want indexed rows; one service's values are a bounded set, so fetching them with
+  `.collect()` via `by_service_field` is fine (I6 exemption).
+- Validation is centralized in `services/model.ts`:
+  `validateServiceAgainstServiceKind(version, fields, values)` used by both
+  `createServiceFromServiceKind` and `updateServiceFields` — the latter loads the service's
   *original* version, draft/retired or not (I3). Discriminator must match the field
-  definition's data type; rules come from the recipe field's snapshotted config;
+  definition's data type; rules come from the service kind field's snapshotted config;
   location values must resolve to a location in the same org.
 
 ## 10. Uniqueness & concurrency
@@ -250,9 +250,9 @@ facts. Only `startsAt`/`endsAt` (and audit timestamps) are absolute instants.
 
 Org-owned reference data: `name`, optional address text, optional coordinates
 validated to `lat ∈ [-90, 90]`, `lng ∈ [-180, 180]`. Location field values hold a
-`locationId` **reference** (semantics per issue #11): events see the current
+`locationId` **reference** (semantics per issue #11): services see the current
 location record. Consequently locations are archivable but never hard-deletable
-while referenced (checked via `eventFieldValues.by_field`-style indexed lookup).
+while referenced (checked via `serviceFieldValues.by_field`-style indexed lookup).
 No geocoding/normalization (non-goal).
 
 ## 13. Deletion, archival & audit
@@ -271,7 +271,7 @@ No geocoding/normalization (non-goal).
 ## 14. Implementation order
 
 Issue order #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9 → #11 → #10 completes the Stage B
-vertical slice (sign-in → user → org → project → fields → recipe → publish →
-typed event → retrieval), then #12/#13 (Stage C), #14 (D), #15/#16 (E). Each issue
+vertical slice (sign-in → user → org → project → fields → service kind → publish →
+typed service → retrieval), then #12/#13 (Stage C), #14 (D), #15/#16 (E). Each issue
 ends with codegen → typecheck → test, an `invariant-auditor` pass on the diff, and
 a closing summary comment.

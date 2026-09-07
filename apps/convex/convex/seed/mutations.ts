@@ -4,7 +4,7 @@ import { v } from 'convex/values';
 import { ensureAuthenticatedUser } from '../auth/model';
 import { internalMutation, type MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
-import { createEventFromRecipe } from '../events/model';
+import { createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { conflict, invalidInput } from '../lib/errors';
 import { normalizeSearchText } from '../lib/search';
@@ -12,7 +12,7 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { addMember, createOrganization } from '../organizations/model';
 import { createProject } from '../projects/model';
-import { provisionStarterRecipes } from '../recipes/builtins';
+import { provisionStarterServiceKinds } from '../serviceKinds/builtins';
 
 /**
  * Identity accepted by both seed entry points, in provider terms rather than
@@ -58,16 +58,16 @@ const defaultSeedOwner: SeedOwner = {
  */
 
 const demonstrationOrganization = { name: 'Priamo Demonstration', slug: 'priamo-demo' };
-const demonstrationRecipe = { key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer' };
+const demonstrationServiceKind = { key: 'airportArrivalTransfer', name: 'Airport Arrival Transfer' };
 const demonstrationProjectName = 'Airport Arrival Transfers';
-const demonstrationEventName = 'LH441 arrival transfer';
+const demonstrationServiceName = 'LH441 arrival transfer';
 
 /**
  * 2026-06-15T15:40:00Z — the 18:40 local arrival of the demonstration flight at
  * Istanbul Airport (UTC+3), stated as a complete absolute timestamp.
  *
  * Deliberately not midnight and deliberately not a bare wall-clock time: the
- * demonstration exists partly to show the rule that an Event's `startsAt` is an
+ * demonstration exists partly to show the rule that an Service's `startsAt` is an
  * absolute instant, and a wall-clock `18:40` alone could not express it. Written
  * as a literal (not `Date.now()`-relative) so every seeded deployment and every
  * test run agree on the value.
@@ -117,15 +117,15 @@ export const seedBuiltinFieldDefinitions = internalMutation({
 
 /**
  * Gives organizations created *before* starter provisioning existed the same
- * built-in catalogue and starter recipes a new organization now receives.
+ * built-in catalogue and starter serviceKinds a new organization now receives.
  *
  * `createOrganization` provisions inside its own transaction, so only tenants
- * that predate that change can be missing them; `provisionStarterRecipes` is
+ * that predate that change can be missing them; `provisionStarterServiceKinds` is
  * idempotent per organization, so an already-provisioned tenant is skipped by
  * its own indexed key lookup rather than duplicated.
  *
  * Provisioning is performed as each organization's own owner — resolved from
- * the membership rows — so the recipe models prove a real member's role instead
+ * the membership rows — so the serviceKind models prove a real member's role instead
  * of receiving a bootstrap exception, exactly as they do at creation time. An
  * organization whose owner cannot be resolved is skipped rather than forced.
  *
@@ -151,7 +151,7 @@ export const provisionExistingOrganizations = internalMutation({
       if (owner === undefined) continue;
       const user = await ctx.db.get(owner.userId);
       if (user === null) continue;
-      await provisionStarterRecipes(
+      await provisionStarterServiceKinds(
         withSeedIdentity(ctx, { issuer: user.authProvider, subject: user.authSubject }),
         organization._id,
         fieldIds,
@@ -162,28 +162,28 @@ export const provisionExistingOrganizations = internalMutation({
 });
 
 /**
- * Backfills the publish time for pre-column recipe versions from the
+ * Backfills the publish time for pre-column serviceKind versions from the
  * transactionally-recorded publication audit event. This is deliberately
  * guarded by the seed deployment opt-in: it is a deployment-level
  * administrative operation in the same risk class, and internalMutation alone
  * does not guard against someone running `convex run --prod`.
  */
-export const backfillRecipeVersionPublishedAt = internalMutation({
+export const backfillServiceKindVersionPublishedAt = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     assertSeedingEnabled();
-    const versions = await ctx.db.query('recipeVersions').collect();
+    const versions = await ctx.db.query('serviceKindVersions').collect();
     for (const version of versions) {
       if ((version.status !== 'published' && version.status !== 'retired') || version.publishedAt !== undefined) continue;
       // This is an entity-scoped indexed read, never an audit-table scan.
       const audits = await ctx.db
         .query('auditEvents')
         .withIndex('by_org_entity', (q) =>
-          q.eq('organizationId', version.organizationId).eq('entityType', 'recipeVersion').eq('entityId', version._id),
+          q.eq('organizationId', version.organizationId).eq('entityType', 'serviceKindVersion').eq('entityId', version._id),
         )
         .collect();
-      const published = audits.find((audit) => audit.action === 'recipeVersion.published');
+      const published = audits.find((audit) => audit.action === 'serviceKindVersion.published');
       if (published !== undefined) await ctx.db.patch(version._id, { publishedAt: published._creationTime });
     }
     return null;
@@ -225,11 +225,11 @@ function requireFieldId(ids: ReadonlyMap<BuiltinFieldKey, Id<'fieldDefinitions'>
 
 /**
  * Seeds one complete, deterministic vertical slice: organization → project →
- * locations → provisioned recipe → published version 1 → typed Event, every step through
+ * locations → provisioned serviceKind → published version 1 → typed Service, every step through
  * the ordinary domain models.
  *
- * Idempotent: a re-run stops at the recipe's indexed org/key lookup, so it can
- * never create a second project, location, version or event. The owner of an
+ * Idempotent: a re-run stops at the serviceKind's indexed org/key lookup, so it can
+ * never create a second project, location, version or service. The owner of an
  * already-seeded organization is not changed by a re-run with a different
  * `owner` — use `grantDemoMembership` to add a person to an existing demo.
  */
@@ -247,14 +247,14 @@ export const seedDemonstrationData = internalMutation({
       .withIndex('by_slug', (q) => q.eq('slug', demonstrationOrganization.slug))
       .unique();
     if (existingOrganization !== null) {
-      const existingRecipe = await ctx.db
-        .query('eventRecipes')
-        .withIndex('by_org_key', (q) => q.eq('organizationId', existingOrganization._id).eq('key', demonstrationRecipe.key))
+      const existingServiceKind = await ctx.db
+        .query('serviceKinds')
+        .withIndex('by_org_key', (q) => q.eq('organizationId', existingOrganization._id).eq('key', demonstrationServiceKind.key))
         .unique();
-      if (existingRecipe !== null) {
-        // Provisioning always supplies this recipe; the named project is the
+      if (existingServiceKind !== null) {
+        // Provisioning always supplies this serviceKind; the named project is the
         // seed's durable completion marker. A tenant that merely chose the demo
-        // slug has the starter recipe too, but must never receive demo data.
+        // slug has the starter serviceKind too, but must never receive demo data.
         const projects = await ctx.db
           .query('projects')
           .withIndex('by_org', (q) => q.eq('organizationId', existingOrganization._id))
@@ -286,23 +286,23 @@ export const seedDemonstrationData = internalMutation({
       latitude: 41.0122,
       longitude: 28.976,
     });
-    const recipe = await ctx.db
-      .query('eventRecipes')
-      .withIndex('by_org_key', (q) => q.eq('organizationId', organizationId).eq('key', demonstrationRecipe.key))
+    const serviceKind = await ctx.db
+      .query('serviceKinds')
+      .withIndex('by_org_key', (q) => q.eq('organizationId', organizationId).eq('key', demonstrationServiceKind.key))
       .unique();
-    if (recipe === null) return conflict();
+    if (serviceKind === null) return conflict();
     const publishedVersion = await ctx.db
-      .query('recipeVersions')
-      .withIndex('by_recipe_status', (q) => q.eq('recipeId', recipe._id).eq('status', 'published'))
+      .query('serviceKindVersions')
+      .withIndex('by_serviceKind_status', (q) => q.eq('serviceKindId', serviceKind._id).eq('status', 'published'))
       .unique();
     if (publishedVersion === null) return conflict();
     // Every composed field carries a value, so the demonstration exercises all
     // three text-ish semantic types (text, longText) and both location fields
     // end to end, not just the required four.
-    await createEventFromRecipe(seededCtx, {
+    await createServiceFromServiceKind(seededCtx, {
       projectId,
-      recipeVersionId: publishedVersion._id,
-      name: demonstrationEventName,
+      serviceKindVersionId: publishedVersion._id,
+      name: demonstrationServiceName,
       startsAt: demonstrationStartsAt,
       values: [
         { fieldDefinitionId: requireFieldId(fieldIds, 'pickupLocation'), value: { kind: 'location', locationId: airportId } },

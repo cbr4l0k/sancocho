@@ -1,11 +1,11 @@
-import type { EventFieldValue } from './field-value-form';
+import type { ServiceFieldValue } from './field-value-form';
 
-export type EventFieldValueChange<FieldDefinitionId> = {
+export type ServiceFieldValueChange<FieldDefinitionId> = {
   fieldDefinitionId: FieldDefinitionId;
-  value: EventFieldValue | null;
+  value: ServiceFieldValue | null;
 };
 
-export function sameEventFieldValue(left: EventFieldValue | undefined, right: EventFieldValue | undefined): boolean {
+export function sameServiceFieldValue(left: ServiceFieldValue | undefined, right: ServiceFieldValue | undefined): boolean {
   if (left === undefined || right === undefined || left.kind !== right.kind) return left === right;
   switch (left.kind) {
     case 'text':
@@ -37,13 +37,13 @@ export function sameEventFieldValue(left: EventFieldValue | undefined, right: Ev
 
 /**
  * Omitting a field preserves it. Only a value that differs from the loaded
- * event is submitted; clearing an existing value is represented by null.
+ * service is submitted; clearing an existing value is represented by null.
  */
-export function changedEventFieldValues<FieldDefinitionId>(
-  original: ReadonlyMap<FieldDefinitionId, EventFieldValue>,
-  edited: ReadonlyMap<FieldDefinitionId, EventFieldValue | undefined>,
-): EventFieldValueChange<FieldDefinitionId>[] {
-  return changedValues(original, edited, sameEventFieldValue);
+export function changedServiceFieldValues<FieldDefinitionId>(
+  original: ReadonlyMap<FieldDefinitionId, ServiceFieldValue>,
+  edited: ReadonlyMap<FieldDefinitionId, ServiceFieldValue | undefined>,
+): ServiceFieldValueChange<FieldDefinitionId>[] {
+  return changedValues(original, edited, sameServiceFieldValue);
 }
 
 export function changedValues<FieldDefinitionId, Value>(
