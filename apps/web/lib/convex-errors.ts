@@ -90,6 +90,14 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   eventTerminal: 'errors.generic',
   eventStatusTransitionInvalid: 'errors.generic',
   eventDeleteBlocked: 'errors.generic',
+  // No console surface inputs money yet (#85 budget, #73 rate cards). These are
+  // arithmetic/validation guards; promote to specific messages when a money input exists.
+  moneyAmountNotFinite: 'errors.generic',
+  moneyAmountNotInteger: 'errors.generic',
+  moneyAmountNegative: 'errors.generic',
+  moneyAmountOutOfRange: 'errors.generic',
+  moneyQuantityInvalid: 'errors.generic',
+  moneyArithmeticOverflow: 'errors.generic',
   relationshipSelfReference: 'errors.relationshipSelfReference',
   fieldNameInvalid: 'errors.entityNameInvalid',
   fieldKeyInvalid: 'errors.fieldKeyInvalid',

@@ -8,6 +8,13 @@ export const errorCodes = [
   'conflict',
   'entityNameInvalid',
   'searchTermTooLong',
+  // Money input and checked arithmetic.
+  'moneyAmountNotFinite',
+  'moneyAmountNotInteger',
+  'moneyAmountNegative',
+  'moneyAmountOutOfRange',
+  'moneyQuantityInvalid',
+  'moneyArithmeticOverflow',
   // Organization, project, and relationship input.
   'organizationSlugInvalid',
   'invitationEmailInvalid',

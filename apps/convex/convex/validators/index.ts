@@ -26,6 +26,14 @@ export const roleValidator = v.union(
   v.literal('viewer'),
 );
 
+/** Code-owned currency vocabulary for every persisted money value. */
+export const currencyValidator = v.union(
+  v.literal('COP'),
+  v.literal('USD'),
+  v.literal('EUR'),
+  v.literal('MXN'),
+);
+
 export const serviceKindStatusValidator = v.union(
   v.literal('draft'),
   v.literal('active'),
