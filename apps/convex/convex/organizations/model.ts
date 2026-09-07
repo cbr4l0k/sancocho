@@ -218,6 +218,20 @@ export async function removeMember(ctx: MutationCtx, membershipId: Id<'organizat
   if (isOwner(membership.role)) {
     await requireAnotherOwner(ctx, membership.organizationId, membership._id);
   }
+  // Removal is deliberately NOT guarded by `events.accountableUserId`.
+  // Membership is the only principal arm today, so this is the tenant's only
+  // access-revocation path, and a data-dependent refusal would make revocation
+  // impossible rather than merely inconvenient: `archiveProject` is terminal
+  // and freezes every Event write beneath it, so an Event naming a departing
+  // member under an archived Project could never be reassigned, never be
+  // deleted, and would pin that member's access forever.
+  //
+  // Instead `accountableUserId` follows the same rule as every other stored
+  // reference here (see `assertUsableLocation`): it is proven at WRITE time and
+  // the stored value survives afterwards. Nothing dangles — `users` rows are
+  // never deleted — and an archived Event keeps the true record of who was
+  // accountable while it ran. The one thing a former member cannot be is
+  // newly assigned, which `assertCurrentMember` enforces on every write.
   await ctx.db.delete(membership._id);
   await recordAuditEvent(ctx, {
     organizationId: membership.organizationId,

@@ -130,7 +130,18 @@ export const projectDocValidator = v.object({
   ...projectFields,
 });
 
-/** Shared persisted and returned shape for the Project-owned Event layer. */
+/**
+ * Shared persisted and returned shape for the Project-owned Event layer.
+ *
+ * The four optional reference/budget columns carry the shared context an Event
+ * holds once on behalf of every Service under it. Each is validated in
+ * `events/model.ts` against the Event's own organization before it is stored:
+ * a venue Location (same organization, `type: 'venue'`), a client Cost Centre
+ * (same organization), an accountable User (a current member of that
+ * organization), and a budget expressed as integer minor units plus its
+ * currency. `budgetAmount` and `budgetCurrency` are stored both-or-neither —
+ * the schema cannot express that pairing, so the model owns it.
+ */
 export const eventFields = {
   organizationId: v.id('organizations'),
   projectId: v.id('projects'),
@@ -138,6 +149,14 @@ export const eventFields = {
   status: eventStatusValidator,
   startsAt: v.number(),
   endsAt: v.optional(v.number()),
+  venueLocationId: v.optional(v.id('locations')),
+  clientCostCentreId: v.optional(v.id('costCentres')),
+  // Integer minor units (#83's `assertMinorUnits`), never a decimal major-unit
+  // figure. A budget is a planning number, not agreed money, so I10 does not
+  // freeze it: it is editable through `updateEvent` like any other column.
+  budgetAmount: v.optional(v.number()),
+  budgetCurrency: v.optional(currencyValidator),
+  accountableUserId: v.optional(v.id('users')),
 };
 
 export const eventDocValidator = v.object({

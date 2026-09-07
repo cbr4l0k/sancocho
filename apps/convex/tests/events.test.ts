@@ -21,6 +21,11 @@ const updateEvent = api.events.mutations.updateEvent;
 const archiveEvent = api.events.mutations.archiveEvent;
 const deleteEvent = api.events.mutations.deleteEvent;
 const listEventServices = api.services.queries.listEventServices;
+const removeMember = api.organizations.mutations.removeMember;
+const createLocation = api.locations.mutations.createLocation;
+const archiveLocation = api.locations.mutations.archiveLocation;
+const createCostCentre = api.costCentres.mutations.createCostCentre;
+const archiveCostCentre = api.costCentres.mutations.archiveCostCentre;
 
 const issuer = 'https://example.clerk.accounts.dev';
 const inaccessible = 'notFoundOrInaccessible';
@@ -404,3 +409,313 @@ async function insertServiceReference(
     });
   });
 }
+
+
+test('Event context references are proven against the Event organization before they are stored', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-context');
+  const venueId = await owner.mutation(createLocation, { organizationId, name: 'Main hall', type: 'venue' });
+  const hotelId = await owner.mutation(createLocation, { organizationId, name: 'Crew hotel', type: 'hotel' });
+  const retiredVenueId = await owner.mutation(createLocation, { organizationId, name: 'Old hall', type: 'venue' });
+  await owner.mutation(archiveLocation, { locationId: retiredVenueId });
+  const costCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'clientA', name: 'Client A' });
+  const retiredCostCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'clientB', name: 'Client B' });
+  await owner.mutation(archiveCostCentre, { costCentreId: retiredCostCentreId });
+  const member = await provision(t, 'events-context-member');
+  await owner.mutation(addMember, { organizationId, userId: member.userId, role: 'operator' });
+
+  // The foreign catalogue is owned by the SAME caller, so a rejection can only
+  // come from the organization proof — never from a missing membership.
+  const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Foreign', slug: 'events-context-foreign' });
+  const foreignVenueId = await owner.mutation(createLocation, { organizationId: foreignOrganizationId, name: 'Foreign hall', type: 'venue' });
+  const foreignCostCentreId = await owner.mutation(createCostCentre, { organizationId: foreignOrganizationId, key: 'clientA', name: 'Foreign client' });
+  const stranger = await provision(t, 'events-context-stranger');
+
+  // These two exist to pin the ORDER of the venue proof. Both are non-venues, so
+  // a type-first implementation would answer `eventVenueLocationTypeInvalid` and
+  // disclose that the caller named a real row in another tenant (or an archived
+  // one). Ownership and archival must answer first, generically.
+  const foreignHotelId = await owner.mutation(createLocation, { organizationId: foreignOrganizationId, name: 'Foreign hotel', type: 'hotel' });
+  const retiredHotelId = await owner.mutation(createLocation, { organizationId, name: 'Old hotel', type: 'hotel' });
+  await owner.mutation(archiveLocation, { locationId: retiredHotelId });
+
+  const base = { projectId, name: 'Context', startsAt: 200, endsAt: 900 };
+  await expect(owner.mutation(createEvent, { ...base, venueLocationId: foreignHotelId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, venueLocationId: retiredHotelId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, venueLocationId: foreignVenueId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, venueLocationId: retiredVenueId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, clientCostCentreId: foreignCostCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, clientCostCentreId: retiredCostCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(createEvent, { ...base, accountableUserId: stranger.userId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  // Same organization, live, but the wrong code-owned type: a reportable input
+  // error precisely because ownership has already been proven.
+  await expect(owner.mutation(createEvent, { ...base, venueLocationId: hotelId })).rejects.toMatchObject({
+    data: { code: 'eventVenueLocationTypeInvalid' },
+  });
+
+  const eventId = await owner.mutation(createEvent, {
+    ...base,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    accountableUserId: member.userId,
+  });
+  await expect(owner.query(getEvent, { eventId })).resolves.toMatchObject({
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    accountableUserId: member.userId,
+  });
+
+  // The update door runs the identical proofs and leaves the stored context untouched when they fail.
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: foreignVenueId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: hotelId })).rejects.toMatchObject({ data: { code: 'eventVenueLocationTypeInvalid' } });
+  await expect(owner.mutation(updateEvent, { eventId, clientCostCentreId: foreignCostCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, accountableUserId: stranger.userId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: retiredVenueId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: foreignHotelId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, clientCostCentreId: retiredCostCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(eventId)).toMatchObject({
+      venueLocationId: venueId,
+      clientCostCentreId: costCentreId,
+      accountableUserId: member.userId,
+    });
+  });
+});
+
+test('an accountable user must be a current member of the Event organization', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-accountable');
+  const former = await provision(t, 'events-accountable-former');
+  const membershipId = await owner.mutation(addMember, { organizationId, userId: former.userId, role: 'planner' });
+  // While the membership stands the user is an acceptable accountable member.
+  const eventId = await owner.mutation(createEvent, { projectId, name: 'Accountable', startsAt: 200, accountableUserId: former.userId });
+  await expect(owner.mutation(updateEvent, { eventId, accountableUserId: null })).resolves.toBeNull();
+
+  await owner.mutation(removeMember, { membershipId });
+  // The very same user id, still present in the users table, is now refused.
+  await expect(owner.mutation(createEvent, { projectId, name: 'Departed', startsAt: 200, accountableUserId: former.userId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+  await expect(owner.mutation(updateEvent, { eventId, accountableUserId: former.userId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(former.userId)).not.toBeNull();
+    expect((await ctx.db.get(eventId))?.accountableUserId).toBeUndefined();
+  });
+});
+
+test('an Event budget is a both-or-neither pair of integer minor units', async () => {
+  const { t, client, projectId } = await fixture('events-budget');
+  const base = { projectId, name: 'Budget', startsAt: 200 };
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: 1_000 })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+  await expect(client.mutation(createEvent, { ...base, budgetCurrency: 'COP' })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+  // The shared money boundary (#83) owns these three codes; the Event does not restate them.
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: 1_000.5, budgetCurrency: 'COP' })).rejects.toMatchObject({ data: { code: 'moneyAmountNotInteger' } });
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: -1, budgetCurrency: 'COP' })).rejects.toMatchObject({ data: { code: 'moneyAmountNegative' } });
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: Number.NaN, budgetCurrency: 'COP' })).rejects.toMatchObject({ data: { code: 'moneyAmountNotFinite' } });
+
+  const eventId = await client.mutation(createEvent, { ...base, budgetAmount: 250_000_00, budgetCurrency: 'COP' });
+  await expect(client.query(getEvent, { eventId })).resolves.toMatchObject({ budgetAmount: 250_000_00, budgetCurrency: 'COP' });
+
+  // The pair is checked on the resolved values, so neither half can be dropped,
+  // added, or corrupted on its own through the update door.
+  await expect(client.mutation(updateEvent, { eventId, budgetCurrency: null })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+  await expect(client.mutation(updateEvent, { eventId, budgetAmount: null })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+  await expect(client.mutation(updateEvent, { eventId, budgetAmount: 3.5 })).rejects.toMatchObject({ data: { code: 'moneyAmountNotInteger' } });
+  await expect(client.mutation(updateEvent, { eventId, budgetCurrency: 'USD' })).resolves.toBeNull();
+  await expect(client.mutation(updateEvent, { eventId, budgetAmount: 400_00, budgetCurrency: 'USD' })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(eventId)).toMatchObject({ budgetAmount: 400_00, budgetCurrency: 'USD' });
+  });
+
+  await expect(client.mutation(updateEvent, { eventId, budgetAmount: null, budgetCurrency: null })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    const event = await ctx.db.get(eventId);
+    expect(event?.budgetAmount).toBeUndefined();
+    expect(event?.budgetCurrency).toBeUndefined();
+  });
+  // An unbudgeted Event cannot acquire half a budget either.
+  await expect(client.mutation(updateEvent, { eventId, budgetAmount: 500_00 })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+});
+
+test('Event context columns are cleared, replaced, and audited like every other Event column', async () => {
+  const { t, client: owner, userId: ownerUserId, organizationId, projectId } = await fixture('events-context-audit');
+  const venueId = await owner.mutation(createLocation, { organizationId, name: 'Hall', type: 'venue' });
+  const otherVenueId = await owner.mutation(createLocation, { organizationId, name: 'Annex', type: 'venue' });
+  const costCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'clientA', name: 'Client A' });
+  const eventId = await owner.mutation(createEvent, { projectId, name: 'Audited context', startsAt: 200 });
+
+  await expect(owner.mutation(updateEvent, {
+    eventId,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    budgetAmount: 10_000_00,
+    budgetCurrency: 'COP',
+    accountableUserId: ownerUserId,
+  })).resolves.toBeNull();
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: otherVenueId })).resolves.toBeNull();
+  // A no-op patch changes nothing and records nothing.
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: otherVenueId })).resolves.toBeNull();
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: null, clientCostCentreId: null, accountableUserId: null })).resolves.toBeNull();
+
+  await t.run(async (ctx) => {
+    const event = await ctx.db.get(eventId);
+    expect(event?.venueLocationId).toBeUndefined();
+    expect(event?.clientCostCentreId).toBeUndefined();
+    expect(event?.accountableUserId).toBeUndefined();
+    expect(event).toMatchObject({ budgetAmount: 10_000_00, budgetCurrency: 'COP' });
+    const audits = await ctx.db.query('auditEvents').withIndex('by_org_entity', (q) =>
+      q.eq('organizationId', organizationId).eq('entityType', 'event').eq('entityId', eventId),
+    ).collect();
+    expect(audits.map((audit) => audit.metadata.changedFields)).toEqual([
+      undefined,
+      'venueLocationId,clientCostCentreId,budgetAmount,budgetCurrency,accountableUserId',
+      'venueLocationId',
+      'venueLocationId,clientCostCentreId,accountableUserId',
+    ]);
+  });
+});
+
+test('a current member of another organization is refused as accountable', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-cross-org-accountable');
+  // A user with a live, current membership — just not in THIS organization.
+  // "Is this user a member of anything?" would accept them; only the
+  // (organization, user) pairing refuses.
+  const neighbour = await provision(t, 'events-cross-org-neighbour');
+  const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Neighbour', slug: 'events-cross-org-foreign' });
+  await owner.mutation(addMember, { organizationId: foreignOrganizationId, userId: neighbour.userId, role: 'owner' });
+  await t.run(async (ctx) => {
+    const memberships = await ctx.db.query('organizationMemberships').withIndex('by_user', (q) => q.eq('userId', neighbour.userId)).collect();
+    expect(memberships.map((membership) => membership.organizationId)).toEqual([foreignOrganizationId]);
+  });
+
+  await expect(owner.mutation(createEvent, { projectId, name: 'Neighbour', startsAt: 200, accountableUserId: neighbour.userId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+  const eventId = await owner.mutation(createEvent, { projectId, name: 'Local', startsAt: 200 });
+  await expect(owner.mutation(updateEvent, { eventId, accountableUserId: neighbour.userId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+});
+
+test('a bad reference is reported before a malformed budget in the same call', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-order');
+  const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Foreign', slug: 'events-order-foreign' });
+  const foreignVenueId = await owner.mutation(createLocation, { organizationId: foreignOrganizationId, name: 'Foreign hall', type: 'venue' });
+  const foreignCostCentreId = await owner.mutation(createCostCentre, { organizationId: foreignOrganizationId, key: 'foreign', name: 'Foreign client' });
+  const stranger = await provision(t, 'events-order-stranger');
+
+  // Each call carries BOTH a foreign reference and a half-stated budget. The
+  // local budget error must never answer first: it would be an oracle telling
+  // the caller their tenant proof was not even reached.
+  const halfBudget = { budgetAmount: 1_000 };
+  for (const reference of [
+    { venueLocationId: foreignVenueId },
+    { clientCostCentreId: foreignCostCentreId },
+    { accountableUserId: stranger.userId },
+  ]) {
+    await expect(owner.mutation(createEvent, { projectId, name: 'Order', startsAt: 200, ...reference, ...halfBudget })).rejects.toMatchObject({
+      data: { code: inaccessible },
+    });
+  }
+
+  const eventId = await owner.mutation(createEvent, { projectId, name: 'Order target', startsAt: 200 });
+  for (const reference of [
+    { venueLocationId: foreignVenueId },
+    { clientCostCentreId: foreignCostCentreId },
+    { accountableUserId: stranger.userId },
+  ]) {
+    await expect(owner.mutation(updateEvent, { eventId, ...reference, ...halfBudget })).rejects.toMatchObject({
+      data: { code: inaccessible },
+    });
+  }
+  // Nothing was written by any of those twelve refusals.
+  await t.run(async (ctx) => {
+    const event = await ctx.db.get(eventId);
+    expect(event?.venueLocationId).toBeUndefined();
+    expect(event?.clientCostCentreId).toBeUndefined();
+    expect(event?.accountableUserId).toBeUndefined();
+    expect(event?.budgetAmount).toBeUndefined();
+  });
+});
+
+test('an Event with an archived venue or Cost Centre stays editable in every other column', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-archived-context');
+  const venueId = await owner.mutation(createLocation, { organizationId, name: 'Hall', type: 'venue' });
+  const costCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'clientA', name: 'Client A' });
+  const eventId = await owner.mutation(createEvent, {
+    projectId,
+    name: 'Archived context',
+    startsAt: 200,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+  });
+
+  // Archival makes a row unselectable anew; it does not invalidate the Events
+  // already pointing at it. Only references the patch SUPPLIES are re-proven,
+  // so an unrelated edit must not be collateral damage.
+  await owner.mutation(archiveLocation, { locationId: venueId });
+  await owner.mutation(archiveCostCentre, { costCentreId });
+  await expect(owner.mutation(updateEvent, { eventId, name: 'Renamed anyway' })).resolves.toBeNull();
+  await expect(owner.mutation(updateEvent, { eventId, startsAt: 300 })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(eventId)).toMatchObject({
+      name: 'Renamed anyway',
+      startsAt: 300,
+      venueLocationId: venueId,
+      clientCostCentreId: costCentreId,
+    });
+  });
+
+  // Re-supplying the same now-archived ids is still refused, and clearing works.
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: venueId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(owner.mutation(updateEvent, { eventId, venueLocationId: null, clientCostCentreId: null })).resolves.toBeNull();
+});
+
+test('a fabricated Cost Centre id is indistinguishable from a foreign one', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-missing-costcentre');
+  const missingCostCentreId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('costCentres', { organizationId, key: 'gone', name: 'Gone', status: 'active' });
+    await ctx.db.delete(id);
+    return id;
+  });
+  await expect(owner.mutation(createEvent, { projectId, name: 'Missing', startsAt: 200, clientCostCentreId: missingCostCentreId })).rejects.toMatchObject({
+    data: { code: inaccessible },
+  });
+});
+
+test('a zero budget is a real budget and an out-of-range amount is refused', async () => {
+  const { client, projectId } = await fixture('events-budget-edges');
+  const base = { projectId, name: 'Edges', startsAt: 200 };
+  // Zero is a legitimate agreed budget, so it must not be treated as absent by
+  // a falsy check anywhere in the pair rule.
+  const eventId = await client.mutation(createEvent, { ...base, budgetAmount: 0, budgetCurrency: 'COP' });
+  await expect(client.query(getEvent, { eventId })).resolves.toMatchObject({ budgetAmount: 0, budgetCurrency: 'COP' });
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: 0 })).rejects.toMatchObject({ data: { code: 'eventBudgetIncomplete' } });
+  await expect(client.mutation(createEvent, { ...base, budgetAmount: Number.MAX_SAFE_INTEGER + 2, budgetCurrency: 'COP' })).rejects.toMatchObject({
+    data: { code: 'moneyAmountOutOfRange' },
+  });
+});
+
+test('listProjectEvents returns the Event context columns through its own return validator', async () => {
+  const { client: owner, organizationId, projectId } = await fixture('events-context-list');
+  const venueId = await owner.mutation(createLocation, { organizationId, name: 'Hall', type: 'venue' });
+  const costCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'clientA', name: 'Client A' });
+  const eventId = await owner.mutation(createEvent, {
+    projectId,
+    name: 'Listed',
+    startsAt: 200,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    budgetAmount: 5_000_00,
+    budgetCurrency: 'USD',
+  });
+
+  const page = await owner.query(listProjectEvents, { projectId, paginationOpts: firstPage });
+  expect(page.page).toEqual([expect.objectContaining({
+    _id: eventId,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    budgetAmount: 5_000_00,
+    budgetCurrency: 'USD',
+  })]);
+});

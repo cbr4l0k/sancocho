@@ -91,3 +91,39 @@ export function requireOrganizationAccess(
 ): Promise<OrganizationMembershipAccess> {
   return requireOrganizationMembership(ctx, organizationId);
 }
+
+/**
+ * Proves that a user OTHER than the caller is a current member of the
+ * organization. Used by writers that store a user reference on a tenant row
+ * (`events.accountableUserId`), so such a column can never be SET to a
+ * stranger or to a member of another tenant.
+ *
+ * Like `assertUsableLocation`, this is a write-time rule, not a stored
+ * constraint: a membership removed afterwards leaves the stored id in place as
+ * the true record of who was accountable at the time. Nothing dangles, because
+ * `users` rows are never deleted. Guarding removal instead would make access
+ * revocation refusable, which it must never be.
+ *
+ * It lives beside the caller-facing chain helpers because it reads the same
+ * `by_org_user` membership edge — but it proves nothing about the caller and
+ * grants nothing: authorization for the operation must already have been
+ * established through `requireOrganizationRole` before this is reached.
+ *
+ * Failure is always the generic error: the user id arrives from the caller, so
+ * "no such user" and "not a member here" must be indistinguishable or the
+ * column becomes a directory probe (I1/I9).
+ */
+export async function assertCurrentMember(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  userId: Id<'users'>,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'organizationMemberships'>> {
+  const membership = await ctx.db
+    .query('organizationMemberships')
+    .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', userId))
+    .unique();
+  if (membership === null) {
+    return notFoundOrInaccessible();
+  }
+  return membership;
+}

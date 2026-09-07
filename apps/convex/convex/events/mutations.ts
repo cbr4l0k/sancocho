@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 
 import { mutation } from '../_generated/server';
-import { eventStatusValidator } from '../validators';
+import { currencyValidator, eventStatusValidator } from '../validators';
 import {
   archiveEvent as archiveEventModel,
   changeEventStatus as changeEventStatusModel,
@@ -11,7 +11,17 @@ import {
 } from './model';
 
 export const createEvent = mutation({
-  args: { projectId: v.id('projects'), name: v.string(), startsAt: v.number(), endsAt: v.optional(v.number()) },
+  args: {
+    projectId: v.id('projects'),
+    name: v.string(),
+    startsAt: v.number(),
+    endsAt: v.optional(v.number()),
+    venueLocationId: v.optional(v.id('locations')),
+    clientCostCentreId: v.optional(v.id('costCentres')),
+    budgetAmount: v.optional(v.number()),
+    budgetCurrency: v.optional(currencyValidator),
+    accountableUserId: v.optional(v.id('users')),
+  },
   returns: v.id('events'),
   handler: (ctx, args) => createEventModel(ctx, args),
 });
@@ -21,7 +31,14 @@ export const updateEvent = mutation({
     eventId: v.id('events'),
     name: v.optional(v.string()),
     startsAt: v.optional(v.number()),
+    // Every optional column takes the same three-state argument as `endsAt`:
+    // absent leaves it, `null` clears it, a value replaces it.
     endsAt: v.optional(v.union(v.number(), v.null())),
+    venueLocationId: v.optional(v.union(v.id('locations'), v.null())),
+    clientCostCentreId: v.optional(v.union(v.id('costCentres'), v.null())),
+    budgetAmount: v.optional(v.union(v.number(), v.null())),
+    budgetCurrency: v.optional(v.union(currencyValidator, v.null())),
+    accountableUserId: v.optional(v.union(v.id('users'), v.null())),
   },
   returns: v.null(),
   handler: async (ctx, { eventId, ...patch }) => {

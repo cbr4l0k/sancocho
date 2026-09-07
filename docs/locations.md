@@ -33,21 +33,34 @@ changes on its own), but the referenced location document is live.
 | Operation | Rule |
 | --- | --- |
 | `archiveLocation` | Always allowed (idempotent). An archived location is rejected by every subsequent service-value write and every service kind default validation |
-| `updateLocation` | Refused for archived locations |
+| `updateLocation` | Refused for archived locations; a referenced `venue` additionally refuses a type change |
 | `deleteLocation` | Only after archival, and only if no reference exists |
 
-Deletion is guarded by two indexed first-hit reads, both of which must find nothing:
+Deletion is guarded by three indexed first-hit reads, all of which must find nothing:
 
 | Guard | Index | Covers |
 | --- | --- | --- |
 | `serviceFieldValues.locationId` | `by_location` | Operational data — any stored service value pointing at the location |
 | `serviceKindFields.defaultLocationId` | `by_defaultLocation` | Configuration — any service kind field default pointing at the location |
+| `events.venueLocationId` | `by_venueLocation` | Operational context — any Event using the location as its venue |
 
-Both columns are **server-derived mirrors** of the `location` value beside them, written
+The first two columns are **server-derived mirrors** of the `location` value beside them, written
 through the single shared helper `fields/values.ts:locationIdFromValue` on every write path —
 add, update, clone, service create, service update, and every clear (where it returns `undefined`
 and the column must be removed). A write path that forgot it would leave a location deletable
 while a row still referenced it.
+
+`events.venueLocationId` is different in kind: it is chosen directly by a planner rather than
+mirrored from a field value, and it is validated on write against the same
+`assertUsableLocation` gate plus the code-owned requirement that the location be
+`type: 'venue'` — so a venue reference can never be *set* to a foreign, archived, or
+non-venue row. Ownership and archival are proven before the type is even looked at, so a
+foreign location's type is never disclosed.
+
+That write-time proof is only worth anything if the type stays put, so `updateLocation`
+carries the same indexed guard: a location that is currently `venue` and is referenced by any
+Event refuses a type change (`locationTypeChangeBlocked`). This is the one case where a
+location's own edit door consults a referencing table.
 
 The second guard is the structural one. A published service kind version is immutable (I2), so a
 default it carries can never be repaired. Deleting the location out from under it would leave

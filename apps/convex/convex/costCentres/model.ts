@@ -155,11 +155,38 @@ export async function deleteCostCentre(ctx: MutationCtx, costCentreId: Id<'costC
   if (costCentre.status !== 'archived') {
     return invalidInput('costCentreArchiveRequired', 'Cost Centres must be archived before deletion');
   }
-  // Reference guard insertion point. Each referencing table is checked first-hit
-  // through its mirror index before this delete, exactly as `deleteLocation`
-  // does. No table references Cost Centres today: #85 adds the first indexed
-  // read here for `events.clientCostCentreId`; #68 and #67 add later guards.
+  // Each referencing table is checked first-hit through its mirror index before
+  // this delete, exactly as `deleteLocation` does. `events.clientCostCentreId`
+  // is the first such reference; #68 and #67 add later guards beside it.
+  const eventReference = await ctx.db
+    .query('events')
+    .withIndex('by_clientCostCentre', (q) => q.eq('clientCostCentreId', costCentreId))
+    .first();
+  if (eventReference !== null) {
+    return invalidInput('costCentreDeleteBlocked', 'Referenced Cost Centres cannot be deleted; retain the archived Cost Centre instead');
+  }
   await ctx.db.delete(costCentreId);
+}
+
+/**
+ * The single statement of "may this organization store a reference to this Cost
+ * Centre?", mirroring `locations/model.ts` `assertUsableLocation`: it must
+ * exist, belong to that organization, and still be active.
+ *
+ * Failure is always the generic error. The id arrives from the caller, so a
+ * foreign, archived, or fabricated Cost Centre must be indistinguishable or
+ * every writer of a Cost Centre reference becomes a tenant probe (I1/I9).
+ */
+export async function assertUsableCostCentre(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  costCentreId: Id<'costCentres'>,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'costCentres'>> {
+  const costCentre = await ctx.db.get(costCentreId);
+  if (costCentre === null || costCentre.organizationId !== organizationId || costCentre.status === 'archived') {
+    return notFoundOrInaccessible();
+  }
+  return costCentre;
 }
 
 /** Authenticates before lookup so foreign and fabricated ids stay opaque (I9). */

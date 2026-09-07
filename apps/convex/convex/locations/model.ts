@@ -140,6 +140,16 @@ export async function updateLocation(ctx: MutationCtx, locationId: Id<'locations
     changedFields.push('name');
   }
   if (patch.type !== undefined && patch.type !== location.type) {
+    // `events.venueLocationId` stores a proven `type: 'venue'` row, and a
+    // published claim that a venue reference always names a venue is only true
+    // if the type cannot be changed out from under it. Same first-hit indexed
+    // read as the delete guard, taken only when a venue is losing that type.
+    if (location.type === 'venue') {
+      const venueReference = await ctx.db.query('events').withIndex('by_venueLocation', (q) => q.eq('venueLocationId', locationId)).first();
+      if (venueReference !== null) {
+        return invalidInput('locationTypeChangeBlocked', 'A location used as an event venue cannot change type');
+      }
+    }
     update.type = patch.type;
     changedFields.push('type');
   }
@@ -186,8 +196,8 @@ export async function archiveLocation(ctx: MutationCtx, locationId: Id<'location
 export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations'>): Promise<void> {
   const { location, access } = await requireLocationAccess(ctx, locationId, organizationConfigurationRole);
   if (location.status !== 'archived') return invalidInput('locationArchiveRequired', 'Locations must be archived before deletion');
-  // Both tables that can reference a location are checked first-hit through
-  // their indexes, mirroring `deleteFieldDefinition`. `serviceFieldValues` covers
+  // Every table that can reference a location is checked first-hit through its
+  // index, mirroring `deleteFieldDefinition`. `serviceFieldValues` covers
   // operational data; `serviceKindFields.defaultLocationId` covers configuration
   // defaults, and it is the structural half of the guarantee: a published
   // serviceKind version is immutable (I2), so a default it carries can never be
@@ -199,6 +209,11 @@ export async function deleteLocation(ctx: MutationCtx, locationId: Id<'locations
   if (serviceReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
   const defaultReference = await ctx.db.query('serviceKindFields').withIndex('by_defaultLocation', (q) => q.eq('defaultLocationId', locationId)).first();
   if (defaultReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
+  // An Event's venue is the third referencing column, and it is guarded for the
+  // same reason as the two above rather than cascaded: an Event is operational
+  // history, so its venue must never silently become a dangling id.
+  const venueReference = await ctx.db.query('events').withIndex('by_venueLocation', (q) => q.eq('venueLocationId', locationId)).first();
+  if (venueReference !== null) return invalidInput('locationDeleteBlocked', 'Referenced locations cannot be deleted; retain the archived location instead');
   await recordAuditEvent(ctx, {
     organizationId: location.organizationId,
     actorUserId: access.user._id,
@@ -238,11 +253,16 @@ export async function assertUsableLocation(
   ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
   locationId: Id<'locations'>,
   organizationId: Id<'organizations'>,
-): Promise<void> {
+): Promise<Doc<'locations'>> {
   const location = await ctx.db.get(locationId);
   if (location === null || location.organizationId !== organizationId || location.status === 'archived') {
     return notFoundOrInaccessible();
   }
+  // Returned so a caller with a further, code-owned requirement on the row
+  // (events/model.ts needs `type: 'venue'`) can apply it without a second read
+  // — and, more importantly, cannot apply it before this check has collapsed
+  // existence, ownership, and archival into the generic error (I9).
+  return location;
 }
 
 /** Authenticates before lookup so foreign and fabricated ids stay indistinguishable (I9). */

@@ -13,6 +13,10 @@ const changeMemberRole = api.organizations.mutations.changeMemberRole;
 const removeMember = api.organizations.mutations.removeMember;
 const getOrganization = api.organizations.queries.getOrganization;
 const listMembers = api.organizations.queries.listMembers;
+const createProject = api.projects.mutations.createProject;
+const archiveProject = api.projects.mutations.archiveProject;
+const createEvent = api.events.mutations.createEvent;
+const updateEvent = api.events.mutations.updateEvent;
 
 const NOT_FOUND_OR_INACCESSIBLE = 'notFoundOrInaccessible';
 const CONFLICT = 'conflict';
@@ -369,4 +373,36 @@ test('only an owner can grant the owner role', async () => {
   await expect(admin.client.mutation(removeMember, { membershipId: ownerMembershipId })).rejects.toMatchObject({ data: { code: NOT_FOUND_OR_INACCESSIBLE } });
 
   await expect(owner.client.mutation(changeMemberRole, { membershipId: targetMembershipId, role: 'owner' })).resolves.toBeNull();
+});
+
+test('removing a member accountable for an Event always succeeds and leaves the record standing', async () => {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, 'accountable-owner');
+  const planner = await provision(t, 'accountable-planner');
+  const organizationId = await owner.client.mutation(createOrganization, { name: 'Acme', slug: 'accountable-org' });
+  const membershipId = await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Accountable project' });
+  const eventId = await owner.client.mutation(createEvent, {
+    projectId,
+    name: 'Accountable event',
+    startsAt: 200,
+    accountableUserId: planner.userId,
+  });
+  // The Event is frozen exactly the way a real one ends up: archiving its
+  // Project is terminal and makes every Event write beneath it refuse. Any
+  // accountability guard on removal would pin this member's access forever.
+  await owner.client.mutation(archiveProject, { projectId });
+  await expect(owner.client.mutation(updateEvent, { eventId, accountableUserId: null })).rejects.toMatchObject({
+    data: { code: 'eventProjectReadOnly' },
+  });
+
+  // Revocation is never refusable, so it succeeds even here.
+  await expect(owner.client.mutation(removeMember, { membershipId })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(membershipId)).toBeNull();
+    // The stored id survives as the true record of who was accountable, and
+    // the user row it names is never deleted, so nothing dangles.
+    expect((await ctx.db.get(eventId))?.accountableUserId).toBe(planner.userId);
+    expect(await ctx.db.get(planner.userId)).not.toBeNull();
+  });
 });

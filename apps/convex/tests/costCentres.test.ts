@@ -15,6 +15,9 @@ const archiveCostCentre = api.costCentres.mutations.archiveCostCentre;
 const deleteCostCentre = api.costCentres.mutations.deleteCostCentre;
 const getCostCentre = api.costCentres.queries.getCostCentre;
 const listCostCentres = api.costCentres.queries.listCostCentres;
+const createProject = api.projects.mutations.createProject;
+const createEvent = api.events.mutations.createEvent;
+const updateEvent = api.events.mutations.updateEvent;
 
 const inaccessible = 'notFoundOrInaccessible';
 const unauthenticated = 'unauthenticated';
@@ -268,4 +271,28 @@ test('an unreferenced archived Cost Centre deletes successfully', async () => {
     expect(await ctx.db.get(costCentreId)).toBeNull();
   });
   await expect(owner.client.query(getCostCentre, { costCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('a Cost Centre an Event names as its client cannot be deleted', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId, costCentreId } = await fixture(t);
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Client project' });
+  const eventId = await owner.client.mutation(createEvent, {
+    projectId,
+    name: 'Client event',
+    startsAt: 200,
+    clientCostCentreId: costCentreId,
+  });
+
+  await owner.client.mutation(archiveCostCentre, { costCentreId });
+  await expect(owner.client.mutation(deleteCostCentre, { costCentreId })).rejects.toMatchObject({
+    data: { code: 'costCentreDeleteBlocked' },
+  });
+
+  // Live rather than sticky: releasing the reference releases the Cost Centre.
+  await owner.client.mutation(updateEvent, { eventId, clientCostCentreId: null });
+  await expect(owner.client.mutation(deleteCostCentre, { costCentreId })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(costCentreId)).toBeNull();
+  });
 });

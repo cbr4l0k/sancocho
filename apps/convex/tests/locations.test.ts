@@ -24,6 +24,9 @@ const cloneVersion = api.serviceKinds.mutations.clonePublishedVersionToDraft;
 const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindField;
 const updateServiceKindField = api.serviceKinds.fields.mutations.updateServiceKindField;
 const listServiceKindFields = api.serviceKinds.fields.queries.listServiceKindFields;
+const createProject = api.projects.mutations.createProject;
+const createEvent = api.events.mutations.createEvent;
+const updateEvent = api.events.mutations.updateEvent;
 
 const inaccessible = 'notFoundOrInaccessible';
 const unauthenticated = 'unauthenticated';
@@ -478,4 +481,44 @@ test('clearing a draft serviceKind field default releases the location for delet
   await owner.client.mutation(updateServiceKindField, { serviceKindFieldId, defaultValue: null });
   expect(await countDefaultReferences(t, locationId)).toBe(0);
   await expect(owner.client.mutation(deleteLocation, { locationId })).resolves.toBeNull();
+});
+
+test('a location an Event uses as its venue cannot be deleted', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId } = await makeLocation(t);
+  const venueId = await owner.client.mutation(createLocation, { organizationId, name: 'Main hall', type: 'venue' });
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Venue project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Venue event', startsAt: 200, venueLocationId: venueId });
+
+  // Archival is the lifecycle path for a referenced location; deletion is not.
+  await owner.client.mutation(archiveLocation, { locationId: venueId });
+  await expect(owner.client.mutation(deleteLocation, { locationId: venueId })).rejects.toMatchObject({ data: { code: referenced } });
+
+  // The guard is live rather than sticky: releasing the Event's venue releases the location.
+  await owner.client.mutation(updateEvent, { eventId, venueLocationId: null });
+  await expect(owner.client.mutation(deleteLocation, { locationId: venueId })).resolves.toBeNull();
+});
+
+test('a location an Event uses as its venue cannot be re-typed out from under it', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId } = await makeLocation(t);
+  const venueId = await owner.client.mutation(createLocation, { organizationId, name: 'Main hall', type: 'venue' });
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Retype project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Retype event', startsAt: 200, venueLocationId: venueId });
+
+  // The venue proof runs at write time, so the stored reference is only
+  // trustworthy if the type behind it cannot silently stop being a venue.
+  await expect(owner.client.mutation(updateLocation, { locationId: venueId, type: 'hotel' })).rejects.toMatchObject({
+    data: { code: 'locationTypeChangeBlocked' },
+  });
+  // Unrelated edits, and a no-op re-assertion of the same type, are unaffected.
+  await expect(owner.client.mutation(updateLocation, { locationId: venueId, name: 'Main hall renamed' })).resolves.toBeNull();
+  await expect(owner.client.mutation(updateLocation, { locationId: venueId, type: 'venue' })).resolves.toBeNull();
+  await t.run(async (ctx) => {
+    expect(await ctx.db.get(venueId)).toMatchObject({ type: 'venue', name: 'Main hall renamed' });
+  });
+
+  // Releasing the reference releases the type.
+  await owner.client.mutation(updateEvent, { eventId, venueLocationId: null });
+  await expect(owner.client.mutation(updateLocation, { locationId: venueId, type: 'hotel' })).resolves.toBeNull();
 });

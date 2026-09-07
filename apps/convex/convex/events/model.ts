@@ -4,18 +4,23 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { recordAuditEvent } from '../audit/model';
 import {
+  assertCurrentMember,
   requireAuthenticatedUser,
   requireOrganizationMembership,
   requireOrganizationRole,
   type OrganizationMembershipAccess,
 } from '../lib/access';
+import { assertUsableCostCentre } from '../costCentres/model';
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import { assertMinorUnits } from '../lib/money';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
+import { assertUsableLocation } from '../locations/model';
 import { assertProjectAcceptsChildWrites, assertProjectAcceptsNewChildren, requireProjectAccess } from '../projects/model';
-import { isFiniteNumber, type eventStatusValidator } from '../validators';
+import { isFiniteNumber, type currencyValidator, type eventStatusValidator } from '../validators';
 
 export type EventStatus = typeof eventStatusValidator.type;
+type Currency = typeof currencyValidator.type;
 
 const authoringRole: Role = 'planner';
 
@@ -35,10 +40,55 @@ export const eventStatusTransitions: Readonly<Record<EventStatus, readonly Event
 });
 
 type EventDates = { startsAt: number; endsAt?: number };
+
+/**
+ * The referenced half of the shared context an Event carries on behalf of every
+ * Service under it. Each member is optional and proven against the Event's own
+ * organization by `assertEventReferences`, the single place those rules live
+ * for both the create and the update door.
+ *
+ * The budget pair is deliberately NOT a member: it needs no database read, and
+ * on the update door it is checked against the RESOLVED values rather than the
+ * supplied ones, so folding it in here would make the update door's call a
+ * silent no-op.
+ */
+type EventReferences = {
+  venueLocationId?: Id<'locations'>;
+  clientCostCentreId?: Id<'costCentres'>;
+  accountableUserId?: Id<'users'>;
+};
+
+/** The full context accepted by `createEvent`: references plus the budget pair. */
+type EventContext = EventReferences & {
+  budgetAmount?: number;
+  budgetCurrency?: Currency;
+};
+
+/**
+ * `null` clears a stored optional column, `undefined` leaves it alone — the
+ * same two-state convention `endsAt` already used, extended to every optional
+ * column so a value can be removed as well as replaced.
+ */
 type EventPatch = {
   name?: string;
   startsAt?: number;
   endsAt?: number | null;
+  venueLocationId?: Id<'locations'> | null;
+  clientCostCentreId?: Id<'costCentres'> | null;
+  budgetAmount?: number | null;
+  budgetCurrency?: Currency | null;
+  accountableUserId?: Id<'users'> | null;
+};
+
+type EventUpdate = {
+  name?: string;
+  startsAt?: number;
+  endsAt?: number | undefined;
+  venueLocationId?: Id<'locations'> | undefined;
+  clientCostCentreId?: Id<'costCentres'> | undefined;
+  budgetAmount?: number | undefined;
+  budgetCurrency?: Currency | undefined;
+  accountableUserId?: Id<'users'> | undefined;
 };
 
 /**
@@ -49,13 +99,15 @@ type EventPatch = {
  */
 export async function createEvent(
   ctx: MutationCtx,
-  args: { projectId: Id<'projects'>; name: string } & EventDates,
+  args: { projectId: Id<'projects'>; name: string } & EventDates & EventContext,
 ): Promise<Id<'events'>> {
   const { project, access } = await requireProjectAccess(ctx, args.projectId, authoringRole);
   assertProjectAcceptsNewChildren(project, 'eventProjectUnavailable', 'events');
   const name = validateEntityName(args.name, 'event');
   validateEventDates(args.startsAt, args.endsAt);
   validateEventWithinProjectWindow(project, args.startsAt, args.endsAt);
+  await assertEventReferences(ctx, project.organizationId, args);
+  validateEventBudget(args.budgetAmount, args.budgetCurrency);
   const eventId = await ctx.db.insert('events', {
     organizationId: project.organizationId,
     projectId: project._id,
@@ -63,6 +115,11 @@ export async function createEvent(
     status: 'draft',
     startsAt: args.startsAt,
     ...(args.endsAt === undefined ? {} : { endsAt: args.endsAt }),
+    ...(args.venueLocationId === undefined ? {} : { venueLocationId: args.venueLocationId }),
+    ...(args.clientCostCentreId === undefined ? {} : { clientCostCentreId: args.clientCostCentreId }),
+    ...(args.budgetAmount === undefined ? {} : { budgetAmount: args.budgetAmount }),
+    ...(args.budgetCurrency === undefined ? {} : { budgetCurrency: args.budgetCurrency }),
+    ...(args.accountableUserId === undefined ? {} : { accountableUserId: args.accountableUserId }),
   });
   await recordAuditEvent(ctx, {
     organizationId: project.organizationId,
@@ -97,11 +154,30 @@ export async function updateEvent(ctx: MutationCtx, eventId: Id<'events'>, patch
   if (event.status === 'archived') return invalidInput('eventArchived', 'Archived events cannot be updated');
   const name = patch.name === undefined ? undefined : validateEntityName(patch.name, 'event');
   const startsAt = patch.startsAt ?? event.startsAt;
-  const endsAt = patch.endsAt === undefined ? event.endsAt : patch.endsAt === null ? undefined : patch.endsAt;
+  const endsAt = resolveOptional(patch.endsAt, event.endsAt);
   validateEventDates(startsAt, endsAt);
   validateEventWithinProjectWindow(project, startsAt, endsAt);
 
-  const update: { name?: string; startsAt?: number; endsAt?: number | undefined } = {};
+  const venueLocationId = resolveOptional(patch.venueLocationId, event.venueLocationId);
+  const clientCostCentreId = resolveOptional(patch.clientCostCentreId, event.clientCostCentreId);
+  const accountableUserId = resolveOptional(patch.accountableUserId, event.accountableUserId);
+  const budgetAmount = resolveOptional(patch.budgetAmount, event.budgetAmount);
+  const budgetCurrency = resolveOptional(patch.budgetCurrency, event.budgetCurrency);
+  // Only a reference the patch actually supplies is re-proven. Re-proving the
+  // stored ones would make an unrelated rename fail once a venue is archived,
+  // which is the opposite of the archival policy: archived rows stay readable
+  // where they are already referenced, they are merely unselectable anew.
+  await assertEventReferences(ctx, event.organizationId, {
+    ...(isSupplied(patch.venueLocationId) ? { venueLocationId: patch.venueLocationId } : {}),
+    ...(isSupplied(patch.clientCostCentreId) ? { clientCostCentreId: patch.clientCostCentreId } : {}),
+    ...(isSupplied(patch.accountableUserId) ? { accountableUserId: patch.accountableUserId } : {}),
+  });
+  // The budget pair is checked on the RESOLVED values, not the supplied ones:
+  // clearing or adding one half alone would otherwise leave a half-stored
+  // budget that no single call ever looked at as a pair.
+  validateEventBudget(budgetAmount, budgetCurrency);
+
+  const update: EventUpdate = {};
   const changedFields: string[] = [];
   if (name !== undefined && name !== event.name) {
     update.name = name;
@@ -114,6 +190,26 @@ export async function updateEvent(ctx: MutationCtx, eventId: Id<'events'>, patch
   if (patch.endsAt !== undefined && endsAt !== event.endsAt) {
     update.endsAt = endsAt;
     changedFields.push('endsAt');
+  }
+  if (patch.venueLocationId !== undefined && venueLocationId !== event.venueLocationId) {
+    update.venueLocationId = venueLocationId;
+    changedFields.push('venueLocationId');
+  }
+  if (patch.clientCostCentreId !== undefined && clientCostCentreId !== event.clientCostCentreId) {
+    update.clientCostCentreId = clientCostCentreId;
+    changedFields.push('clientCostCentreId');
+  }
+  if (patch.budgetAmount !== undefined && budgetAmount !== event.budgetAmount) {
+    update.budgetAmount = budgetAmount;
+    changedFields.push('budgetAmount');
+  }
+  if (patch.budgetCurrency !== undefined && budgetCurrency !== event.budgetCurrency) {
+    update.budgetCurrency = budgetCurrency;
+    changedFields.push('budgetCurrency');
+  }
+  if (patch.accountableUserId !== undefined && accountableUserId !== event.accountableUserId) {
+    update.accountableUserId = accountableUserId;
+    changedFields.push('accountableUserId');
   }
   if (changedFields.length === 0) return;
   await ctx.db.patch(event._id, update);
@@ -232,6 +328,64 @@ export function assertEventAcceptsNewServices(event: Doc<'events'>): void {
   if (!acceptingStatuses.has(event.status)) {
     return invalidInput('serviceEventUnavailable', 'Only draft and active events can receive new services');
   }
+}
+
+/**
+ * The single gate for every Event context reference, used identically by the
+ * create and update door.
+ *
+ * Both doors call this BEFORE `validateEventBudget`, deliberately: every
+ * supplied id is resolved and scope-checked against the Event's organization
+ * before any purely local input error can be reported, so a malformed budget
+ * in the same call can never become an oracle that answers faster than the
+ * tenant proof (I1/I9). Each resolver collapses "does not exist", "belongs to
+ * another tenant" and "archived" into the same generic error, so nothing here
+ * can be used to probe another tenant's catalogue.
+ */
+async function assertEventReferences(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: Id<'organizations'>,
+  context: EventReferences,
+): Promise<void> {
+  if (context.venueLocationId !== undefined) {
+    // Ownership, existence and archival are proven first and generically; only
+    // then does the code-owned taxonomy become a reportable input error, so a
+    // foreign location's type is never disclosed.
+    const location = await assertUsableLocation(ctx, context.venueLocationId, organizationId);
+    if (location.type !== 'venue') {
+      return invalidInput('eventVenueLocationTypeInvalid', 'An event venue must be a location of type venue');
+    }
+  }
+  if (context.clientCostCentreId !== undefined) {
+    await assertUsableCostCentre(ctx, context.clientCostCentreId, organizationId);
+  }
+  if (context.accountableUserId !== undefined) {
+    await assertCurrentMember(ctx, context.accountableUserId, organizationId);
+  }
+}
+
+/**
+ * A budget is a pair or it is nothing: an amount without its currency is not a
+ * money value, and a currency without an amount states nothing. The amount goes
+ * through the shared money boundary, so an Event budget is integer minor units
+ * on exactly the same terms as every other persisted money figure (#83).
+ */
+function validateEventBudget(amount: number | undefined, currency: Currency | undefined): void {
+  if ((amount === undefined) !== (currency === undefined)) {
+    return invalidInput('eventBudgetIncomplete', 'Event budget amount and currency must be provided together');
+  }
+  if (amount !== undefined) assertMinorUnits(amount);
+}
+
+/** `undefined` keeps the stored value, `null` clears it, anything else replaces it. */
+function resolveOptional<T>(patched: T | null | undefined, stored: T | undefined): T | undefined {
+  if (patched === undefined) return stored;
+  return patched === null ? undefined : patched;
+}
+
+/** Narrows a patch member to the "replace with this value" case. */
+function isSupplied<T>(patched: T | null | undefined): patched is T {
+  return patched !== undefined && patched !== null;
 }
 
 function validateEventDates(startsAt: number, endsAt: number | undefined): void {

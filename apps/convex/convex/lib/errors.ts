@@ -39,6 +39,8 @@ export const errorCodes = [
   'eventTerminal',
   'eventStatusTransitionInvalid',
   'eventDeleteBlocked',
+  'eventVenueLocationTypeInvalid',
+  'eventBudgetIncomplete',
   'relationshipSelfReference',
   // Field definition and values.
   'fieldNameInvalid',
@@ -94,6 +96,7 @@ export const errorCodes = [
   'locationArchived',
   'locationArchiveRequired',
   'locationDeleteBlocked',
+  'locationTypeChangeBlocked',
   'locationAddressTooLong',
   'locationCoordinatesIncomplete',
   'locationCoordinatesInvalid',
@@ -101,6 +104,7 @@ export const errorCodes = [
   'costCentreDescriptionTooLong',
   'costCentreArchived',
   'costCentreArchiveRequired',
+  'costCentreDeleteBlocked',
   // Deployment-only seed and audit input.
   'seedDisabled',
   'seedBuiltinFieldMissing',

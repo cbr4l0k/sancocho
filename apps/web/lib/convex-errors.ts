@@ -90,6 +90,8 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   eventTerminal: 'errors.generic',
   eventStatusTransitionInvalid: 'errors.generic',
   eventDeleteBlocked: 'errors.generic',
+  eventVenueLocationTypeInvalid: 'errors.generic',
+  eventBudgetIncomplete: 'errors.generic',
   // No console surface inputs money yet (#85 budget, #73 rate cards). These are
   // arithmetic/validation guards; promote to specific messages when a money input exists.
   moneyAmountNotFinite: 'errors.generic',
@@ -153,6 +155,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   locationArchived: 'errors.locationArchived',
   locationArchiveRequired: 'errors.locationArchiveRequired',
   locationDeleteBlocked: 'errors.locationDeleteBlocked',
+  locationTypeChangeBlocked: 'errors.generic',
   locationAddressTooLong: 'errors.locationAddressTooLong',
   locationCoordinatesIncomplete: 'errors.locationCoordinatesInvalid',
   locationCoordinatesInvalid: 'errors.locationCoordinatesInvalid',
@@ -161,6 +164,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   costCentreDescriptionTooLong: 'errors.generic',
   costCentreArchived: 'errors.generic',
   costCentreArchiveRequired: 'errors.generic',
+  costCentreDeleteBlocked: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

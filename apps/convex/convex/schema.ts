@@ -77,7 +77,20 @@ export default defineSchema({
     .index('by_org_status', ['organizationId', 'status']),
 
   events: defineTable(eventFields)
-    .index('by_project_startsAt', ['projectId', 'startsAt']),
+    .index('by_project_startsAt', ['projectId', 'startsAt'])
+    // Both reverse-reference indexes below exist for exactly one reason each: a
+    // first-hit "is this row still referenced by an Event?" read taken before
+    // the referenced row is removed or re-typed. Without them the same guard
+    // would be a full scan of the events table, so the guarded door's cost
+    // would grow with the tenant. No list surface reads through either.
+    //
+    // Serves `locations/model.ts` deleteLocation and updateLocation.
+    .index('by_venueLocation', ['venueLocationId'])
+    // Serves `costCentres/model.ts` deleteCostCentre.
+    .index('by_clientCostCentre', ['clientCostCentreId']),
+    // There is deliberately NO by_accountableUser index: `removeMember` does
+    // not guard on accountability (see organizations/model.ts), so such an
+    // index would have no consumer, and an unused index is write amplification.
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
