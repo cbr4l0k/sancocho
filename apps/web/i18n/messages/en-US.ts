@@ -646,6 +646,7 @@ const enUS = {
       costCentre_created: 'Cost Centre created',
       costCentre_updated: 'Cost Centre updated',
       costCentre_archived: 'Cost Centre archived',
+      costCentre_deleted: 'Cost Centre deleted',
       relationship_created: 'Relationship created',
       relationship_removed: 'Relationship removed',
       invitation_created: 'Invitation created',

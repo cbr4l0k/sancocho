@@ -151,7 +151,7 @@ export async function archiveCostCentre(ctx: MutationCtx, costCentreId: Id<'cost
 }
 
 export async function deleteCostCentre(ctx: MutationCtx, costCentreId: Id<'costCentres'>): Promise<void> {
-  const { costCentre } = await requireCostCentreAccess(ctx, costCentreId, organizationConfigurationRole);
+  const { costCentre, access } = await requireCostCentreAccess(ctx, costCentreId, organizationConfigurationRole);
   if (costCentre.status !== 'archived') {
     return invalidInput('costCentreArchiveRequired', 'Cost Centres must be archived before deletion');
   }
@@ -165,6 +165,16 @@ export async function deleteCostCentre(ctx: MutationCtx, costCentreId: Id<'costC
   if (eventReference !== null) {
     return invalidInput('costCentreDeleteBlocked', 'Referenced Cost Centres cannot be deleted; retain the archived Cost Centre instead');
   }
+  // Recorded BEFORE the delete so the row's name is still readable, matching
+  // `deleteEvent` and `deleteLocation`.
+  await recordAuditEvent(ctx, {
+    organizationId: costCentre.organizationId,
+    actorUserId: access.user._id,
+    action: 'costCentre.deleted',
+    entityType: 'costCentre',
+    entityId: costCentreId,
+    metadata: { name: costCentre.name },
+  });
   await ctx.db.delete(costCentreId);
 }
 

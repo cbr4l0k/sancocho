@@ -63,6 +63,7 @@ export const auditActionMessageKey = {
   'costCentre.created': 'costCentre_created',
   'costCentre.updated': 'costCentre_updated',
   'costCentre.archived': 'costCentre_archived',
+  'costCentre.deleted': 'costCentre_deleted',
   'relationship.created': 'relationship_created',
   'relationship.removed': 'relationship_removed',
   'invitation.created': 'invitation_created',

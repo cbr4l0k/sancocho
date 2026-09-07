@@ -439,6 +439,7 @@ export const auditActionValidator = v.union(
   v.literal('costCentre.created'),
   v.literal('costCentre.updated'),
   v.literal('costCentre.archived'),
+  v.literal('costCentre.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
   v.literal('invitation.created'),

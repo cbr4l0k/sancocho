@@ -123,6 +123,26 @@ test('an admin can manage Cost Centres and lifecycle writes are audited', async 
   await expect(admin.client.query(getCostCentre, { costCentreId })).resolves.toMatchObject({ name: 'Admin renamed', status: 'archived' });
 });
 
+test('deleting a Cost Centre records an audit row naming the row it destroyed', async () => {
+  const t = convexTest(schema, modules);
+  const { owner, organizationId } = await fixture(t);
+  const costCentreId = await owner.client.mutation(createCostCentre, { organizationId, key: 'doomed', name: 'Doomed budget' });
+  await owner.client.mutation(archiveCostCentre, { costCentreId });
+  await owner.client.mutation(deleteCostCentre, { costCentreId });
+
+  // The row is gone, so the log is the only remaining record of what it was.
+  await expect(owner.client.query(getCostCentre, { costCentreId })).rejects.toMatchObject({ data: { code: inaccessible } });
+  const audits = await costCentreAudits(t, organizationId, costCentreId);
+  expect(audits.map((audit) => audit.action)).toContain('costCentre.deleted');
+  const deleted = audits.find((audit) => audit.action === 'costCentre.deleted');
+  expect(deleted).toMatchObject({
+    actorUserId: owner.userId,
+    entityType: 'costCentre',
+    entityId: costCentreId,
+    metadata: { name: 'Doomed budget' },
+  });
+});
+
 test('a planner is below the Cost Centre configuration floor on every write', async () => {
   const t = convexTest(schema, modules);
   const { owner, organizationId, costCentreId } = await fixture(t);

@@ -651,6 +651,7 @@ const esCO = {
       costCentre_created: 'Centro de costos creado',
       costCentre_updated: 'Centro de costos actualizado',
       costCentre_archived: 'Centro de costos archivado',
+      costCentre_deleted: 'Centro de costos eliminado',
       relationship_created: 'Relación creada',
       relationship_removed: 'Relación eliminada',
       invitation_created: 'Invitación creada',
