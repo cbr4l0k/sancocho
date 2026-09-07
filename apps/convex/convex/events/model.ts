@@ -12,7 +12,7 @@ import {
 import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
-import { requireProjectAccess } from '../projects/model';
+import { assertProjectAcceptsChildWrites, assertProjectAcceptsNewChildren, requireProjectAccess } from '../projects/model';
 import { isFiniteNumber, type eventStatusValidator } from '../validators';
 
 export type EventStatus = typeof eventStatusValidator.type;
@@ -52,9 +52,7 @@ export async function createEvent(
   args: { projectId: Id<'projects'>; name: string } & EventDates,
 ): Promise<Id<'events'>> {
   const { project, access } = await requireProjectAccess(ctx, args.projectId, authoringRole);
-  if (project.status === 'archived' || project.status === 'completed') {
-    return invalidInput('eventProjectUnavailable', 'Only draft and active projects can receive new events');
-  }
+  assertProjectAcceptsNewChildren(project, 'eventProjectUnavailable', 'events');
   const name = validateEntityName(args.name, 'event');
   validateEventDates(args.startsAt, args.endsAt);
   validateEventWithinProjectWindow(project, args.startsAt, args.endsAt);
@@ -173,13 +171,22 @@ export async function archiveEvent(ctx: MutationCtx, eventId: Id<'events'>): Pro
  * changes a child Service.
  */
 export async function deleteEvent(ctx: MutationCtx, eventId: Id<'events'>): Promise<void> {
-  const { event, project } = await requireEventAccess(ctx, eventId, authoringRole);
+  const { event, project, access } = await requireEventAccess(ctx, eventId, authoringRole);
   assertProjectAcceptsEventWrites(project);
+  if (event.status !== 'archived') return invalidInput('eventArchiveRequired', 'Events must be archived before deletion');
   const service = await ctx.db
     .query('services')
     .withIndex('by_event_startsAt', (q) => q.eq('eventId', event._id))
     .first();
   if (service !== null) return invalidInput('eventDeleteBlocked', 'Events referenced by services cannot be deleted');
+  await recordAuditEvent(ctx, {
+    organizationId: event.organizationId,
+    actorUserId: access.user._id,
+    action: 'event.deleted',
+    entityType: 'event',
+    entityId: event._id,
+    metadata: { name: event.name },
+  });
   await ctx.db.delete(event._id);
 }
 
@@ -216,9 +223,7 @@ function assertEventTransition(current: EventStatus, next: EventStatus): void {
 
 /** An archived Project freezes every write to its Events, matching its Services. */
 function assertProjectAcceptsEventWrites(project: Doc<'projects'>): void {
-  if (project.status === 'archived') {
-    return invalidInput('eventProjectReadOnly', 'Archived projects are read-only for their events');
-  }
+  assertProjectAcceptsChildWrites(project, 'eventProjectReadOnly', 'events');
 }
 
 /** The one Event-lifecycle gate used when attaching a newly created Service. */

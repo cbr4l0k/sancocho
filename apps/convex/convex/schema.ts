@@ -76,10 +76,7 @@ export default defineSchema({
     .index('by_org_status', ['organizationId', 'status']),
 
   events: defineTable(eventFields)
-    .index('by_project', ['projectId'])
-    .index('by_project_startsAt', ['projectId', 'startsAt'])
-    .index('by_org_startsAt', ['organizationId', 'startsAt'])
-    .index('by_org_status_startsAt', ['organizationId', 'status', 'startsAt']),
+    .index('by_project_startsAt', ['projectId', 'startsAt']),
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.

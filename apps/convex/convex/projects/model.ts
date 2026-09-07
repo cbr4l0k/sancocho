@@ -9,7 +9,7 @@ import {
   requireOrganizationRole,
   type OrganizationMembershipAccess,
 } from '../lib/access';
-import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import { invalidInput, notFoundOrInaccessible, type ErrorCode } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
 import { isFiniteNumber, type projectStatusValidator } from '../validators';
@@ -177,11 +177,8 @@ export async function updateProject(
  * rather than destroys: the services stay readable, listable, and interpretable
  * under their own serviceKind versions forever.
  *
- * The enforcing half of this policy lives in services/model.ts
- * (`assertProjectAcceptsServiceWrites`), which refuses every service write — field
- * edits, core-field edits, and status transitions including cancellation — for an
- * archived project. The two doors must agree: relaxing one without the other
- * either leaves archived projects quietly mutable or makes them un-archivable.
+ * The enforcing predicates live below and are consumed by both Events and
+ * Services, so the two child domains cannot drift on Project lifecycle policy.
  */
 export async function archiveProject(ctx: MutationCtx, projectId: Id<'projects'>): Promise<void> {
   const { project, access } = await requireProjectAccess(ctx, projectId, 'planner');
@@ -225,12 +222,34 @@ export async function requireProjectAccess(
   return { project, access };
 }
 
+/** Shared container-lifecycle policy for Event and Service write domains. */
+export function assertProjectAcceptsChildWrites(
+  project: Doc<'projects'>,
+  code: Extract<ErrorCode, 'eventProjectReadOnly' | 'serviceProjectReadOnly'>,
+  childLabel: 'events' | 'services',
+): void {
+  if (project.status === 'archived') {
+    return invalidInput(code, `Archived projects are read-only for their ${childLabel}`);
+  }
+}
+
+/** Shared creation policy: completed and archived Projects accept no new children. */
+export function assertProjectAcceptsNewChildren(
+  project: Doc<'projects'>,
+  code: Extract<ErrorCode, 'eventProjectUnavailable' | 'serviceProjectUnavailable'>,
+  childLabel: 'events' | 'services',
+): void {
+  if (project.status === 'archived' || project.status === 'completed') {
+    return invalidInput(code, `Only draft and active projects can receive new ${childLabel}`);
+  }
+}
+
 /**
  * The only status policy statement for projects. draft | active | completed may
  * move between each other freely for now — no forward-only lifecycle is
  * specified yet — though `completed` does stop the project from receiving NEW
- * services (see `assertProjectAcceptsNewServices` in services/model.ts), while leaving
- * the services it already has editable. Archiving is deliberately not reachable
+ * children (see `assertProjectAcceptsNewChildren` below), while leaving existing
+ * children editable. Archiving is deliberately not reachable
  * here: it is its own operation so it keeps its own audit action and its
  * documented read-only-services policy. Archived is terminal; unarchiving is
  * unsupported.

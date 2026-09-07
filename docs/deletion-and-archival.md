@@ -11,6 +11,7 @@ references through indexes first.
 | `organizations` | Not implemented (no archival status) | **No operation exists** | — |
 | `organizationMemberships` | — | Yes, `removeMember` | Final owner can never be removed; touching an owner requires owner |
 | `projects` | `archiveProject`, idempotent, terminal | **Never** | — |
+| `events` | `archiveEvent`, terminal | Yes, `deleteEvent`, archived-only | First-hit read on `services.by_event_startsAt` must find nothing; deletion writes `event.deleted` first |
 | `fieldDefinitions` | `archiveFieldDefinition`, idempotent | Yes, `deleteFieldDefinition` | First-hit reads on `serviceKindFields.by_field` **and** `serviceFieldValues.by_field` must both find nothing |
 | `serviceKinds` | `archiveServiceKind` (retires the live published version too) | **Never** | — |
 | `serviceKindVersions` | `retired`, via publish or archive | **Never** | — |
@@ -43,13 +44,14 @@ with services is exactly the project worth archiving, and a reference guard woul
 most-used projects the only unarchivable ones. There is no cascade: the services stay readable,
 listable and interpretable under their own service kind versions forever.
 
-The enforcing half lives in `services/model.ts`:
+The shared Project-lifecycle predicates live in `projects/model.ts`; the Event and Service
+domains retain distinct stable error codes while consulting the same status policy:
 
 | Helper | Refuses |
 | --- | --- |
-| `assertProjectAcceptsServiceWrites` | Every service write in an archived project — field edits, core-field edits, and status transitions *including cancellation* |
+| `assertProjectAcceptsChildWrites` | Every Event or Service write in an archived project — including Service cancellation and Event deletion |
 | `assertServiceWritable` | The above, plus writes to a `completed` or `cancelled` service |
-| `assertProjectAcceptsNewServices` | New services in an `archived` **or** `completed` project |
+| `assertProjectAcceptsNewChildren` | New Events or Services in an `archived` **or** `completed` project |
 
 `relationships/model.ts` gates on the same two helpers, so archival is a freeze through every
 door — a planner cannot restructure the link graph of frozen history.
@@ -66,6 +68,7 @@ unarchive operation anywhere.
 | Entity | Transitions |
 | --- | --- |
 | `projects` | `draft`, `active`, `completed` move between each other freely; `archived` is reachable only through `archiveProject` (so it keeps its own audit action and policy) and is terminal |
+| `events` | `draft` → `active` → `completed`; each non-archived state may reach `archived` only through `archiveEvent`; `archived` is terminal |
 | `serviceKinds` | `draft` → `active` on first publish; `archived` terminal |
 | `serviceKindVersions` | `draft` → `published` → `retired`; no status-editing mutation exists |
 | `services` | `draft` → `planned` → `confirmed` → `active` → `completed`, one step at a time; any non-terminal state → `cancelled`; `completed` and `cancelled` terminal |

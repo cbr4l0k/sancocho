@@ -16,7 +16,7 @@ import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
 import { assertUsableLocation } from '../locations/model';
-import { requireProjectAccess } from '../projects/model';
+import { assertProjectAcceptsChildWrites, assertProjectAcceptsNewChildren, requireProjectAccess } from '../projects/model';
 import { getVersionFields } from '../serviceKinds/model';
 import { isFiniteNumber, type serviceFieldValueValidator, type serviceStatusValidator } from '../validators';
 
@@ -821,7 +821,7 @@ function validateServiceWithinProjectWindow(project: Doc<'projects'>, startsAt: 
  * so there is exactly one definition of "writable service" in the codebase.
  */
 export function assertProjectAcceptsServiceWrites(project: Doc<'projects'>): void {
-  if (project.status === 'archived') return invalidInput('serviceProjectReadOnly', 'Archived projects are read-only for their services');
+  assertProjectAcceptsChildWrites(project, 'serviceProjectReadOnly', 'services');
 }
 
 /**
@@ -832,9 +832,7 @@ export function assertProjectAcceptsServiceWrites(project: Doc<'projects'>): voi
  * be corrected without being reopened.
  */
 function assertProjectAcceptsNewServices(project: Doc<'projects'>): void {
-  if (project.status === 'archived' || project.status === 'completed') {
-    return invalidInput('serviceProjectUnavailable', 'Only draft and active projects can receive new services');
-  }
+  assertProjectAcceptsNewChildren(project, 'serviceProjectUnavailable', 'services');
 }
 
 /** The full write gate: the container's lifecycle first, then the service's own. */

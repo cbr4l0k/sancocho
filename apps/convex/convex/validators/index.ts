@@ -362,6 +362,7 @@ export const auditActionValidator = v.union(
   v.literal('event.updated'),
   v.literal('event.statusChanged'),
   v.literal('event.archived'),
+  v.literal('event.deleted'),
   v.literal('fieldDefinition.created'),
   v.literal('fieldDefinition.updated'),
   v.literal('fieldDefinition.archived'),

@@ -114,6 +114,7 @@ test('reset and repeated Cordillera reseeds reproduce byte-identical numeric fig
   await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
   const third = await cordilleraFigures(t, organizationId);
 
+  expect(first).not.toBe('[]');
   expect(second).toBe(first);
   expect(third).toBe(first);
 }, 40_000);

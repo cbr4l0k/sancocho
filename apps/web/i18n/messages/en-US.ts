@@ -617,6 +617,7 @@ const enUS = {
       event_updated: 'Event updated',
       event_statusChanged: 'Event status updated',
       event_archived: 'Event archived',
+      event_deleted: 'Event deleted',
       fieldDefinition_created: 'Field definition created',
       fieldDefinition_updated: 'Field definition updated',
       fieldDefinition_archived: 'Field definition archived',

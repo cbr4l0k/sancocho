@@ -36,6 +36,7 @@ export const auditActionMessageKey = {
   'event.updated': 'event_updated',
   'event.statusChanged': 'event_statusChanged',
   'event.archived': 'event_archived',
+  'event.deleted': 'event_deleted',
   'fieldDefinition.created': 'fieldDefinition_created',
   'fieldDefinition.updated': 'fieldDefinition_updated',
   'fieldDefinition.archived': 'fieldDefinition_archived',

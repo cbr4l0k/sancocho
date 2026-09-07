@@ -13,8 +13,8 @@ without the op, no op without the audit. A test asserts the rollback direction.
 | --- | --- |
 | `organizationId` | Non-optional. Every audit row belongs to a tenant |
 | `actorUserId` | Non-optional `Id<'users'>` |
-| `action` | Closed literal union, 33 members (`organization.created` … `relationship.removed`) |
-| `entityType` | Closed literal union, 10 members |
+| `action` | Closed literal union, 41 members (`organization.created` … `invitation.accepted`) |
+| `entityType` | Closed literal union, 12 members |
 | `entityId` | The document id as a string |
 | `metadata` | Flat scalar record, restricted to a code-owned key set |
 | `_creationTime` | Convex's own column is the log's time axis |

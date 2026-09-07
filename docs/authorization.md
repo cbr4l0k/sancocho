@@ -91,6 +91,8 @@ Admins do everything else.
 | `organizations.removeMember` | admin | Removing an `owner` requires `owner`; the final owner can never be removed |
 | `projects.createProject`, `updateProject`, `archiveProject` | planner | Archived projects are read-only |
 | `projects.getProject`, `listProjects` | viewer | |
+| `events.createEvent`, `updateEvent`, `changeEventStatus`, `archiveEvent`, `deleteEvent` | planner | Completed projects accept no new Events; archived projects freeze Event writes; Events must be archived and unreferenced before deletion |
+| `events.getEvent`, `listProjectEvents` | viewer | |
 | `fields.createFieldDefinition`, `updateFieldDefinition`, `archiveFieldDefinition`, `deleteFieldDefinition` | planner | Built-in definitions are not editable through any public door |
 | `fields.listFieldDefinitions` | viewer | |
 | `fields.listBuiltinFieldDefinitions` | authenticated app user | The catalogue is deployment-wide, not tenant data |
@@ -103,7 +105,7 @@ Admins do everything else.
 | `locations.getLocation`, `listLocations` | viewer | |
 | `services.createServiceFromServiceKind`, `updateServiceCoreFields`, `updateServiceFields` | planner | Authoring a service is planner work |
 | `services.changeServiceStatus` | **operator** | Deliberately one step lower: operators run services (activate, complete, cancel) without changing what a service says it is |
-| `services.getService`, `listProjectServices` | viewer | |
+| `services.getService`, `listProjectServices`, `listEventServices` | viewer | |
 | `services.listOrganizationServices` | viewer | `projectId`, when given, is cross-checked against `organizationId` |
 | `relationships.createRelationship`, `removeRelationship` | planner | Same floor as service authoring; gated by the same writability rules |
 | `relationships.listOutgoingRelationships`, `listIncomingRelationships` | viewer | |

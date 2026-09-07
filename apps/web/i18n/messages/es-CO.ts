@@ -622,6 +622,7 @@ const esCO = {
       event_updated: 'Evento actualizado',
       event_statusChanged: 'Estado del evento actualizado',
       event_archived: 'Evento archivado',
+      event_deleted: 'Evento eliminado',
       fieldDefinition_created: 'Definición de campo creada',
       fieldDefinition_updated: 'Definición de campo actualizada',
       fieldDefinition_archived: 'Definición de campo archivada',

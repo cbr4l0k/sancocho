@@ -13,6 +13,8 @@ const createProject = api.projects.mutations.createProject;
 const updateProject = api.projects.mutations.updateProject;
 const archiveProject = api.projects.mutations.archiveProject;
 const createEvent = api.events.mutations.createEvent;
+const changeEventStatus = api.events.mutations.changeEventStatus;
+const archiveEvent = api.events.mutations.archiveEvent;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
 const updateFieldDefinition = api.fields.mutations.updateFieldDefinition;
 const archiveFieldDefinition = api.fields.mutations.archiveFieldDefinition;
@@ -32,6 +34,7 @@ const updateServiceFields = api.services.mutations.updateServiceFields;
 const changeServiceStatus = api.services.mutations.changeServiceStatus;
 const getService = api.services.queries.getService;
 const listProjectServices = api.services.queries.listProjectServices;
+const listEventServices = api.services.queries.listEventServices;
 const listOrganizationServices = api.services.queries.listOrganizationServices;
 
 const issuer = 'https://example.clerk.accounts.dev';
@@ -255,6 +258,7 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
     await expect(t.query(listProjectServices, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
   for (const id of [eventId, missingEventId]) {
+    await expect(t.query(listEventServices, { eventId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(
       t.mutation(createServiceFromServiceKind, { eventId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
     ).rejects.toMatchObject({ data: { code: unauthenticated } });
@@ -272,6 +276,7 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
     await expect(outsider.client.query(listProjectServices, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   for (const id of [eventId, missingEventId]) {
+    await expect(outsider.client.query(listEventServices, { eventId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(
       outsider.client.mutation(createServiceFromServiceKind, { eventId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
     ).rejects.toMatchObject({ data: { code: inaccessible } });
@@ -282,6 +287,28 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
   await owner.client.mutation(addMember, { organizationId: foreignOrganizationId, userId: outsider.userId, role: 'owner' });
   await expect(outsider.client.query(getService, { serviceId })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(outsider.client.query(listProjectServices, { projectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.client.query(listEventServices, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('completed and archived Events reject new Services', async () => {
+  const { owner, projectId, versionId, requiredCode } = await fixture();
+  const createUnder = (eventId: Id<'events'>) => owner.client.mutation(createServiceFromServiceKind, {
+    eventId,
+    serviceKindVersionId: versionId,
+    name: 'Unavailable event service',
+    startsAt: 1,
+    values: [requiredCode],
+  });
+
+  const completedEventId = await owner.client.mutation(createEvent, { projectId, name: 'Completed event', startsAt: 0 });
+  await owner.client.mutation(changeEventStatus, { eventId: completedEventId, status: 'active' });
+  await expect(createUnder(completedEventId)).resolves.toBeDefined();
+  await owner.client.mutation(changeEventStatus, { eventId: completedEventId, status: 'completed' });
+  await expect(createUnder(completedEventId)).rejects.toMatchObject({ data: { code: 'serviceEventUnavailable' } });
+
+  const archivedEventId = await owner.client.mutation(createEvent, { projectId, name: 'Archived event', startsAt: 0 });
+  await owner.client.mutation(archiveEvent, { eventId: archivedEventId });
+  await expect(createUnder(archivedEventId)).rejects.toMatchObject({ data: { code: 'serviceEventUnavailable' } });
 });
 
 test('service authoring is planner+, running an service is open to operators, and reading is open to any member', async () => {
