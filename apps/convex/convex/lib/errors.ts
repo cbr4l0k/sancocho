@@ -97,6 +97,10 @@ export const errorCodes = [
   'locationAddressTooLong',
   'locationCoordinatesIncomplete',
   'locationCoordinatesInvalid',
+  'costCentreKeyInvalid',
+  'costCentreDescriptionTooLong',
+  'costCentreArchived',
+  'costCentreArchiveRequired',
   // Deployment-only seed and audit input.
   'seedDisabled',
   'seedBuiltinFieldMissing',

@@ -156,6 +156,11 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   locationAddressTooLong: 'errors.locationAddressTooLong',
   locationCoordinatesIncomplete: 'errors.locationCoordinatesInvalid',
   locationCoordinatesInvalid: 'errors.locationCoordinatesInvalid',
+  // There is no Cost Centre console surface yet; keep these opaque until one exists.
+  costCentreKeyInvalid: 'errors.generic',
+  costCentreDescriptionTooLong: 'errors.generic',
+  costCentreArchived: 'errors.generic',
+  costCentreArchiveRequired: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

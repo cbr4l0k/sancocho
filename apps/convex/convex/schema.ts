@@ -4,6 +4,7 @@ import { v } from 'convex/values';
 import {
   archivalStatusValidator,
   auditEventFields,
+  costCentreFields,
   serviceFieldValueValidator,
   serviceFields,
   serviceStatusValidator,
@@ -206,6 +207,19 @@ export default defineSchema({
     .searchIndex('search_text', {
       searchField: 'searchText',
       filterFields: ['organizationId', 'type', 'status'],
+    }),
+
+  costCentres: defineTable(costCentreFields)
+    // Enforces organization-scoped key uniqueness through a same-mutation read.
+    .index('by_org_key', ['organizationId', 'key'])
+    // Serves the unfiltered organization catalogue.
+    .index('by_org', ['organizationId'])
+    // Serves status-filtered lists before pagination.
+    .index('by_org_status', ['organizationId', 'status'])
+    // Serves name search, optionally narrowed by archival status.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['organizationId', 'status'],
     }),
 
   serviceRelationships: defineTable({

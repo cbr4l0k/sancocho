@@ -189,6 +189,25 @@ export const locationDocValidator = v.object({
   ...locationFields,
 });
 
+/** Shared persisted and returned shape for organization-owned Cost Centres. */
+export const costCentreFields = {
+  organizationId: v.id('organizations'),
+  key: v.string(),
+  name: v.string(),
+  description: v.optional(v.string()),
+  externalReference: v.optional(v.string()),
+  // Derived from `name` through normalizeSearchText in every write path (I4).
+  // Optional only for migration/backfill symmetry with the locations catalogue.
+  searchText: v.optional(v.string()),
+  status: archivalStatusValidator,
+};
+
+export const costCentreDocValidator = v.object({
+  _id: v.id('costCentres'),
+  _creationTime: v.number(),
+  ...costCentreFields,
+});
+
 /**
  * Single definition of the organizationInvitations table shape (issue #56):
  * `schema.ts` builds the table from it and the public queries build their
@@ -398,6 +417,9 @@ export const auditActionValidator = v.union(
   v.literal('location.updated'),
   v.literal('location.archived'),
   v.literal('location.deleted'),
+  v.literal('costCentre.created'),
+  v.literal('costCentre.updated'),
+  v.literal('costCentre.archived'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
   v.literal('invitation.created'),
@@ -428,6 +450,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('serviceKindField'),
   v.literal('service'),
   v.literal('location'),
+  v.literal('costCentre'),
   v.literal('serviceRelationship'),
   v.literal('invitation'),
 );

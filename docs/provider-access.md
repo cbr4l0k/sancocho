@@ -104,7 +104,9 @@ Enumerated, and every entry is a required negative test in #71 and #87.
    versions, their fields, or the Field Definition catalogue.
 6. The **Locations** catalogue. It sees the specific locations its own projection names,
    as values on the projection, never as a browsable tenant catalogue.
-7. **Cost Centres** and the party a movement is charged to.
+7. **Cost Centres** and the party a movement is charged to. Provider principals never
+   read the `costCentres` table; #87 enforces that exclusion in the linked-Service
+   projection.
 8. **Rate Cards**, Rate Card Versions and Rate Lines. A Provider knows what it charges,
    because that is on its own revisions; it never learns the coordinator's card, the grid
    it was resolved from, or what any other Provider charges.
