@@ -12,6 +12,7 @@ import {
 } from '../validators';
 import {
   getService as getServiceModel,
+  listEventServices as listEventServicesModel,
   listOrganizationServices as listOrganizationServicesModel,
   listProjectServices as listProjectServicesModel,
 } from './model';
@@ -69,6 +70,12 @@ export const listProjectServices = query({
   args: { projectId: v.id('projects'), paginationOpts: paginationOptsValidator },
   returns: paginatedResult(serviceDocValidator),
   handler: (ctx, args) => listProjectServicesModel(ctx, args),
+});
+
+export const listEventServices = query({
+  args: { eventId: v.id('events'), paginationOpts: paginationOptsValidator },
+  returns: paginatedResult(serviceDocValidator),
+  handler: (ctx, args) => listEventServicesModel(ctx, args),
 });
 
 /**

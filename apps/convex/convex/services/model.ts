@@ -3,6 +3,7 @@ import type { PaginationOptions, PaginationResult } from 'convex/server';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { recordAuditEvent } from '../audit/model';
+import { assertEventAcceptsNewServices, requireEventAccess } from '../events/model';
 import { locationIdFromValue, sameFieldValue, validateFieldValueAgainstConfig } from '../fields/values';
 import {
   requireAuthenticatedUser,
@@ -70,7 +71,7 @@ const operatingRole: Role = 'operator';
 export async function createServiceFromServiceKind(
   ctx: MutationCtx,
   args: {
-    projectId: Id<'projects'>;
+    eventId: Id<'events'>;
     serviceKindVersionId: Id<'serviceKindVersions'>;
     name: string;
     startsAt: number;
@@ -78,8 +79,9 @@ export async function createServiceFromServiceKind(
     values: { fieldDefinitionId: Id<'fieldDefinitions'>; value: ServiceFieldValue }[];
   },
 ): Promise<Id<'services'>> {
-  const { project, access } = await requireProjectAccess(ctx, args.projectId, authoringRole);
+  const { event, project, access } = await requireEventAccess(ctx, args.eventId, authoringRole);
   assertProjectAcceptsNewServices(project);
+  assertEventAcceptsNewServices(event);
   const { version, serviceKind } = await loadVersion(ctx, args.serviceKindVersionId);
   // The project and the version must be the same tenant's; knowing one id from
   // each grants nothing (I1).
@@ -100,7 +102,8 @@ export async function createServiceFromServiceKind(
   const resolved = await validateServiceAgainstServiceKind(ctx, version, fields, withServiceKindDefaults(fields, args.values), true);
 
   const serviceId = await ctx.db.insert('services', {
-    organizationId: version.organizationId,
+    organizationId: project.organizationId,
+    eventId: event._id,
     projectId: project._id,
     // Both serviceKind links are derived from the resolved version, never from client
     // args, and the service is permanently bound to this exact snapshot (I3/I4).
@@ -480,6 +483,18 @@ export async function listProjectServices(
     .paginate(args.paginationOpts);
 }
 
+export async function listEventServices(
+  ctx: QueryCtx,
+  args: { eventId: Id<'events'>; paginationOpts: PaginationOptions },
+): Promise<PaginationResult<Doc<'services'>>> {
+  const { event } = await requireEventAccess(ctx, args.eventId);
+  // Paginated and ordered by start time: an Event's Service set is unbounded (I6).
+  return ctx.db
+    .query('services')
+    .withIndex('by_event_startsAt', (q) => q.eq('eventId', event._id))
+    .paginate(args.paginationOpts);
+}
+
 /**
  * One row of the Services table: the service, the project it belongs to, and the
  * values of every field its own ServiceKind Version composes.
@@ -690,7 +705,7 @@ async function locationNameOf(
 }
 
 /**
- * Resolves an Service, its owning Project, and proves the caller's access.
+ * Resolves a Service, its owning Event and Project, and proves the caller's access.
  *
  * Authenticates before resolving the id so nonexistent and foreign services are
  * indistinguishable (I9). The project is resolved here rather than at each call
@@ -704,17 +719,23 @@ export async function requireServiceAccess(
   serviceId: Id<'services'>,
   minimumRole?: Role,
   preResolvedUser?: AuthenticatedUser,
-): Promise<{ service: Doc<'services'>; project: Doc<'projects'>; access: OrganizationMembershipAccess }> {
+): Promise<{ service: Doc<'services'>; event: Doc<'events'>; project: Doc<'projects'>; access: OrganizationMembershipAccess }> {
   const authenticated = preResolvedUser ?? (await requireAuthenticatedUser(ctx));
   const service = await ctx.db.get(serviceId);
   if (service === null) return notFoundOrInaccessible();
-  const project = await ctx.db.get(service.projectId);
-  if (project === null || project.organizationId !== service.organizationId) return notFoundOrInaccessible();
+  const event = await ctx.db.get(service.eventId);
+  if (
+    event === null ||
+    event.organizationId !== service.organizationId ||
+    event.projectId !== service.projectId
+  ) return notFoundOrInaccessible();
+  const project = await ctx.db.get(event.projectId);
+  if (project === null || project.organizationId !== event.organizationId) return notFoundOrInaccessible();
   const access =
     minimumRole === undefined
       ? await requireOrganizationMembership(ctx, service.organizationId, authenticated)
       : await requireOrganizationRole(ctx, service.organizationId, minimumRole, authenticated);
-  return { service, project, access };
+  return { service, event, project, access };
 }
 
 async function loadVersion(

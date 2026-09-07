@@ -27,6 +27,7 @@ import { serviceFieldProblem } from '@/lib/service-form-checks';
 import { timestampFromParts, type TimestampParts } from '@/lib/timestamps';
 
 type ProjectId = FunctionArgs<typeof api.projects.queries.getProject>['projectId'];
+type EventId = FunctionArgs<typeof api.services.mutations.createServiceFromServiceKind>['eventId'];
 type ServiceKindVersionId = FunctionArgs<typeof api.serviceKinds.fields.queries.listServiceKindFields>['serviceKindVersionId'];
 type ServiceKindField = FunctionReturnType<typeof api.serviceKinds.fields.queries.listServiceKindFields>[number];
 
@@ -38,10 +39,10 @@ type ServiceKindField = FunctionReturnType<typeof api.serviceKinds.fields.querie
  * input appear — which meant you could not see what a service actually required
  * until you had already committed to two choices, and the picker issued one
  * `getServiceKind` query per listed service kind to find out which of them were even
- * usable. Now the whole shape of the record is visible immediately: project and
- * service kind are two selects at the top, the fields below them fill in as soon as a
- * service kind is chosen, and the server answers "which service kinds are usable" in a
- * single paginated query.
+ * usable. Now the whole shape of the record is visible immediately: project, event,
+ * and service kind are selects at the top, the fields below them fill in as soon as a
+ * service kind is chosen, and the server answers "which service kinds are usable" in
+ * a single paginated query.
  */
 export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: string }) {
   const t = useTranslations();
@@ -62,6 +63,7 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
   );
 
   const [chosenProjectId, setChosenProjectId] = useState<ProjectId>();
+  const [chosenEventId, setChosenEventId] = useState<EventId>();
   const [chosenVersionId, setChosenVersionId] = useState<ServiceKindVersionId>();
   const [name, setName] = useState('');
   const [start, setStart] = useState<TimestampParts>({ date: '', time: '' });
@@ -81,6 +83,12 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
   const selectedProject =
     selectableProjects.find((project) => project._id === (chosenProjectId ?? initialProjectId)) ??
     (selectableProjects.length === 1 ? selectableProjects[0] : undefined);
+  const events = usePaginatedQuery(
+    api.events.queries.listProjectEvents,
+    organizationId === undefined || selectedProject === undefined ? 'skip' : { projectId: selectedProject._id },
+    { initialNumItems: 100 },
+  );
+  const selectedEvent = events.results.find((event) => event._id === chosenEventId);
   const selectedServiceKind =
     serviceKinds.results.find((entry) => entry.publishedVersion._id === chosenVersionId) ??
     (serviceKinds.results.length === 1 ? serviceKinds.results[0] : undefined);
@@ -116,7 +124,7 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (selectedProject === undefined || serviceKindVersionId === undefined) return;
+    if (selectedProject === undefined || selectedEvent === undefined || serviceKindVersionId === undefined) return;
 
     const startsAt = timestampFromParts(start);
     const endsAt = end.date === '' && end.time === '' ? undefined : timestampFromParts(end);
@@ -159,7 +167,7 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
     setMessage(undefined);
     try {
       const serviceId = await create({
-        projectId: selectedProject._id,
+        eventId: selectedEvent._id,
         serviceKindVersionId,
         name,
         startsAt,
@@ -174,7 +182,8 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
     }
   }
 
-  const ready = canCreate && selectedProject !== undefined && serviceKindVersionId !== undefined;
+  const ready =
+    canCreate && selectedProject !== undefined && selectedEvent !== undefined && serviceKindVersionId !== undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -190,11 +199,12 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
                   required
                   className="text-sm normal-case tracking-normal"
                   value={selectedProject?._id ?? ''}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setChosenProjectId(
                       selectableProjects.find((project) => project._id === event.target.value)?._id,
-                    )
-                  }
+                    );
+                    setChosenEventId(undefined);
+                  }}
                 >
                   <option value="">{t('services.selectPlaceholder')}</option>
                   {selectableProjects.map((project) => (
@@ -210,6 +220,34 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
                  * a way to reach the rest — a `<select>` cannot scroll-load. */}
                 {projects.status === 'CanLoadMore' ? (
                   <Button type="button" variant="link" size="sm" onClick={() => projects.loadMore(100)}>
+                    {t('services.loadMore')}
+                  </Button>
+                ) : null}
+              </Field>
+              <Field>
+                <FieldLabel required>{t('services.event')}</FieldLabel>
+                <FieldControl
+                  render={<select />}
+                  required
+                  disabled={selectedProject === undefined}
+                  className="text-sm normal-case tracking-normal"
+                  value={selectedEvent?._id ?? ''}
+                  onChange={(event) =>
+                    setChosenEventId(events.results.find((item) => item._id === event.target.value)?._id)
+                  }
+                >
+                  <option value="">{t('services.selectPlaceholder')}</option>
+                  {events.results.map((event) => (
+                    <option key={event._id} value={event._id}>
+                      {event.name}
+                    </option>
+                  ))}
+                </FieldControl>
+                {events.status === 'Exhausted' && selectedProject !== undefined && events.results.length === 0 ? (
+                  <p className="text-xs text-ink-3">{t('services.noEventsHint')}</p>
+                ) : null}
+                {events.status === 'CanLoadMore' ? (
+                  <Button type="button" variant="link" size="sm" onClick={() => events.loadMore(100)}>
                     {t('services.loadMore')}
                   </Button>
                 ) : null}

@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 
 import type { Id } from '../_generated/dataModel';
+import { createEvent } from '../events/model';
 import { internalMutation } from '../_generated/server';
 import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
@@ -611,6 +612,12 @@ export const seedCordilleraOperations = internalMutation({
     if (existingService !== null) {
       return { fieldDefinitions: fieldDefinitions.length, serviceKinds: serviceKinds.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
     }
+    const eventId = await createEvent(seeded, {
+      projectId,
+      name: projectName,
+      startsAt: Math.min(...services.map((service) => service.startsAt)),
+      endsAt: Math.max(...services.map((service) => service.endsAt ?? service.startsAt)),
+    });
 
     // Locations carry no per-organization name uniqueness constraint, and are
     // archivable but never deletable — so a second run under a different
@@ -663,7 +670,7 @@ export const seedCordilleraOperations = internalMutation({
       values.push({ fieldDefinitionId: requireField('destination'), value: { kind: 'location', locationId: requireLocation(service.destination) } });
       for (const entry of service.values) values.push({ fieldDefinitionId: requireField(entry.key), value: entry.value });
       const serviceId = await createServiceFromServiceKind(seeded, {
-        projectId, serviceKindVersionId: requireVersion(service.serviceKindKey), name: service.name, startsAt: service.startsAt,
+        eventId, serviceKindVersionId: requireVersion(service.serviceKindKey), name: service.name, startsAt: service.startsAt,
         ...(service.endsAt === undefined ? {} : { endsAt: service.endsAt }), values,
       });
       serviceIds.set(service.seedKey, serviceId);

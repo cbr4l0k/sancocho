@@ -8,6 +8,7 @@ import {
   serviceFields,
   serviceStatusValidator,
   fieldConfigValidator,
+  eventFields,
   fieldDefinitionFields,
   locationFields,
   organizationInvitationFields,
@@ -73,6 +74,12 @@ export default defineSchema({
     // Serves the organization-scoped project status list without filtering an
     // already-paginated result set.
     .index('by_org_status', ['organizationId', 'status']),
+
+  events: defineTable(eventFields)
+    .index('by_project', ['projectId'])
+    .index('by_project_startsAt', ['projectId', 'startsAt'])
+    .index('by_org_startsAt', ['organizationId', 'startsAt'])
+    .index('by_org_status_startsAt', ['organizationId', 'status', 'startsAt']),
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
@@ -152,6 +159,7 @@ export default defineSchema({
   // validator are built from the same definition. `serviceKindId` is derived from
   // `serviceKindVersionId` server-side (I4); never client-supplied.
   services: defineTable(serviceFields)
+    .index('by_event_startsAt', ['eventId', 'startsAt'])
     .index('by_project', ['projectId'])
     .index('by_project_startsAt', ['projectId', 'startsAt'])
     .index('by_org_startsAt', ['organizationId', 'startsAt'])

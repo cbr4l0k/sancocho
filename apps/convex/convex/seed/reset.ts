@@ -18,7 +18,8 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
  *
  * What it does NOT touch: users, organizations, memberships, and projects. A
  * developer's sign-in and their tenant survive the reset; only the operational
- * and configuration data listed above is rebuilt. Audit rows are removed for
+ * and configuration data listed above is rebuilt. Events are operational data
+ * and are swept after their Services. Audit rows are removed for
  * exactly the entity types being deleted, so the log does not keep pointing at
  * ids that no longer resolve, while organization, membership and project
  * history stays intact.
@@ -30,6 +31,7 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
 /** Audit rows for these entity types are removed alongside their entities. */
 const clearedEntityTypes: ReadonlySet<Doc<'auditEvents'>['entityType']> = new Set([
   'service',
+  'event',
   'serviceRelationship',
   'serviceKind',
   'serviceKindVersion',
@@ -41,6 +43,7 @@ const clearedEntityTypes: ReadonlySet<Doc<'auditEvents'>['entityType']> = new Se
 async function deleteAll<
   T extends
     | 'services'
+    | 'events'
     | 'serviceFieldValues'
     | 'serviceRelationships'
     | 'serviceKindFields'
@@ -63,6 +66,7 @@ export const resetTenantOperations = internalMutation({
   args: {},
   returns: v.object({
     services: v.number(),
+    events: v.number(),
     serviceFieldValues: v.number(),
     serviceRelationships: v.number(),
     serviceKindFields: v.number(),
@@ -80,6 +84,7 @@ export const resetTenantOperations = internalMutation({
     const serviceFieldValues = await deleteAll(ctx, 'serviceFieldValues');
     const serviceRelationships = await deleteAll(ctx, 'serviceRelationships');
     const services = await deleteAll(ctx, 'services');
+    const events = await deleteAll(ctx, 'events');
     const serviceKindFields = await deleteAll(ctx, 'serviceKindFields');
     const serviceKindVersions = await deleteAll(ctx, 'serviceKindVersions');
     const serviceKinds = await deleteAll(ctx, 'serviceKinds');
@@ -98,6 +103,7 @@ export const resetTenantOperations = internalMutation({
 
     return {
       services,
+      events,
       serviceFieldValues,
       serviceRelationships,
       serviceKindFields,

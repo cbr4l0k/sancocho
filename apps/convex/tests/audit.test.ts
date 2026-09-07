@@ -11,6 +11,7 @@ const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
 const createProject = api.projects.mutations.createProject;
+const createEvent = api.events.mutations.createEvent;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
 const createServiceKind = api.serviceKinds.mutations.createServiceKind;
 const createInitialDraftVersion = api.serviceKinds.mutations.createInitialDraftVersion;
@@ -40,6 +41,7 @@ async function operationalFixture() {
   const owner = await provision(t, 'audit-owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Audit', slug: 'audit-log' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Event', startsAt: 0 });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
     organizationId,
     key: 'code',
@@ -51,7 +53,7 @@ async function operationalFixture() {
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId, required: true, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId });
   const serviceId = await owner.client.mutation(createServiceFromServiceKind, {
-    projectId,
+    eventId,
     serviceKindVersionId,
     name: 'Service',
     startsAt: 1,
@@ -163,6 +165,7 @@ test('a bulk field-value edit succeeds and audits, truncating its own summary in
   const owner = await provision(t, 'audit-bulk-owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Bulk', slug: 'audit-bulk' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Bulk project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Bulk event', startsAt: 0 });
   const serviceKindId = await owner.client.mutation(createServiceKind, { organizationId, key: 'bulk', name: 'Bulk' });
   const serviceKindVersionId = await owner.client.mutation(createInitialDraftVersion, { serviceKindId });
   // 20 composed fields: `changedFields` then joins 20 document ids (~660 chars),
@@ -179,7 +182,7 @@ test('a bulk field-value edit succeeds and audits, truncating its own summary in
   }
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId });
   const serviceId = await owner.client.mutation(createServiceFromServiceKind, {
-    projectId, serviceKindVersionId, name: 'Bulk service', startsAt: 1,
+    eventId, serviceKindVersionId, name: 'Bulk service', startsAt: 1,
     values: fieldDefinitionIds.map((fieldDefinitionId) => ({ fieldDefinitionId, value: { kind: 'text' as const, value: 'before' } })),
   });
 

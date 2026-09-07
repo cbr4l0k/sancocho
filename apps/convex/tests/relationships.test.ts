@@ -11,6 +11,7 @@ const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
 const createProject = api.projects.mutations.createProject;
 const archiveProject = api.projects.mutations.archiveProject;
+const createEvent = api.events.mutations.createEvent;
 const changeServiceStatus = api.services.mutations.changeServiceStatus;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
 const createServiceKind = api.serviceKinds.mutations.createServiceKind;
@@ -46,6 +47,7 @@ async function fixture() {
   const owner = await provision(t, 'relationships-owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Relationships', slug: 'relationships-fixture' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Primary project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Primary event', startsAt: 0 });
   const fieldDefinitionId = await owner.client.mutation(createFieldDefinition, {
     organizationId,
     key: 'code',
@@ -57,22 +59,22 @@ async function fixture() {
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId, fieldDefinitionId, required: true, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId });
   let sequence = 0;
-  const createService = (project = projectId) => {
+  const createService = (event = eventId) => {
     sequence += 1;
     return owner.client.mutation(createServiceFromServiceKind, {
-      projectId: project,
+      eventId: event,
       serviceKindVersionId,
       name: `Service ${sequence}`,
       startsAt: sequence,
       values: [{ fieldDefinitionId, value: { kind: 'text', value: 'ok' } }],
     });
   };
-  return { t, owner, organizationId, projectId, serviceKindId, serviceKindVersionId, createService };
+  return { t, owner, organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, createService };
 }
 
-async function missingServiceId(t: SchemaTest, organizationId: Id<'organizations'>, projectId: Id<'projects'>, serviceKindId: Id<'serviceKinds'>, serviceKindVersionId: Id<'serviceKindVersions'>) {
+async function missingServiceId(t: SchemaTest, organizationId: Id<'organizations'>, projectId: Id<'projects'>, eventId: Id<'events'>, serviceKindId: Id<'serviceKinds'>, serviceKindVersionId: Id<'serviceKindVersions'>) {
   return t.run(async (ctx) => {
-    const id = await ctx.db.insert('services', { organizationId, projectId, serviceKindId, serviceKindVersionId, name: 'Missing', status: 'draft', startsAt: 0 });
+    const id = await ctx.db.insert('services', { organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, name: 'Missing', status: 'draft', startsAt: 0 });
     await ctx.db.delete(id);
     return id;
   });
@@ -101,7 +103,8 @@ test('creates all typed links, joins counterpart services, and allows same-org c
   expect(incoming.page.every((row) => row.counterpartService._id === source && row.counterpartService.status === 'draft')).toBe(true);
 
   const otherProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Other project' });
-  const otherProjectService = await createService(otherProjectId);
+  const otherEventId = await owner.client.mutation(createEvent, { projectId: otherProjectId, name: 'Other event', startsAt: 0 });
+  const otherProjectService = await createService(otherEventId);
   await expect(owner.client.mutation(createRelationship, {
     sourceServiceId: source,
     targetServiceId: otherProjectService,
@@ -110,21 +113,22 @@ test('creates all typed links, joins counterpart services, and allows same-org c
 });
 
 test('rejects cross-org, fabricated, self, duplicate links while preserving distinct type and direction', async () => {
-  const { t, owner, organizationId, projectId, serviceKindId, serviceKindVersionId, createService } = await fixture();
+  const { t, owner, organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, createService } = await fixture();
   const source = await createService();
   const target = await createService();
   const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Foreign', slug: 'relationships-foreign' });
   const foreignProjectId = await owner.client.mutation(createProject, { organizationId: foreignOrganizationId, name: 'Foreign project' });
+  const foreignEventId = await owner.client.mutation(createEvent, { projectId: foreignProjectId, name: 'Foreign event', startsAt: 0 });
   const foreignFieldId = await owner.client.mutation(createFieldDefinition, { organizationId: foreignOrganizationId, key: 'code', label: 'Code', config: { kind: 'text' } });
   const foreignServiceKindId = await owner.client.mutation(createServiceKind, { organizationId: foreignOrganizationId, key: 'foreignPlan', name: 'Foreign plan' });
   const foreignVersionId = await owner.client.mutation(createInitialDraftVersion, { serviceKindId: foreignServiceKindId });
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId: foreignVersionId, fieldDefinitionId: foreignFieldId, required: true, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: foreignVersionId });
   const foreignService = await owner.client.mutation(createServiceFromServiceKind, {
-    projectId: foreignProjectId, serviceKindVersionId: foreignVersionId, name: 'Foreign service', startsAt: 1,
+    eventId: foreignEventId, serviceKindVersionId: foreignVersionId, name: 'Foreign service', startsAt: 1,
     values: [{ fieldDefinitionId: foreignFieldId, value: { kind: 'text', value: 'ok' } }],
   });
-  const missing = await missingServiceId(t, organizationId, projectId, serviceKindId, serviceKindVersionId);
+  const missing = await missingServiceId(t, organizationId, projectId, eventId, serviceKindId, serviceKindVersionId);
 
   // Both orderings: the foreign Service resolves in a different position each way,
   // and the tenancy check must not depend on which side reaches it first.
@@ -141,11 +145,11 @@ test('rejects cross-org, fabricated, self, duplicate links while preserving dist
 });
 
 test('all public functions authenticate first and enforce planner authoring while viewers read', async () => {
-  const { t, owner, organizationId, projectId, serviceKindId, serviceKindVersionId, createService } = await fixture();
+  const { t, owner, organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, createService } = await fixture();
   const source = await createService();
   const target = await createService();
   const relationshipId = await owner.client.mutation(createRelationship, { sourceServiceId: source, targetServiceId: target, type: 'relatedTo' });
-  const missingService = await missingServiceId(t, organizationId, projectId, serviceKindId, serviceKindVersionId);
+  const missingService = await missingServiceId(t, organizationId, projectId, eventId, serviceKindId, serviceKindVersionId);
   const missingRelationship = await missingRelationshipId(t, organizationId, source, target);
   for (const serviceId of [source, missingService]) {
     await expect(t.mutation(createRelationship, { sourceServiceId: serviceId, targetServiceId: target, type: 'follows' })).rejects.toMatchObject({ data: { code: unauthenticated } });
@@ -289,7 +293,8 @@ test('F1 regression: the archival freeze reaches relationship writes through eve
 
   // An archived project freezes its services' links in both directions.
   const archivedProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Archived' });
-  const frozenService = await createService(archivedProjectId);
+  const archivedEventId = await owner.client.mutation(createEvent, { projectId: archivedProjectId, name: 'Archived event', startsAt: 0 });
+  const frozenService = await createService(archivedEventId);
   const frozenLink = await owner.client.mutation(createRelationship, { sourceServiceId: frozenService, targetServiceId: target, type: 'relatedTo' });
   await owner.client.mutation(archiveProject, { projectId: archivedProjectId });
   const frozen = 'serviceProjectReadOnly';

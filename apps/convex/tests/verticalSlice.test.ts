@@ -9,6 +9,7 @@ const ensureUser = api.auth.mutations.ensureUser;
 const getCurrentUser = api.auth.queries.getCurrentUser;
 const createOrganization = api.organizations.mutations.createOrganization;
 const createProject = api.projects.mutations.createProject;
+const createEvent = api.events.mutations.createEvent;
 const createBuiltinFieldDefinition = internal.fields.mutations.createBuiltinFieldDefinition;
 const listBuiltinFieldDefinitions = api.fields.queries.listBuiltinFieldDefinitions;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
@@ -61,6 +62,12 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
 
   // 3. Project.
   const projectId = await client.mutation(createProject, { organizationId, name: 'Airport transfers' });
+  const eventId = await client.mutation(createEvent, {
+    projectId,
+    name: 'Airport transfers',
+    startsAt: 1_700_000_000_000,
+    endsAt: 1_700_003_600_000,
+  });
 
   // 4. Field definitions: one global built-in (seeded through the internal
   // mutation, the only door built-ins have) and one tenant-owned field.
@@ -98,7 +105,7 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
 
   // 7. A typed Service carrying a value for the built-in field.
   const serviceId = await client.mutation(createServiceFromServiceKind, {
-    projectId,
+    eventId,
     serviceKindVersionId,
     name: 'JFK pickup',
     startsAt: 1_700_000_000_000,
@@ -115,6 +122,7 @@ test('the Stage B vertical slice runs end to end, carries a built-in field, and 
   expect(service).toMatchObject({
     _id: serviceId,
     organizationId,
+    eventId,
     projectId,
     serviceKindId,
     serviceKindVersionId,

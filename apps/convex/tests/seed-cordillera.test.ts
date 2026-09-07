@@ -2,15 +2,18 @@ import { convexTest } from 'convex-test';
 import { expect, test } from 'vitest';
 
 import { api, internal } from '../convex/_generated/api';
+import type { Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
 import { enableSeedMutations, modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
 const seedCordilleraOperations = internal.seed.cordillera.seedCordilleraOperations;
+const resetTenantOperations = internal.seed.reset.resetTenantOperations;
 const issuer = 'https://example.clerk.accounts.dev';
 const slug = 'cordillera-demo';
 const projectName = 'Cordillera 2026';
+type SchemaTest = ReturnType<typeof convexTest<(typeof schema)['tables']>>;
 const festivalServiceKindKeys = [
   'festivalArtistDisposition',
   'festivalArtistTransfer',
@@ -22,7 +25,7 @@ const festivalServiceKindKeys = [
 
 enableSeedMutations();
 
-async function tenant(t: ReturnType<typeof convexTest>) {
+async function tenant(t: SchemaTest) {
   const client = t.withIdentity({ issuer, subject: 'cordillera-owner', name: 'Owner', email: 'owner@example.com', emailVerified: true });
   await client.mutation(ensureUser, {});
   const organizationId = await client.mutation(createOrganization, { name: 'Cordillera Ops', slug });
@@ -97,6 +100,47 @@ test('re-running is idempotent for keyed configuration and clean-slate operation
   expect(before).toEqual({ fields: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37 });
   expect(after).toEqual(before);
 }, 20_000);
+
+test('reset and repeated Cordillera reseeds reproduce byte-identical numeric figures', async () => {
+  const t = convexTest(schema, modules);
+  const { organizationId } = await tenant(t);
+
+  await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
+  const first = await cordilleraFigures(t, organizationId);
+  await t.mutation(resetTenantOperations, {});
+  await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
+  const second = await cordilleraFigures(t, organizationId);
+  await t.mutation(resetTenantOperations, {});
+  await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
+  const third = await cordilleraFigures(t, organizationId);
+
+  expect(second).toBe(first);
+  expect(third).toBe(first);
+}, 40_000);
+
+async function cordilleraFigures(t: SchemaTest, organizationId: Id<'organizations'>) {
+  return t.run(async (ctx) => {
+    const services = await ctx.db
+      .query('services')
+      .withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId))
+      .collect();
+    const figures: [string, string, number][] = [];
+    for (const service of services) {
+      const values = await ctx.db
+        .query('serviceFieldValues')
+        .withIndex('by_service_field', (q) => q.eq('serviceId', service._id))
+        .collect();
+      for (const stored of values) {
+        if (stored.value.kind !== 'number') continue;
+        const definition = await ctx.db.get(stored.fieldDefinitionId);
+        if (definition === null) throw new Error('Expected the definition behind a Cordillera figure');
+        figures.push([service.name, definition.key, stored.value.value]);
+      }
+    }
+    figures.sort((left, right) => left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]) || left[2] - right[2]);
+    return JSON.stringify(figures);
+  });
+}
 
 test('published snapshots, service ownership, lifecycle audits, and mixed vocabulary preserve I1-I4', async () => {
   const t = convexTest(schema, modules);

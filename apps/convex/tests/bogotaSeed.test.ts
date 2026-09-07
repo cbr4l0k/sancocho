@@ -78,7 +78,7 @@ test('the reset clears operational data but keeps the user, organization and pro
   await t.mutation(seedBogotaOperations, { organizationSlug: slug });
 
   const cleared = await t.mutation(resetTenantOperations, {});
-  expect(cleared).toMatchObject({ services: 6, locations: 8, serviceKinds: 4, fieldDefinitions: 9 });
+  expect(cleared).toMatchObject({ services: 6, events: 1, locations: 8, serviceKinds: 4, fieldDefinitions: 9 });
 
   // Gone: the four things the reset is for.
   expect(await client.query(listLocations, { organizationId, paginationOpts: firstPage })).toMatchObject({ page: [] });
@@ -95,7 +95,7 @@ test('the reset clears operational data but keeps the user, organization and pro
     const audits = await ctx.db.query('auditEvents').collect();
     expect(audits.some((audit) => audit.entityType === 'organization')).toBe(true);
     expect(audits.some((audit) => audit.entityType === 'project')).toBe(true);
-    expect(audits.some((audit) => ['service', 'location', 'serviceKind', 'fieldDefinition'].includes(audit.entityType))).toBe(false);
+    expect(audits.some((audit) => ['event', 'service', 'location', 'serviceKind', 'fieldDefinition'].includes(audit.entityType))).toBe(false);
   });
 });
 

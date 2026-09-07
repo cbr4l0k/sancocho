@@ -4,6 +4,7 @@ import { v } from 'convex/values';
 import { ensureAuthenticatedUser } from '../auth/model';
 import { internalMutation, type MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
+import { createEvent } from '../events/model';
 import { createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { conflict, invalidInput } from '../lib/errors';
@@ -272,6 +273,11 @@ export const seedDemonstrationData = internalMutation({
 
     const organizationId = await createOrganization(seededCtx, demonstrationOrganization);
     const projectId = await createProject(seededCtx, { organizationId, name: demonstrationProjectName });
+    const eventId = await createEvent(seededCtx, {
+      projectId,
+      name: demonstrationProjectName,
+      startsAt: demonstrationStartsAt,
+    });
     const airportId = await createLocation(seededCtx, {
       organizationId,
       name: 'Airport Terminal 2',
@@ -300,7 +306,7 @@ export const seedDemonstrationData = internalMutation({
     // three text-ish semantic types (text, longText) and both location fields
     // end to end, not just the required four.
     await createServiceFromServiceKind(seededCtx, {
-      projectId,
+      eventId,
       serviceKindVersionId: publishedVersion._id,
       name: demonstrationServiceName,
       startsAt: demonstrationStartsAt,

@@ -67,11 +67,12 @@ async function referenceLocationFromServiceValue(
 ): Promise<Id<'serviceFieldValues'>> {
   return t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', { organizationId, name: 'Reference project', status: 'draft' });
+    const eventId = await ctx.db.insert('events', { organizationId, projectId, name: 'Reference event', status: 'draft', startsAt: 0 });
     const serviceKindId = await ctx.db.insert('serviceKinds', { organizationId, key: 'referenceServiceKind', name: 'Reference serviceKind', status: 'draft' });
     const serviceKindVersionId = await ctx.db.insert('serviceKindVersions', { organizationId, serviceKindId, versionNumber: 1, status: 'draft' });
     const fieldDefinitionId = await ctx.db.insert('fieldDefinitions', { scope: 'organization', organizationId, key: 'site', label: 'Site', status: 'active', config: { kind: 'location' } });
     const serviceKindFieldId = await ctx.db.insert('serviceKindFields', { organizationId, serviceKindVersionId, fieldDefinitionId, position: 0, required: false, visible: true, config: { kind: 'location' } });
-    const serviceId = await ctx.db.insert('services', { organizationId, projectId, serviceKindId, serviceKindVersionId, name: 'Reference service', status: 'draft', startsAt: 0 });
+    const serviceId = await ctx.db.insert('services', { organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, name: 'Reference service', status: 'draft', startsAt: 0 });
     return ctx.db.insert('serviceFieldValues', { organizationId, serviceId, serviceKindFieldId, fieldDefinitionId, value: { kind: 'location', locationId }, locationId });
   });
 }

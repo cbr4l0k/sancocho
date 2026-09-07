@@ -23,12 +23,13 @@ const updateValue = v.object({
 });
 
 /**
- * `serviceKindId` and `organizationId` are deliberately absent: both are derived from
- * the resolved serviceKind version and project server-side (I4).
+ * `projectId`, `serviceKindId`, and `organizationId` are deliberately absent:
+ * project ownership comes from the stored Event, while the other links come
+ * from the resolved version and stored graph (I4).
  */
 export const createServiceFromServiceKind = mutation({
   args: {
-    projectId: v.id('projects'),
+    eventId: v.id('events'),
     serviceKindVersionId: v.id('serviceKindVersions'),
     name: v.string(),
     startsAt: v.number(),

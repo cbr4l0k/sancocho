@@ -83,6 +83,12 @@ export const projectStatusValidator = v.union(
   v.literal('completed'),
   v.literal('archived'),
 );
+export const eventStatusValidator = v.union(
+  v.literal('draft'),
+  v.literal('active'),
+  v.literal('completed'),
+  v.literal('archived'),
+);
 export const fieldDefinitionStatusValidator = archivalStatusValidator;
 
 /** Code-owned location taxonomy; locations are reference data, never free-form types. */
@@ -114,6 +120,22 @@ export const projectDocValidator = v.object({
   _id: v.id('projects'),
   _creationTime: v.number(),
   ...projectFields,
+});
+
+/** Shared persisted and returned shape for the Project-owned Event layer. */
+export const eventFields = {
+  organizationId: v.id('organizations'),
+  projectId: v.id('projects'),
+  name: v.string(),
+  status: eventStatusValidator,
+  startsAt: v.number(),
+  endsAt: v.optional(v.number()),
+};
+
+export const eventDocValidator = v.object({
+  _id: v.id('events'),
+  _creationTime: v.number(),
+  ...eventFields,
 });
 
 /**
@@ -200,6 +222,7 @@ export const organizationInvitationDocValidator = v.object({
 export const serviceFields = {
   organizationId: v.id('organizations'),
   projectId: v.id('projects'),
+  eventId: v.id('events'),
   serviceKindId: v.id('serviceKinds'),
   serviceKindVersionId: v.id('serviceKindVersions'),
   name: v.string(),
@@ -335,6 +358,10 @@ export const auditActionValidator = v.union(
   v.literal('project.created'),
   v.literal('project.updated'),
   v.literal('project.archived'),
+  v.literal('event.created'),
+  v.literal('event.updated'),
+  v.literal('event.statusChanged'),
+  v.literal('event.archived'),
   v.literal('fieldDefinition.created'),
   v.literal('fieldDefinition.updated'),
   v.literal('fieldDefinition.archived'),
@@ -385,6 +412,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('organization'),
   v.literal('membership'),
   v.literal('project'),
+  v.literal('event'),
   v.literal('fieldDefinition'),
   v.literal('serviceKind'),
   v.literal('serviceKindVersion'),

@@ -12,6 +12,7 @@ const addMember = api.organizations.mutations.addMember;
 const createProject = api.projects.mutations.createProject;
 const updateProject = api.projects.mutations.updateProject;
 const archiveProject = api.projects.mutations.archiveProject;
+const createEvent = api.events.mutations.createEvent;
 const createFieldDefinition = api.fields.mutations.createFieldDefinition;
 const updateFieldDefinition = api.fields.mutations.updateFieldDefinition;
 const archiveFieldDefinition = api.fields.mutations.archiveFieldDefinition;
@@ -66,6 +67,7 @@ async function fixture() {
   const owner = await provision(t, 'services-owner');
   const organizationId = await owner.client.mutation(createOrganization, { name: 'Services', slug: 'services-fixture' });
   const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Service project' });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Service event', startsAt: 0 });
   const locationId = await owner.client.mutation(createLocation, { organizationId, name: 'Main venue', type: 'venue' });
 
   const field = (key: string, label: string, config: Doc<'fieldDefinitions'>['config']) =>
@@ -99,7 +101,7 @@ async function fixture() {
   const requiredCode: SubmittedValue = { fieldDefinitionId: definitions.code, value: { kind: 'text', value: 'AB' } };
   const createService = (values: SubmittedValue[] = [requiredCode], overrides: { name?: string; startsAt?: number; endsAt?: number } = {}) =>
     owner.client.mutation(createServiceFromServiceKind, {
-      projectId,
+      eventId,
       serviceKindVersionId: versionId,
       name: overrides.name ?? 'Arrival',
       startsAt: overrides.startsAt ?? 1000,
@@ -107,17 +109,17 @@ async function fixture() {
       values,
     });
 
-  return { t, owner, organizationId, projectId, serviceKindId, versionId, locationId, definitions, requiredCode, createService };
+  return { t, owner, organizationId, projectId, eventId, serviceKindId, versionId, locationId, definitions, requiredCode, createService };
 }
 
 test('creation is gated on version status, serviceKind and project lifecycle, and tenant ownership', async () => {
-  const { t, owner, organizationId, projectId, serviceKindId, versionId, requiredCode, createService } = await fixture();
+  const { t, owner, organizationId, projectId, eventId, serviceKindId, versionId, requiredCode, createService } = await fixture();
   const values = [requiredCode];
 
   // A draft version has not frozen its rules yet, so it can never back an Service.
   const draftVersionId = await owner.client.mutation(clonePublishedVersionToDraft, { serviceKindId });
   await expect(
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
   ).rejects.toMatchObject({ data: { code: 'serviceKindUnavailable' } });
 
   // Publishing the clone retires v1; a retired version stays readable and keeps
@@ -125,13 +127,13 @@ test('creation is gated on version status, serviceKind and project lifecycle, an
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: draftVersionId });
   await expect(createService(values)).rejects.toMatchObject({ data: { code: 'serviceKindUnavailable' } });
   await expect(
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
   ).resolves.toBeDefined();
 
   // Archiving the serviceKind retires its published version in the same transaction.
   await owner.client.mutation(archiveServiceKind, { serviceKindId });
   await expect(
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: draftVersionId, name: 'Arrival', startsAt: 1000, values }),
   ).rejects.toMatchObject({ data: { code: 'serviceKindUnavailable' } });
 
   // A serviceKind version belonging to another tenant is opaque even to a member of
@@ -148,18 +150,20 @@ test('creation is gated on version status, serviceKind and project lifecycle, an
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId: foreignVersionId, fieldDefinitionId: foreignField, required: false, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: foreignVersionId });
   await expect(
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: foreignVersionId, name: 'Arrival', startsAt: 1000, values: [] }),
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: foreignVersionId, name: 'Arrival', startsAt: 1000, values: [] }),
   ).rejects.toMatchObject({ data: { code: inaccessible } });
 
   // Project lifecycle: a completed project takes no new services, an archived one
   // takes none either (and freezes the ones it has — see the F2 regression test).
   const completedProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Completed' });
+  const completedEventId = await owner.client.mutation(createEvent, { projectId: completedProjectId, name: 'Completed event', startsAt: 0 });
   await owner.client.mutation(updateProject, { projectId: completedProjectId, status: 'completed' });
   const archivedProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Archived' });
+  const archivedEventId = await owner.client.mutation(createEvent, { projectId: archivedProjectId, name: 'Archived event', startsAt: 0 });
   await owner.client.mutation(archiveProject, { projectId: archivedProjectId });
-  for (const closedProjectId of [completedProjectId, archivedProjectId]) {
+  for (const closedEventId of [completedEventId, archivedEventId]) {
     await expect(
-      owner.client.mutation(createServiceFromServiceKind, { projectId: closedProjectId, serviceKindVersionId: versionId, name: 'Arrival', startsAt: 1000, values }),
+      owner.client.mutation(createServiceFromServiceKind, { eventId: closedEventId, serviceKindVersionId: versionId, name: 'Arrival', startsAt: 1000, values }),
     ).rejects.toMatchObject({ data: { code: 'serviceProjectUnavailable' } });
   }
 
@@ -168,8 +172,50 @@ test('creation is gated on version status, serviceKind and project lifecycle, an
   });
 });
 
+test('service creation requires an Event, hides foreign Events, and derives projectId from the stored Event', async () => {
+  const { t, owner, organizationId, projectId, eventId, versionId, requiredCode } = await fixture();
+
+  await expect(
+    // @ts-expect-error The runtime validator must also refuse callers that omit the required Event link.
+    owner.client.mutation(createServiceFromServiceKind, {
+      serviceKindVersionId: versionId,
+      name: 'No parent',
+      startsAt: 1,
+      values: [requiredCode],
+    }),
+  ).rejects.toBeDefined();
+
+  const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Foreign event org', slug: 'foreign-event-org' });
+  const foreignProjectId = await owner.client.mutation(createProject, { organizationId: foreignOrganizationId, name: 'Foreign project' });
+  const foreignEventId = await owner.client.mutation(createEvent, { projectId: foreignProjectId, name: 'Foreign event', startsAt: 0 });
+  await expect(
+    owner.client.mutation(createServiceFromServiceKind, {
+      eventId: foreignEventId,
+      serviceKindVersionId: versionId,
+      name: 'Cross tenant',
+      startsAt: 1,
+      values: [requiredCode],
+    }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  const serviceId = await owner.client.mutation(createServiceFromServiceKind, {
+    eventId,
+    serviceKindVersionId: versionId,
+    name: 'Derived project',
+    startsAt: 1,
+    values: [requiredCode],
+  });
+  await t.run(async (ctx) => {
+    const storedEvent = await ctx.db.get(eventId);
+    const storedService = await ctx.db.get(serviceId);
+    expect(storedEvent).toMatchObject({ organizationId, projectId });
+    expect(storedService).toMatchObject({ organizationId, eventId, projectId });
+    expect(storedService?.projectId).toBe(projectId);
+  });
+});
+
 test('every public service function is opaque to unauthenticated, fabricated, foreign, and non-member callers', async () => {
-  const { t, owner, organizationId, projectId, versionId, requiredCode, createService } = await fixture();
+  const { t, owner, organizationId, projectId, eventId, versionId, requiredCode, createService } = await fixture();
   const outsider = await provision(t, 'services-outsider');
   const serviceId = await createService();
 
@@ -177,6 +223,7 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
     const id = await ctx.db.insert('services', {
       organizationId,
       projectId,
+      eventId,
       serviceKindId: (await ctx.db.get(serviceId))?.serviceKindId ?? (() => { throw new Error('service missing'); })(),
       serviceKindVersionId: versionId,
       name: 'Temporary',
@@ -191,6 +238,11 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
     await ctx.db.delete(id);
     return id;
   });
+  const missingEventId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('events', { organizationId, projectId, name: 'Temporary', status: 'draft', startsAt: 0 });
+    await ctx.db.delete(id);
+    return id;
+  });
 
   // Unauthenticated: identical error for real and fabricated ids, on all six.
   for (const id of [serviceId, missingServiceId]) {
@@ -201,8 +253,10 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
   }
   for (const id of [projectId, missingProjectId]) {
     await expect(t.query(listProjectServices, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
+  }
+  for (const id of [eventId, missingEventId]) {
     await expect(
-      t.mutation(createServiceFromServiceKind, { projectId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
+      t.mutation(createServiceFromServiceKind, { eventId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
     ).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
 
@@ -216,8 +270,10 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
   }
   for (const id of [projectId, missingProjectId]) {
     await expect(outsider.client.query(listProjectServices, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+  for (const id of [eventId, missingEventId]) {
     await expect(
-      outsider.client.mutation(createServiceFromServiceKind, { projectId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
+      outsider.client.mutation(createServiceFromServiceKind, { eventId: id, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
     ).rejects.toMatchObject({ data: { code: inaccessible } });
   }
 
@@ -229,7 +285,7 @@ test('every public service function is opaque to unauthenticated, fabricated, fo
 });
 
 test('service authoring is planner+, running an service is open to operators, and reading is open to any member', async () => {
-  const { t, owner, organizationId, projectId, versionId, requiredCode, createService } = await fixture();
+  const { t, owner, organizationId, projectId, eventId, versionId, requiredCode, createService } = await fixture();
   const viewer = await provision(t, 'services-viewer');
   const operator = await provision(t, 'services-operator');
   const planner = await provision(t, 'services-planner');
@@ -242,7 +298,7 @@ test('service authoring is planner+, running an service is open to operators, an
   // refused below planner, with the generic error.
   for (const { client } of [viewer, operator]) {
     await expect(
-      client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
+      client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: versionId, name: 'Nope', startsAt: 1, values: [requiredCode] }),
     ).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(client.mutation(updateServiceCoreFields, { serviceId, name: 'Nope' })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(client.mutation(updateServiceFields, { serviceId, values: [{ fieldDefinitionId: requiredCode.fieldDefinitionId, value: { kind: 'text', value: 'ZZ' } }] })).rejects.toMatchObject({ data: { code: inaccessible } });
@@ -266,7 +322,7 @@ test('service authoring is planner+, running an service is open to operators, an
 
   await expect(planner.client.mutation(updateServiceCoreFields, { serviceId, name: 'Planner edit' })).resolves.toBeNull();
   await expect(
-    planner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: versionId, name: 'Planner service', startsAt: 1, values: [requiredCode] }),
+    planner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: versionId, name: 'Planner service', startsAt: 1, values: [requiredCode] }),
   ).resolves.toBeDefined();
 });
 
@@ -394,10 +450,10 @@ test('the location mirror is written on create, moved on update, and removed on 
 });
 
 test('core service fields are validated on the merged pair, trimmed, and clearable', async () => {
-  const { t, owner, projectId, versionId, requiredCode, createService } = await fixture();
+  const { t, owner, eventId, versionId, requiredCode, createService } = await fixture();
   const create = (overrides: { name?: string; startsAt?: number; endsAt?: number }) =>
     owner.client.mutation(createServiceFromServiceKind, {
-      projectId,
+      eventId,
       serviceKindVersionId: versionId,
       name: overrides.name ?? 'Arrival',
       startsAt: overrides.startsAt ?? 1000,
@@ -451,9 +507,10 @@ test('an service must fall inside its project window, on creation and on every l
     startsAt: 1000,
     endsAt: 2000,
   });
+  const eventId = await owner.client.mutation(createEvent, { projectId, name: 'Windowed event', startsAt: 1000, endsAt: 2000 });
   const create = (overrides: { startsAt?: number; endsAt?: number } = {}) =>
     owner.client.mutation(createServiceFromServiceKind, {
-      projectId,
+      eventId,
       serviceKindVersionId: versionId,
       name: 'Arrival',
       startsAt: overrides.startsAt ?? 1200,
@@ -497,9 +554,10 @@ test('an service must fall inside its project window, on creation and on every l
     name: 'Open ended project',
     startsAt: 1000,
   });
+  const openEndedEventId = await owner.client.mutation(createEvent, { projectId: openEndedId, name: 'Open ended event', startsAt: 1000 });
   const inOpenEnded = (startsAt: number) =>
     owner.client.mutation(createServiceFromServiceKind, {
-      projectId: openEndedId,
+      eventId: openEndedEventId,
       serviceKindVersionId: versionId,
       name: 'Arrival',
       startsAt,
@@ -512,11 +570,12 @@ test('an service must fall inside its project window, on creation and on every l
 test('the organization-wide service list interleaves projects, narrows by filter, and carries each row’s fields', async () => {
   const { owner, organizationId, projectId, versionId, definitions, requiredCode, createService } = await fixture();
   const otherProjectId = await owner.client.mutation(createProject, { organizationId, name: 'Second project' });
+  const otherEventId = await owner.client.mutation(createEvent, { projectId: otherProjectId, name: 'Second event', startsAt: 0 });
 
   const first = await createService([requiredCode], { name: 'Earliest', startsAt: 100 });
   const third = await createService([requiredCode], { name: 'Latest', startsAt: 900 });
   const second = await owner.client.mutation(createServiceFromServiceKind, {
-    projectId: otherProjectId,
+    eventId: otherEventId,
     serviceKindVersionId: versionId,
     name: 'Middle',
     startsAt: 500,
@@ -580,9 +639,9 @@ test('the organization-wide service list interleaves projects, narrows by filter
 });
 
 test('a location value on a listed service is named, not returned as a bare reference', async () => {
-  const { owner, organizationId, projectId, versionId, locationId, definitions, requiredCode } = await fixture();
+  const { owner, organizationId, eventId, versionId, locationId, definitions, requiredCode } = await fixture();
   await owner.client.mutation(createServiceFromServiceKind, {
-    projectId,
+    eventId,
     serviceKindVersionId: versionId,
     name: 'Pickup',
     startsAt: 1000,
@@ -655,7 +714,7 @@ test('the organization-wide service list is tenant-isolated on both of its ids (
 });
 
 test('historical integrity: an service keeps validating against its own version after that version is retired (I3)', async () => {
-  const { t, owner, projectId, serviceKindId, versionId, definitions, requiredCode, createService } = await fixture();
+  const { t, owner, eventId, serviceKindId, versionId, definitions, requiredCode, createService } = await fixture();
   const legalUnderV1: SubmittedValue = { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 8 } };
   const serviceId = await createService([requiredCode, { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 5 } }]);
 
@@ -698,7 +757,7 @@ test('historical integrity: an service keeps validating against its own version 
   // New services must use v2, and v2's narrower rule binds them.
   await expect(createService([requiredCode])).rejects.toMatchObject({ data: { code: 'serviceKindUnavailable' } });
   const fromV2 = (values: SubmittedValue[]) =>
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: v2, name: 'Under v2', startsAt: 1000, values });
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: v2, name: 'Under v2', startsAt: 1000, values });
   await expect(fromV2([requiredCode, legalUnderV1])).rejects.toMatchObject({ data: { code: 'fieldValueRangeInvalid' } });
   await expect(fromV2([requiredCode, { fieldDefinitionId: definitions.seats, value: { kind: 'number', value: 3 } }])).resolves.toBeDefined();
 });
@@ -793,7 +852,7 @@ test('S1 regression: resubmitting an unchanged value is not re-judged, even afte
 });
 
 test('S3 regression: stored string values are capped absolutely, whatever the snapshot omits', async () => {
-  const { owner, organizationId, projectId, requiredCode, createService } = await fixture();
+  const { owner, organizationId, eventId, requiredCode, createService } = await fixture();
   // A config with NO maxLength — the shape the seeded `notes` built-in ships —
   // is exactly the case where only the absolute ceiling stands between a tenant
   // and a multi-megabyte service that `getService` can never read back.
@@ -805,7 +864,7 @@ test('S3 regression: stored string values are capped absolutely, whatever the sn
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId: versionId, fieldDefinitionId: short, required: false, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: versionId });
   const create = (values: SubmittedValue[]) =>
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: versionId, name: 'Capped', startsAt: 1000, values });
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: versionId, name: 'Capped', startsAt: 1000, values });
 
   await expect(create([{ fieldDefinitionId: unbounded, value: { kind: 'longText', value: 'x'.repeat(10_001) } }])).rejects.toMatchObject({
     data: { code: 'fieldValueLengthInvalid' },
@@ -921,6 +980,7 @@ test('service queries paginate by start time, stay tenant-scoped, and join live 
   const { t, owner, organizationId, projectId, definitions, requiredCode, createService } = await fixture();
   const foreignOrganizationId = await owner.client.mutation(createOrganization, { name: 'Other', slug: 'services-query-foreign' });
   const foreignProjectId = await owner.client.mutation(createProject, { organizationId: foreignOrganizationId, name: 'Theirs' });
+  const foreignEventId = await owner.client.mutation(createEvent, { projectId: foreignProjectId, name: 'Theirs', startsAt: 0 });
   const member = await provision(t, 'services-query-member');
   await owner.client.mutation(addMember, { organizationId, userId: member.userId, role: 'viewer' });
 
@@ -964,7 +1024,7 @@ test('service queries paginate by start time, stay tenant-scoped, and join live 
   await owner.client.mutation(addServiceKindField, { serviceKindVersionId: foreignVersionId, fieldDefinitionId: foreignField, required: false, visible: true });
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: foreignVersionId });
   const foreignServiceId = await owner.client.mutation(createServiceFromServiceKind, {
-    projectId: foreignProjectId,
+    eventId: foreignEventId,
     serviceKindVersionId: foreignVersionId,
     name: 'Theirs',
     startsAt: 1,
@@ -974,7 +1034,7 @@ test('service queries paginate by start time, stay tenant-scoped, and join live 
 });
 
 test('F3 regression: configured defaults are materialized at creation, before the required-field check', async () => {
-  const { t, owner, organizationId, projectId, locationId } = await fixture();
+  const { t, owner, organizationId, eventId, locationId } = await fixture();
   // A fresh serviceKind whose fields carry defaults, including a REQUIRED one: the
   // default is what makes omitting it legal.
   const label = await owner.client.mutation(createFieldDefinition, { organizationId, key: 'shift', label: 'Shift', config: { kind: 'text', maxLength: 8 } });
@@ -988,7 +1048,7 @@ test('F3 regression: configured defaults are materialized at creation, before th
   await owner.client.mutation(publishServiceKindVersion, { serviceKindVersionId: versionId });
 
   const create = (values: SubmittedValue[]) =>
-    owner.client.mutation(createServiceFromServiceKind, { projectId, serviceKindVersionId: versionId, name: 'Defaulted', startsAt: 1000, values });
+    owner.client.mutation(createServiceFromServiceKind, { eventId, serviceKindVersionId: versionId, name: 'Defaulted', startsAt: 1000, values });
 
   // A required field with a configured default succeeds when omitted, and every
   // default is materialized as a real stored value.

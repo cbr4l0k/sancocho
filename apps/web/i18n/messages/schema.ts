@@ -256,6 +256,7 @@ export type MessageSchema = {
     create: string;
     chooseServiceKind: string;
     project: string;
+    event: string;
     projectFilter: string;
     allProjects: string;
     projectWindow: string;
@@ -265,6 +266,7 @@ export type MessageSchema = {
     selectPlaceholder: string;
     chooseServiceKindHint: string;
     noProjectsHint: string;
+    noEventsHint: string;
     noServiceKindsHint: string;
     projectUnavailable: string;
     serviceKindUnavailable: string;

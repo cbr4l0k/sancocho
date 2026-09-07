@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 
 import { internalMutation } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
+import { createEvent } from '../events/model';
 import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { invalidInput } from '../lib/errors';
@@ -253,6 +254,12 @@ export const seedBogotaOperations = internalMutation({
         startsAt: defaultProject.startsAt,
         endsAt: defaultProject.endsAt,
       }));
+    const eventId = await createEvent(seeded, {
+      projectId,
+      name: projectName,
+      startsAt: Math.min(...services.map((service) => service.startsAt)),
+      endsAt: Math.max(...services.map((service) => service.endsAt ?? service.startsAt)),
+    });
 
     function requireLocation(key: LocationKey): Id<'locations'> {
       const id = locationIds.get(key);
@@ -291,7 +298,7 @@ export const seedBogotaOperations = internalMutation({
       }
 
       const serviceId = await createServiceFromServiceKind(seeded, {
-        projectId,
+        eventId,
         serviceKindVersionId: version._id,
         name: service.name,
         startsAt: service.startsAt,

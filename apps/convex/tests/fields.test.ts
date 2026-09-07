@@ -875,11 +875,12 @@ async function insertServiceFieldValueReference(
 ) {
   await t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', { organizationId, name: 'Fixture project', status: 'draft' });
+    const eventId = await ctx.db.insert('events', { organizationId, projectId, name: 'Fixture event', status: 'draft', startsAt: 0 });
     const serviceKindId = await ctx.db.insert('serviceKinds', { organizationId, key: 'valuesServiceKind', name: 'Fixture serviceKind', status: 'draft' });
     const serviceKindVersionId = await ctx.db.insert('serviceKindVersions', { organizationId, serviceKindId, versionNumber: 1, status: 'published' });
     const decoyFieldId = await ctx.db.insert('fieldDefinitions', { scope: 'organization', organizationId, key: 'decoyField', label: 'Decoy', status: 'active', config: textConfig });
     const serviceKindFieldId = await ctx.db.insert('serviceKindFields', { organizationId, serviceKindVersionId, fieldDefinitionId: decoyFieldId, position: 1, required: false, visible: true, config: textConfig });
-    const serviceId = await ctx.db.insert('services', { organizationId, projectId, serviceKindId, serviceKindVersionId, name: 'Fixture service', status: 'draft', startsAt: 0 });
+    const serviceId = await ctx.db.insert('services', { organizationId, projectId, eventId, serviceKindId, serviceKindVersionId, name: 'Fixture service', status: 'draft', startsAt: 0 });
     await ctx.db.insert('serviceFieldValues', { organizationId, serviceId, serviceKindFieldId, fieldDefinitionId, value: { kind: 'text', value: 'stored' } });
   });
 }
