@@ -22,26 +22,120 @@ a stored grant row and a named capability. The two vocabularies do not compose �
 provider's rank inside its *own* Organization confers nothing here, and a coordinator's
 role confers nothing through a grant its tenant issued.
 
-**The provider path does not exist in code yet.** Everything below this section describes
-the member path, which is the only path `lib/access.ts` implements today: every helper
-there takes an `organizationId` and returns a shape containing
-`membership: Doc<'organizationMemberships'>`, so a second principal cannot currently be
-expressed without changing that return type. Issue #71 generalizes it — a `Principal`
-discriminated union, a `providerAccessGrants` table, and one
-`requireAssignmentAccess(ctx, assignmentId, intent)` gate that every Assignment-touching
-operation must route through. The decision it implements is recorded in
-[`provider-access.md`](provider-access.md), including the enumerated may-see / may-not-see
-lists, the closed capability set (`readAssignment`, `writeExecution`, `respondToTerms`,
-`readLinkedServiceProjection`), and the rule that grants are non-transitive.
-
-The invariant is stated in its target shape deliberately. If I1 kept describing membership
-as the only principal, it would stop being load-bearing the moment the second arm landed,
-and every helper written in the meantime would be written against a chain the code is
-about to leave.
+**Both paths exist in code.** #71 landed the second arm: the `Principal` discriminated
+union, the `providerAccessGrants` table, the closed capability set, and one gate. The
+decision it implements is recorded in [`provider-access.md`](provider-access.md),
+including the enumerated may-see / may-not-see lists and the rule that grants are
+non-transitive.
 
 Error discipline is identical on both paths (I9): an ungranted provider probing an
 adjacent id gets the same generic error as a stranger probing a fabricated one. Audit
-carries both actor dimensions — which user, acting under which grant.
+carries both actor dimensions — which user, acting under which grant
+(`auditEvents.onBehalfOfProviderId`, absent on member-arm rows).
+
+### The single gate
+
+```
+requirePrincipalForProject(ctx, projectId, intent) -> MemberPrincipal | ProviderPrincipal
+```
+
+`convex/lib/access.ts` is the ONLY module that resolves which kind of principal a caller
+is, and the only reader of `providerAccessGrants` for authorization. No operation inlines
+either arm; adding a third principal must remain a change to that one file.
+`tests/providerAccess.test.ts` asserts that mechanically over the sources — the gate is
+defined once, `providerAccessGrants` has exactly two readers in the codebase (this gate,
+and `providers/grants.ts` which owns the row's lifecycle), and the resolution index
+`by_providerOrganization_project` has exactly one reader besides its definition.
+
+`requireAssignmentAccess(ctx, assignmentId, intent)` is **#67's** thin wrapper: it resolves
+an Assignment to its Project and delegates here, adding no policy of its own. It does not
+exist yet, because `assignments` does not. The build-order decision recorded on #71 chose
+this shape deliberately over landing an empty `assignments` shell, and moved four
+Assignment-level required tests to #67 and one to #87 rather than stubbing them.
+
+Three orderings inside the gate are load-bearing:
+
+1. **Authenticate before the caller-supplied id is loaded**, so a fabricated project id and
+   a real foreign one are indistinguishable to an anonymous caller.
+2. **The member arm is tried first.** It is the overwhelming case and costs one indexed
+   read; the provider arm's membership walk is only reached by callers who are not members
+   of the owning tenant. A caller who *is* a member but whose role does not reach the
+   intent is refused there rather than falling through to the provider arm — somebody
+   deliberately admitted as a `viewer` does not get more by also belonging to a granted
+   provider firm.
+3. **Every failure leaves through one `notFoundOrInaccessible()`** — no project, no
+   principal, insufficient role, revoked grant, dead claim, unheld capability.
+
+### The provider arm
+
+A `providerAccessGrants` row says: coordinator `organizationId` has granted Provider
+`providerId` — whose claimed Organization is `providerOrganizationId` — access to
+`projectId`. Nothing else. The row carries **no capability column, no role column and no
+delegation column**: what a grant confers is code-owned and closed, so widening a
+provider's reach is a reviewed code change, never a row a coordinator can edit (I8).
+
+Resolution walks from the CALLER's side — the signed-in user's own memberships, then "does
+this Organization hold a grant on this Project?" — which keeps the work proportional to the
+caller rather than to how many firms a festival engaged. Six conditions are re-proven from
+stored rows on every single call, and none of them is cached anywhere:
+
+| Re-proven every call | Why |
+| --- | --- |
+| `grant.status === 'active'` | Revocation bites on the very next call |
+| `grant.projectId` (the index range) | A grant for Project A is not in the range read for Project B |
+| `grant.organizationId === project.organizationId` | The denormalized coordinator column is checked, never trusted (I4) |
+| `provider.organizationId === project.organizationId` | The Provider row must be the granting coordinator's own directory entry |
+| `provider.status === 'active'` | Archival is the coordinator's off switch |
+| `provider.linkedOrganizationId === membership.organizationId` | THE claim check — revoking or re-pointing a claim kills every grant riding on it without editing a grant row |
+
+The capability set is closed and code-owned:
+
+| Capability | Member-arm equivalent |
+| --- | --- |
+| `readAssignment` | `viewer` |
+| `readLinkedServiceProjection` | `viewer` |
+| `writeExecution` | `operator` |
+| `respondToTerms` | `planner` |
+
+It is a SET, not a ladder: nothing in it implies anything else in it, and `roleAtLeast` is
+never applied to it. There is deliberately no `readProject`, no `readOtherAssignments` and
+no `readRates`. The member column is the other axis — how a coordinator's ranked role
+answers the same question the grant answers by enumeration — and the two never compose.
+
+`ProviderPrincipal` carries **identifiers only** (`providerId`, `providerOrganizationId`,
+`grantId`, `capabilities`), never the rows they came from. That is a confinement decision
+distinct from the authorization one: a capability says what a caller may *do* and says
+nothing about what a handler may then *return*. Were the principal to carry
+`Doc<'providers'>`, any handler authorized for `readAssignment` would be one property
+access away from returning the coordinator's private `notes` about that firm — with the
+compiler's blessing. A consumer that needs another column adds a named field to that type
+deliberately.
+
+### Grant administration is member-only, by construction
+
+`convex/providers/grants.ts` writes grant rows; `lib/access.ts` reads them. Every entry
+point there proves a coordinator membership at the `admin` floor through
+`requireProjectAccess` / `requireOrganizationRole`, whose return type is
+`OrganizationMembershipAccess` — which a Provider Principal can never satisfy, because a
+granted firm holds no membership in the granting tenant. **Non-transitivity is therefore
+structural, not a rule**: a provider cannot create, delegate, extend or re-grant access,
+and there is no delegation column and no code path that would read one.
+
+Creation requires four independent parties to agree, each checked separately: the caller is
+an `admin` of the Project's organization; the Provider row belongs to that same
+organization; the Provider is claimed, with the granted Organization derived from the row's
+own `linkedOrganizationId` (never from a client argument, I4); and that Organization is not
+the coordinator itself (`providerGrantSelfReference` — granting to yourself would
+manufacture a provider principal out of your own members). An unclaimed Provider is refused
+at creation with `providerGrantRequiresClaim`, and resolution independently refuses too, so
+a claim revoked afterwards kills the grant without editing it.
+
+Uniqueness is `providerId + projectId`, an indexed read-before-write in the same mutation.
+Re-granting after revocation reactivates the existing row rather than inserting a second
+one, so no resolution path ever has to choose between two grants for one pair. Revocation
+is idempotent — access withdrawal must never be refusable. A Provider referenced by any
+grant, active or revoked, cannot be deleted: revoked rows are the record of who used to be
+able to read a Project, and orphaning them would leave a dangling `providerId`.
 
 ### The member path today
 
@@ -91,6 +185,10 @@ Admins do everything else.
 | `organizations.removeMember` | admin | Removing an `owner` requires `owner`; the final owner can never be removed |
 | `projects.createProject`, `updateProject`, `archiveProject` | planner | Archived projects are read-only |
 | `projects.getProject`, `listProjects` | viewer | |
+| `providers.createProvider`, `updateProvider`, `archiveProvider`, `deleteProvider` | admin | Deletion is blocked while a claim or any access grant references the Provider |
+| `providers.getProvider`, `listProviders` | viewer | Provider Principals are refused: the coordinator's directory is not browsable by an outside firm |
+| `providers.grantProjectAccessToProvider`, `revokeProviderAccessGrant` | **admin** | Same floor as editing the directory that names the firm. Provider Principals cannot reach either (non-transitivity) |
+| `providers.listProjectProviderAccessGrants` | **admin** | Includes revoked rows; there is no provider-side counterpart, which would disclose which other firms were engaged |
 | `events.createEvent`, `updateEvent`, `changeEventStatus`, `archiveEvent`, `deleteEvent` | planner | Completed projects accept no new Events; archived projects freeze Event writes; Events must be archived and unreferenced before deletion |
 | `events.getEvent`, `listProjectEvents` | viewer | |
 | `fields.createFieldDefinition`, `updateFieldDefinition`, `archiveFieldDefinition`, `deleteFieldDefinition` | planner | Built-in definitions are not editable through any public door |

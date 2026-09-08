@@ -656,6 +656,8 @@ const esCO = {
       provider_updated: 'Proveedor actualizado',
       provider_archived: 'Proveedor archivado',
       provider_deleted: 'Proveedor eliminado',
+      providerAccessGrant_granted: 'Acceso de proveedor concedido',
+      providerAccessGrant_revoked: 'Acceso de proveedor revocado',
       relationship_created: 'Relación creada',
       relationship_removed: 'Relación eliminada',
       invitation_created: 'Invitación creada',

@@ -2,7 +2,13 @@ import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 
 import { query } from '../_generated/server';
-import { archivalStatusValidator, paginatedResult, providerDocValidator } from '../validators';
+import {
+  archivalStatusValidator,
+  paginatedResult,
+  providerAccessGrantDocValidator,
+  providerDocValidator,
+} from '../validators';
+import { listProjectProviderAccessGrants as listProjectProviderAccessGrantsModel } from './grants';
 import { getProvider as getProviderModel, listProviders as listProvidersModel } from './model';
 
 export const getProvider = query({
@@ -23,4 +29,21 @@ export const listProviders = query({
     ...(args.status === undefined ? {} : { status: args.status }),
     ...(args.search === undefined ? {} : { search: args.search }),
   }),
+});
+
+/**
+ * The coordinator's own record of who it has let into one Project, revoked rows
+ * included (#71). Paginated because a Project's grant list grows with every firm
+ * engaged (I6), and index-narrowed by the GRANTING organization as well as the
+ * project so a foreign project id reads an empty range rather than another
+ * tenant's grants — behind an `admin` gate that has already refused it anyway.
+ *
+ * There is deliberately no provider-side counterpart here: a Provider Principal
+ * enumerating the grants on a Project would learn which other firms the
+ * coordinator engaged (docs/provider-access.md "What a Provider MAY NOT see" §4).
+ */
+export const listProjectProviderAccessGrants = query({
+  args: { projectId: v.id('projects'), paginationOpts: paginationOptsValidator },
+  returns: paginatedResult(providerAccessGrantDocValidator),
+  handler: (ctx, args) => listProjectProviderAccessGrantsModel(ctx, args),
 });

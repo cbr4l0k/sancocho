@@ -37,6 +37,14 @@ export function recordAuditEvent(
   event: {
     organizationId: Id<'organizations'>;
     actorUserId: Id<'users'>;
+    /**
+     * The second actor dimension (#71): the Provider whose grant admitted the
+     * actor, when the operation was performed on the provider arm of the access
+     * chain. Callers derive the pair from a resolved `Principal` through
+     * `auditActorFor` rather than assembling it by hand, so "who acted" and "on
+     * whose behalf" can never disagree. Omitted entirely on the member arm.
+     */
+    onBehalfOfProviderId?: Id<'providers'>;
     action: AuditAction;
     entityType: AuditEntityType;
     entityId: string;

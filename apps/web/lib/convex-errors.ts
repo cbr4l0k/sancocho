@@ -172,6 +172,9 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   providerArchived: 'errors.generic',
   providerArchiveRequired: 'errors.generic',
   providerDeleteBlocked: 'errors.generic',
+  // No provider console surface yet (#87); keep grant failures opaque.
+  providerGrantRequiresClaim: 'errors.generic',
+  providerGrantSelfReference: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

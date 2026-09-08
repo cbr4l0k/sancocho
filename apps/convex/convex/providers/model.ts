@@ -11,6 +11,7 @@ import {
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { maxEntityNameLength, validateEntityName } from '../lib/names';
+import { providerHasAccessGrants } from './grants';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator, providerClaimStateValidator, providerDocValidator } from '../validators';
@@ -256,10 +257,12 @@ export async function deleteProvider(ctx: MutationCtx, providerId: Id<'providers
   // claimed Provider is archived, never destroyed — revoking the claim (#86) is
   // the deliberate step that releases it.
   //
-  // Rate Cards (#66), Assignments (#67) and access grants (#71) are the other
-  // three referencers named by this issue; none of their tables exists yet.
-  // Each adds its own indexed first-hit read beside this one when it does.
-  if (provider.linkedOrganizationId !== undefined) {
+  // Access grants (#71) are the second referencer and DO exist: a grant row
+  // survives its Provider otherwise, and revoked grants are the record of who
+  // used to be able to read a Project, so both statuses block deletion.
+  // Rate Cards (#66) and Assignments (#67) each add their own indexed
+  // first-hit read beside this one when their tables land.
+  if (provider.linkedOrganizationId !== undefined || (await providerHasAccessGrants(ctx, providerId))) {
     return invalidInput('providerDeleteBlocked', 'Referenced Providers cannot be deleted; retain the archived Provider instead');
   }
   // Recorded BEFORE the delete so the row's name is still readable, matching

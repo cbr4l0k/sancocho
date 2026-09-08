@@ -651,6 +651,8 @@ const enUS = {
       provider_updated: 'Provider updated',
       provider_archived: 'Provider archived',
       provider_deleted: 'Provider deleted',
+      providerAccessGrant_granted: 'Provider access granted',
+      providerAccessGrant_revoked: 'Provider access revoked',
       relationship_created: 'Relationship created',
       relationship_removed: 'Relationship removed',
       invitation_created: 'Invitation created',

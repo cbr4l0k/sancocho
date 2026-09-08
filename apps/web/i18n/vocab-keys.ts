@@ -68,6 +68,8 @@ export const auditActionMessageKey = {
   'provider.updated': 'provider_updated',
   'provider.archived': 'provider_archived',
   'provider.deleted': 'provider_deleted',
+  'providerAccessGrant.granted': 'providerAccessGrant_granted',
+  'providerAccessGrant.revoked': 'providerAccessGrant_revoked',
   'relationship.created': 'relationship_created',
   'relationship.removed': 'relationship_removed',
   'invitation.created': 'invitation_created',

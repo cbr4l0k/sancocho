@@ -12,6 +12,7 @@ import {
   eventFields,
   fieldDefinitionFields,
   locationFields,
+  providerAccessGrantFields,
   providerFields,
   organizationInvitationFields,
   serviceKindFields,
@@ -262,6 +263,31 @@ export default defineSchema({
     // the link off the Provider row it already holds. #86 (claim/revocation)
     // and #71 (grants) add the reverse index when they add its first consumer;
     // an index without one is pure write amplification.
+
+  // The SECOND principal arm's stored proof (#71, docs/provider-access.md shape
+  // (b)). One row = "this claimed Provider may reach this one Project, and
+  // nothing else". Resolved on EVERY call by `requirePrincipalForProject` in
+  // lib/access.ts, which is the only place in the codebase that turns a row here
+  // into a capability; nothing is cached, so revocation bites on the next call.
+  providerAccessGrants: defineTable(providerAccessGrantFields)
+    // THE uniqueness key: one grant per (Provider, Project), enforced by an
+    // indexed read-before-write inside `grantProjectAccessToProvider`. A
+    // re-grant after revocation reactivates this row rather than inserting a
+    // second one, so a Provider can never accumulate two grants on one Project
+    // and no resolution path has to decide which of them wins.
+    .index('by_provider_project', ['providerId', 'projectId'])
+    // THE resolution index, read only by the one gate. Keyed from the PROVIDER
+    // ORGANIZATION side because that is the side the caller proves: the gate
+    // holds a signed-in user, walks their own memberships, and asks each of
+    // their organizations "do you hold a grant on this project?". The
+    // `projectId` component IS the project equality check — a grant for Project
+    // A is not in the range read for Project B — which is why there is no
+    // redundant column comparison afterwards to drift from it.
+    .index('by_providerOrganization_project', ['providerOrganizationId', 'projectId'])
+    // Serves the coordinator's own paginated list of who it has let in (I6).
+    // Deliberately keyed by the granting organization AND project so a member
+    // can never page another tenant's grants by supplying a foreign project id.
+    .index('by_org_project', ['organizationId', 'projectId']),
 
   serviceRelationships: defineTable({
     organizationId: v.id('organizations'),

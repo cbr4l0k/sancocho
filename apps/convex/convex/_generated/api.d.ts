@@ -44,6 +44,7 @@ import type * as organizations_queries from "../organizations/queries.js";
 import type * as projects_model from "../projects/model.js";
 import type * as projects_mutations from "../projects/mutations.js";
 import type * as projects_queries from "../projects/queries.js";
+import type * as providers_grants from "../providers/grants.js";
 import type * as providers_model from "../providers/model.js";
 import type * as providers_mutations from "../providers/mutations.js";
 import type * as providers_queries from "../providers/queries.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "projects/model": typeof projects_model;
   "projects/mutations": typeof projects_mutations;
   "projects/queries": typeof projects_queries;
+  "providers/grants": typeof providers_grants;
   "providers/model": typeof providers_model;
   "providers/mutations": typeof providers_mutations;
   "providers/queries": typeof providers_queries;

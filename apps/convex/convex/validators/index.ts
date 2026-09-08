@@ -281,6 +281,54 @@ export const providerDocValidator = v.object({
 });
 
 /**
+ * A grant is either live or it is not. There is deliberately no `expired`,
+ * `pending` or `suspended` member: every additional state is another way for a
+ * resolution path to treat "not active" as "close enough to active", and the
+ * one question the gate asks on every single call is exactly this binary.
+ */
+export const providerAccessGrantStatusValidator = v.union(v.literal('active'), v.literal('revoked'));
+
+/**
+ * The second principal arm's stored proof (docs/provider-access.md shape (b),
+ * issue #71). A row here says: the coordinator `organizationId` has granted the
+ * Provider `providerId` — whose claimed Organization is `providerOrganizationId`
+ * — access to `projectId`, and nothing else.
+ *
+ * What is NOT on this row is as load-bearing as what is:
+ *
+ * - **No capability column.** The capability set a grant confers is code-owned,
+ *   enumerated and closed (`providerGrantCapabilities` in `lib/access.ts`).
+ *   Storing it would make disclosure tenant-configurable, which I8 and the
+ *   decision record both forbid: widening what a provider sees must be a
+ *   reviewed code change, never a row a coordinator can edit.
+ * - **No role column.** The membership ladder is the other axis and does not
+ *   compose with this one.
+ * - **No parent grant / delegation column.** Grants are non-transitive by
+ *   construction: there is nowhere to record that one grant issued another.
+ *
+ * `providerOrganizationId` is derived server-side from the Provider row's
+ * `linkedOrganizationId` at grant time (I4) and is re-proven against the live
+ * link on every resolution, so revoking a claim revokes every grant that rode
+ * on it without touching a single grant row.
+ */
+export const providerAccessGrantFields = {
+  organizationId: v.id('organizations'),
+  providerId: v.id('providers'),
+  providerOrganizationId: v.id('organizations'),
+  projectId: v.id('projects'),
+  status: providerAccessGrantStatusValidator,
+  grantedByUserId: v.id('users'),
+  grantedAt: v.number(),
+  revokedAt: v.optional(v.number()),
+};
+
+export const providerAccessGrantDocValidator = v.object({
+  _id: v.id('providerAccessGrants'),
+  _creationTime: v.number(),
+  ...providerAccessGrantFields,
+});
+
+/**
  * Single definition of the organizationInvitations table shape (issue #56):
  * `schema.ts` builds the table from it and the public queries build their
  * `returns` validator from it. `email` is the addressing key — never a user
@@ -497,6 +545,10 @@ export const auditActionValidator = v.union(
   v.literal('provider.updated'),
   v.literal('provider.archived'),
   v.literal('provider.deleted'),
+  // The coordinator-side lifecycle of the second principal arm. Both are member
+  // operations: a Provider principal can never reach either (issue #71).
+  v.literal('providerAccessGrant.granted'),
+  v.literal('providerAccessGrant.revoked'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
   v.literal('invitation.created'),
@@ -529,6 +581,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('location'),
   v.literal('costCentre'),
   v.literal('provider'),
+  v.literal('providerAccessGrant'),
   v.literal('serviceRelationship'),
   v.literal('invitation'),
 );
@@ -550,6 +603,8 @@ export const auditMetadataKeys = [
   'position',
   'previousRole',
   'previousStatus',
+  'projectId',
+  'providerId',
   'serviceKindVersionId',
   'role',
   'slug',
@@ -607,6 +662,18 @@ export const auditMetadataValidator = v.record(
 export const auditEventFields = {
   organizationId: v.id('organizations'),
   actorUserId: v.id('users'),
+  /**
+   * The SECOND actor dimension I1 grew when the access chain gained a second
+   * principal arm (#71): `actorUserId` says who acted, this says whose Provider
+   * grant they were acting under. Absent on every member-arm write, which is
+   * every write that exists today — a coordinator granting or revoking access is
+   * acting as itself, not on a provider's behalf, so these rows deliberately do
+   * NOT set it. #88 (provider writes) is its first producer.
+   *
+   * Optional rather than nullable so member rows carry no column at all, and so
+   * "acting as a provider" is never something a reader has to infer from a null.
+   */
+  onBehalfOfProviderId: v.optional(v.id('providers')),
   action: auditActionValidator,
   entityType: auditEntityTypeValidator,
   entityId: v.string(),

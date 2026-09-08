@@ -2,6 +2,10 @@ import { v } from 'convex/values';
 
 import { mutation } from '../_generated/server';
 import {
+  grantProjectAccessToProvider as grantProjectAccessToProviderModel,
+  revokeProviderAccessGrant as revokeProviderAccessGrantModel,
+} from './grants';
+import {
   archiveProvider as archiveProviderModel,
   createProvider as createProviderModel,
   deleteProvider as deleteProviderModel,
@@ -63,6 +67,28 @@ export const deleteProvider = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await deleteProviderModel(ctx, args.providerId);
+    return null;
+  },
+});
+
+/**
+ * The COORDINATOR side of the second principal arm (#71). Both entry points
+ * below are member-arm operations by construction: the model functions prove an
+ * `admin` MEMBERSHIP of the granting organization, which a Provider Principal
+ * can never hold, so non-transitivity needs no rule here — there is no argument
+ * a granted firm could send that would reach the write.
+ */
+export const grantProjectAccessToProvider = mutation({
+  args: { projectId: v.id('projects'), providerId: v.id('providers') },
+  returns: v.id('providerAccessGrants'),
+  handler: (ctx, args) => grantProjectAccessToProviderModel(ctx, args),
+});
+
+export const revokeProviderAccessGrant = mutation({
+  args: { grantId: v.id('providerAccessGrants') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await revokeProviderAccessGrantModel(ctx, args.grantId);
     return null;
   },
 });

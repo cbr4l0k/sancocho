@@ -1,18 +1,27 @@
 # Provider access — decision record
 
-**Status: decided, partly built.** #64 has landed the coordinator-owned `providers`
-directory — the reference row, its `linkedOrganizationId` column and the explicit
-`unclaimed | claimed` discriminator derived from it. Nothing else described here exists in
-`apps/convex/convex/` yet: there is no claim flow (#86), no grant table and no second
-principal. The access chain today still has exactly one principal type
-(`organizationMemberships`), structurally baked into the return types of every helper in
-`lib/access.ts`; the two Provider read gates that #71 must extend are
-`requireProviderAccess` and `requireProviderCatalogueAccess` in
-`apps/convex/convex/providers/model.ts`, and they are deliberately the only two places a
-Provider read is authorized. This document records the target so that #82 (the rename), #92 (the Event
-layer), #71 (the principal union and grants), #86 (provider accounts), #87 (the portal)
-and #88 (provider writes) all implement the same model instead of six approximations of
-it.
+**Status: decided, partly built.** #64 landed the coordinator-owned `providers` directory —
+the reference row, its `linkedOrganizationId` column and the explicit `unclaimed | claimed`
+discriminator derived from it. **#71 landed the second principal**: the `Principal` union,
+the `providerAccessGrants` table, the closed capability set and the single gate
+`requirePrincipalForProject(ctx, projectId, intent)` in
+`apps/convex/convex/lib/access.ts`, which is now the only place either arm is resolved.
+Still missing: the verified claim flow (#86) — grants are written against a link that
+today only a seed or a repair can set — the portal read surface and the semantic
+projection (#87), provider writes (#88), and the Assignment layer (#67) that the enumerated
+may-see list is mostly about.
+
+The two Provider read gates named for extension, `requireProviderAccess` and
+`requireProviderCatalogueAccess` in `apps/convex/convex/providers/model.ts`, deliberately
+still refuse the provider arm. Admitting a Provider Principal there is only half a change:
+the gate centralizes AUTHORIZATION, not SHAPING, and `getProvider` publishes the whole
+stored row — `notes`, `taxId`, `searchText`, `linkedOrganizationId` — which is correct for
+a member of the owning tenant and wrong for the firm the row is about. #87 owns that
+projection and admits the arm with it.
+
+This document records the target so that #82 (the rename), #92 (the Event layer), #71 (the
+principal union and grants), #86 (provider accounts), #87 (the portal) and #88 (provider
+writes) all implement the same model instead of six approximations of it.
 
 Companion to [`authorization.md`](authorization.md) (the chain as it is implemented today)
 and [`../CLAUDE.md`](../CLAUDE.md) (I1–I11). This record answers decision issue #63 and
@@ -73,9 +82,12 @@ What this costs, stated plainly so nobody discovers it later:
   (`auditEvents.onBehalfOfProviderId`).
 
 These are accepted. The mitigation is structural, not procedural: **one gate**.
-`requireAssignmentAccess(ctx, assignmentId, intent)` (#71) is the only place either arm is
-resolved. No Assignment-touching operation may inline either arm. Adding a third principal
-later must be one file, not forty.
+`requirePrincipalForProject(ctx, projectId, intent)` (#71, `lib/access.ts`) is the only
+place either arm is resolved; #67's `requireAssignmentAccess(ctx, assignmentId, intent)`
+resolves an Assignment to its Project and delegates there, adding no policy of its own. No
+Assignment-touching operation may inline either arm. Adding a third principal later must be
+one file, not forty — `tests/providerAccess.test.ts` asserts that mechanically over the
+sources rather than trusting it.
 
 ## What a Provider MAY see
 
@@ -243,13 +255,14 @@ The one intentional cross-tenant signal remains the Organization slug, unchanged
 
 ## Where this is implemented
 
-Nowhere, yet. Sequencing:
+Sequencing:
 
 | Issue | Stage | What it lands |
 | --- | --- | --- |
 | #82 | `stage:M` | The Service and Service Kind vocabulary migration |
 | #92 | `stage:M` | The future Event table between Project and Service |
-| #71 | `stage:N` | The `Principal` union, `providerAccessGrants`, the single `requireAssignmentAccess` gate, the closed capability set |
+| #71 | `stage:N` | ✅ The `Principal` union, `providerAccessGrants`, the single `requirePrincipalForProject` gate, the closed capability set |
+| #67 | `stage:O` | `assignments`, and the thin `requireAssignmentAccess` wrapper over that gate |
 | #86 | `stage:P` | Provider Organization accounts: invite, verified claim, single-shot link, revocation |
 | #87 | `stage:P` | The portal read surface and the one definition of the semantic projection |
 | #88 | `stage:P` | Provider writes: accept / counter / decline, checkpoints |

@@ -39,8 +39,13 @@ Service → Service Field Values
   from identity alone: an organization membership carrying a ranked role, or a scoped,
   non-transitive Provider grant carrying a closed capability set. No invariant, helper or
   doc may assume membership is the only possible principal. The second arm is specified in
-  [`docs/provider-access.md`](docs/provider-access.md) and implemented by #71; it does not
-  exist in code yet.
+  [`docs/provider-access.md`](docs/provider-access.md) and implemented by #71:
+  `convex/lib/access.ts` is the only module that resolves either arm, and
+  `requirePrincipalForProject(ctx, projectId, intent)` is the single gate. No operation may
+  inline either check; adding a third principal must remain a change to that one file.
+  #67 adds the thin `requireAssignmentAccess(assignmentId, intent)` wrapper that resolves
+  an Assignment to its Project and delegates here — it adds no policy of its own, and
+  neither may anything else.
 - **I2 Published Service Kind Versions are immutable** (record, fields, ordering, required
   flags, defaults, validation, visibility). Changes go through a new draft version.
 - **I3 Historical validation integrity**: Services stay interpretable and validatable under

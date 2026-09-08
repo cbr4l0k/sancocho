@@ -110,6 +110,8 @@ export const errorCodes = [
   'providerArchived',
   'providerArchiveRequired',
   'providerDeleteBlocked',
+  'providerGrantRequiresClaim',
+  'providerGrantSelfReference',
   // Deployment-only seed and audit input.
   'seedDisabled',
   'seedBuiltinFieldMissing',
