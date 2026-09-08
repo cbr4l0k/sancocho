@@ -165,6 +165,13 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   costCentreArchived: 'errors.generic',
   costCentreArchiveRequired: 'errors.generic',
   costCentreDeleteBlocked: 'errors.generic',
+  // #72 owns the Providers console surface and does not exist yet; these stay
+  // generic until there is a screen whose input they could actually explain.
+  providerDetailTooLong: 'errors.generic',
+  providerNotesTooLong: 'errors.generic',
+  providerArchived: 'errors.generic',
+  providerArchiveRequired: 'errors.generic',
+  providerDeleteBlocked: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

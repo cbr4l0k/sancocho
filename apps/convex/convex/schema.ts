@@ -12,6 +12,7 @@ import {
   eventFields,
   fieldDefinitionFields,
   locationFields,
+  providerFields,
   organizationInvitationFields,
   serviceKindFields,
   serviceKindVersionStatusValidator,
@@ -234,6 +235,33 @@ export default defineSchema({
       searchField: 'searchText',
       filterFields: ['organizationId', 'status'],
     }),
+
+  // The coordinator-owned Providers directory (#64). Shape (b) of
+  // docs/provider-access.md: this row is the coordinator's record of an
+  // external firm, and `linkedOrganizationId` is the single, #86-owned edge to
+  // that firm's own Organization.
+  providers: defineTable(providerFields)
+    // Enforces organization-scoped, CASE-NORMALISED name uniqueness through a
+    // same-mutation read. `searchText` is the normalised form of `name`
+    // (`normalizeSearchText`: trimmed, case-folded, diacritic-folded,
+    // punctuation collapsed), so this index IS the name key — there is no
+    // second normalised column to drift from the one search reads.
+    .index('by_org_searchText', ['organizationId', 'searchText'])
+    // Serves the unfiltered organization catalogue in creation order, matching
+    // the locations and costCentres catalogues.
+    .index('by_org', ['organizationId'])
+    // Serves status-filtered lists before pagination, never after.
+    .index('by_org_status', ['organizationId', 'status'])
+    // Serves name search, optionally narrowed by archival status.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['organizationId', 'status'],
+    }),
+    // There is deliberately NO by_linkedOrganization index yet: nothing reads
+    // Providers by the organization they are linked to. The delete guard reads
+    // the link off the Provider row it already holds. #86 (claim/revocation)
+    // and #71 (grants) add the reverse index when they add its first consumer;
+    // an index without one is pure write amplification.
 
   serviceRelationships: defineTable({
     organizationId: v.id('organizations'),

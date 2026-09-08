@@ -228,6 +228,59 @@ export const costCentreDocValidator = v.object({
 });
 
 /**
+ * A Provider's claimed state is a REAL, published value, never something a
+ * client infers from a null. It is derived from `linkedOrganizationId` on every
+ * read (`toProviderView`) rather than stored, so the discriminator and the link
+ * can never disagree: there is exactly one source of truth and no second column
+ * to keep in step. Only #86's dedicated claim/revocation mutations move a
+ * Provider between the two states; the generic update path cannot name the link
+ * at all (see `providers/model.ts`).
+ */
+export const providerClaimStateValidator = v.union(v.literal('unclaimed'), v.literal('claimed'));
+
+/**
+ * Shared persisted and returned shape for the coordinator-owned Providers
+ * directory (docs/provider-access.md shape (b)). A Provider is a reference row
+ * for an external firm — a name and a way to reach them — not a CRM record.
+ *
+ * `linkedOrganizationId` is present from day one and unused until #86: adding a
+ * nullable column now is free, adding it once Assignments reference Providers
+ * is a migration. It is written ONLY by #86's claim/revocation mutations.
+ *
+ * `searchText` is required rather than optional (the locations and costCentres
+ * catalogues carry it optional only for pre-column rows; this table has none).
+ * It is derived from `name` through `normalizeSearchText` in every write path
+ * (I4) and is load-bearing twice over: it backs name search AND it is the
+ * case-normalised uniqueness key behind `by_org_searchText`.
+ */
+export const providerFields = {
+  organizationId: v.id('organizations'),
+  name: v.string(),
+  legalName: v.optional(v.string()),
+  taxId: v.optional(v.string()),
+  contactName: v.optional(v.string()),
+  contactEmail: v.optional(v.string()),
+  contactPhone: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  searchText: v.string(),
+  status: archivalStatusValidator,
+  linkedOrganizationId: v.optional(v.id('organizations')),
+};
+
+/**
+ * The published Provider document. Unlike every other catalogue this is NOT the
+ * bare stored row: `claimState` is derived server-side and returned alongside
+ * the columns, so no client ever has to read lifecycle meaning out of an absent
+ * `linkedOrganizationId`.
+ */
+export const providerDocValidator = v.object({
+  _id: v.id('providers'),
+  _creationTime: v.number(),
+  ...providerFields,
+  claimState: providerClaimStateValidator,
+});
+
+/**
  * Single definition of the organizationInvitations table shape (issue #56):
  * `schema.ts` builds the table from it and the public queries build their
  * `returns` validator from it. `email` is the addressing key — never a user
@@ -440,6 +493,10 @@ export const auditActionValidator = v.union(
   v.literal('costCentre.updated'),
   v.literal('costCentre.archived'),
   v.literal('costCentre.deleted'),
+  v.literal('provider.created'),
+  v.literal('provider.updated'),
+  v.literal('provider.archived'),
+  v.literal('provider.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
   v.literal('invitation.created'),
@@ -471,6 +528,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('service'),
   v.literal('location'),
   v.literal('costCentre'),
+  v.literal('provider'),
   v.literal('serviceRelationship'),
   v.literal('invitation'),
 );

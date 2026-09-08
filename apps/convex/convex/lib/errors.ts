@@ -105,6 +105,11 @@ export const errorCodes = [
   'costCentreArchived',
   'costCentreArchiveRequired',
   'costCentreDeleteBlocked',
+  'providerDetailTooLong',
+  'providerNotesTooLong',
+  'providerArchived',
+  'providerArchiveRequired',
+  'providerDeleteBlocked',
   // Deployment-only seed and audit input.
   'seedDisabled',
   'seedBuiltinFieldMissing',

@@ -1,9 +1,15 @@
 # Provider access — decision record
 
-**Status: decided, not built.** Nothing described here exists in
-`apps/convex/convex/` yet. The access chain today has exactly one principal type
+**Status: decided, partly built.** #64 has landed the coordinator-owned `providers`
+directory — the reference row, its `linkedOrganizationId` column and the explicit
+`unclaimed | claimed` discriminator derived from it. Nothing else described here exists in
+`apps/convex/convex/` yet: there is no claim flow (#86), no grant table and no second
+principal. The access chain today still has exactly one principal type
 (`organizationMemberships`), structurally baked into the return types of every helper in
-`lib/access.ts`. This document records the target so that #82 (the rename), #92 (the Event
+`lib/access.ts`; the two Provider read gates that #71 must extend are
+`requireProviderAccess` and `requireProviderCatalogueAccess` in
+`apps/convex/convex/providers/model.ts`, and they are deliberately the only two places a
+Provider read is authorized. This document records the target so that #82 (the rename), #92 (the Event
 layer), #71 (the principal union and grants), #86 (provider accounts), #87 (the portal)
 and #88 (provider writes) all implement the same model instead of six approximations of
 it.
