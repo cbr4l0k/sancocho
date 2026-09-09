@@ -8,6 +8,9 @@
  * @module
  */
 
+import type * as assignments_model from "../assignments/model.js";
+import type * as assignments_mutations from "../assignments/mutations.js";
+import type * as assignments_queries from "../assignments/queries.js";
 import type * as audit_model from "../audit/model.js";
 import type * as audit_queries from "../audit/queries.js";
 import type * as auth_model from "../auth/model.js";
@@ -48,6 +51,7 @@ import type * as providers_grants from "../providers/grants.js";
 import type * as providers_model from "../providers/model.js";
 import type * as providers_mutations from "../providers/mutations.js";
 import type * as providers_queries from "../providers/queries.js";
+import type * as providers_references from "../providers/references.js";
 import type * as rateCards_model from "../rateCards/model.js";
 import type * as rateCards_mutations from "../rateCards/mutations.js";
 import type * as rateCards_queries from "../rateCards/queries.js";
@@ -85,6 +89,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "assignments/model": typeof assignments_model;
+  "assignments/mutations": typeof assignments_mutations;
+  "assignments/queries": typeof assignments_queries;
   "audit/model": typeof audit_model;
   "audit/queries": typeof audit_queries;
   "auth/model": typeof auth_model;
@@ -125,6 +132,7 @@ declare const fullApi: ApiFromModules<{
   "providers/model": typeof providers_model;
   "providers/mutations": typeof providers_mutations;
   "providers/queries": typeof providers_queries;
+  "providers/references": typeof providers_references;
   "rateCards/model": typeof rateCards_model;
   "rateCards/mutations": typeof rateCards_mutations;
   "rateCards/queries": typeof rateCards_queries;

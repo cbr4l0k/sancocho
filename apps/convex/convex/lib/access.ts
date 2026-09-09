@@ -140,8 +140,7 @@ export async function assertCurrentMember(
 // ---------------------------------------------------------------------------
 
 /**
- * Every intent the one gate can be asked to authorize, and simultaneously the
- * complete vocabulary of the Provider grant. It is a SET, not a ladder: nothing
+ * Every capability a Provider grant confers. It is a SET, not a ladder: nothing
  * here implies anything else here, and `roleAtLeast` must never be applied to
  * it.
  *
@@ -154,6 +153,13 @@ export type Capability =
   | 'writeExecution'
   | 'respondToTerms'
   | 'readLinkedServiceProjection';
+
+/**
+ * The complete gate vocabulary. Commercial Assignment authoring is member-only
+ * until #88 adds Provider response actions, so it is intentionally not part of
+ * the Provider grant's closed `Capability` set.
+ */
+export type ProjectIntent = Capability | 'writeAssignmentTerms';
 
 /**
  * The closed capability set an active Provider grant confers. Code-owned and
@@ -180,8 +186,9 @@ const providerGrantCapabilities: readonly Capability[] = Object.freeze([
  * uses: viewers read, operators run what is planned (`changeServiceStatus`),
  * planners author commercial intent.
  */
-const memberRoleForCapability: Readonly<Record<Capability, Role>> = Object.freeze({
+const memberRoleForCapability: Readonly<Record<ProjectIntent, Role>> = Object.freeze({
   readAssignment: 'viewer',
+  writeAssignmentTerms: 'planner',
   readLinkedServiceProjection: 'viewer',
   writeExecution: 'operator',
   respondToTerms: 'planner',
@@ -256,7 +263,8 @@ export type Principal = MemberPrincipal | ProviderPrincipal;
 export async function requirePrincipalForProject(
   ctx: UserAccessContext,
   projectId: Id<'projects'>,
-  intent: Capability,
+  intent: ProjectIntent,
+  expectedProviderId?: Id<'providers'>,
 ): Promise<Principal> {
   const authenticated = await requireAuthenticatedUser(ctx);
   const project = await ctx.db.get(projectId);
@@ -281,7 +289,7 @@ export async function requirePrincipalForProject(
     return { kind: 'member', ...authenticated, membership, organization };
   }
 
-  const principal = await resolveProviderPrincipal(ctx, project, authenticated);
+  const principal = await resolveProviderPrincipal(ctx, project, authenticated, expectedProviderId);
   if (principal === null) {
     return notFoundOrInaccessible();
   }
@@ -290,7 +298,13 @@ export async function requirePrincipalForProject(
   // precisely so that the day the two diverge — a narrower grant, a new intent
   // providers must not hold — the refusal is already centralized here and can
   // be pinned at this gate instead of remembered at forty call sites.
-  if (!principal.capabilities.has(intent)) {
+  if (intent === 'writeAssignmentTerms' || !principal.capabilities.has(intent)) {
+    return notFoundOrInaccessible();
+  }
+  // Defence in depth. The resolver above already skips non-matching grants, so
+  // this can only fire if that filter is ever weakened; it is kept because the
+  // cost is one comparison and the failure it guards is cross-tenant.
+  if (expectedProviderId !== undefined && principal.providerId !== expectedProviderId) {
     return notFoundOrInaccessible();
   }
   return principal;
@@ -318,6 +332,7 @@ async function resolveProviderPrincipal(
   ctx: UserAccessContext,
   project: Doc<'projects'>,
   authenticated: AuthenticatedUser,
+  expectedProviderId?: Id<'providers'>,
 ): Promise<ProviderPrincipal | null> {
   const memberships = await ctx.db
     .query('organizationMemberships')
@@ -340,6 +355,13 @@ async function resolveProviderPrincipal(
       // very next call because there is nothing anywhere that remembers the
       // previous answer — no token claim, no session, no memoized principal.
       if (grant.status !== 'active') continue;
+      // A caller who belongs to two granted firms must resolve as the firm that
+      // owns the TARGET row, not whichever grant the membership walk reached
+      // first. Skipping non-matching grants here (rather than validating the
+      // first result afterwards) is what lets such a dispatcher read BOTH
+      // firms' assignments — validating after would make one of the two
+      // permanently unreachable, depending only on membership order.
+      if (expectedProviderId !== undefined && grant.providerId !== expectedProviderId) continue;
       // The denormalized coordinator column must agree with the Project's own
       // organization; authorization walks the stored graph and never trusts a
       // cached id (I4).

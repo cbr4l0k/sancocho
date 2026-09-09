@@ -122,6 +122,15 @@ export const errorCodes = [
   'rateLineVehicleClassUnavailable',
   'rateLineDuplicateCell',
   'rateLineLimitExceeded',
+  // Assignment identity and immutable commercial revision lifecycle.
+  'assignmentPositionInvalid',
+  'assignmentNotesTooLong',
+  'assignmentLimitExceeded',
+  'assignmentRemoveBlocked',
+  'assignmentRevisionQuantityInvalid',
+  'assignmentRevisionNotDraft',
+  'assignmentRevisionNotDeclinable',
+  'assignmentDeclinedReasonTooLong',
   // Vehicle Classes (what is planned and priced) and Fleet Vehicles (the plate
   // that arrives). There is deliberately no `fleetVehicleDeleteBlocked`: nothing
   // in the schema references a Fleet Vehicle yet, so a code that can never be

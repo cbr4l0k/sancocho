@@ -14,7 +14,7 @@ import { validateEntityName } from '../lib/names';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator } from '../validators';
-import { vehicleClassHasFleetVehicles } from './references';
+import { vehicleClassHasAssignmentRevisions, vehicleClassHasFleetVehicles } from './references';
 import { vehicleClassHasRateLines } from '../rateCards/references';
 
 type ArchivalStatus = typeof archivalStatusValidator.type;
@@ -203,12 +203,12 @@ export async function deleteVehicleClass(ctx: MutationCtx, vehicleClassId: Id<'v
   // and the refusal is always the same code so the caller learns "still
   // referenced", never which table holds the reference.
   //
-  // Fleet Vehicles and Rate Lines are the referencers that exist today.
-  // Assignments (#67) add their own indexed first-hit read beside these when
-  // that table lands.
+  // Fleet Vehicles, Rate Lines and immutable Assignment Revisions are the
+  // referencers. Every Revision status counts because history is retained.
   if (
     (await vehicleClassHasFleetVehicles(ctx, vehicleClass.organizationId, vehicleClassId)) ||
-    (await vehicleClassHasRateLines(ctx, vehicleClass.organizationId, vehicleClassId))
+    (await vehicleClassHasRateLines(ctx, vehicleClass.organizationId, vehicleClassId)) ||
+    (await vehicleClassHasAssignmentRevisions(ctx, vehicleClass.organizationId, vehicleClassId))
   ) {
     return invalidInput('vehicleClassDeleteBlocked', 'Referenced Vehicle Classes cannot be deleted; retain the archived class instead');
   }

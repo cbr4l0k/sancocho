@@ -52,3 +52,18 @@ export async function providerHasFleetVehicles(
     .first();
   return reference !== null;
 }
+
+/** True when immutable Assignment terms still name this Vehicle Class. */
+export async function vehicleClassHasAssignmentRevisions(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  organizationId: Id<'organizations'>,
+  vehicleClassId: Id<'vehicleClasses'>,
+): Promise<boolean> {
+  const reference = await ctx.db
+    .query('assignmentRevisions')
+    .withIndex('by_org_vehicleClass', (q) =>
+      q.eq('organizationId', organizationId).eq('vehicleClassId', vehicleClassId),
+    )
+    .first();
+  return reference !== null;
+}

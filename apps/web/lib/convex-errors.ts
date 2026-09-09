@@ -186,6 +186,15 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   rateLineVehicleClassUnavailable: 'errors.generic',
   rateLineDuplicateCell: 'errors.generic',
   rateLineLimitExceeded: 'errors.generic',
+  // #74 owns the Assignment console; keep backend lifecycle details opaque here.
+  assignmentPositionInvalid: 'errors.generic',
+  assignmentNotesTooLong: 'errors.generic',
+  assignmentLimitExceeded: 'errors.generic',
+  assignmentRemoveBlocked: 'errors.generic',
+  assignmentRevisionQuantityInvalid: 'errors.generic',
+  assignmentRevisionNotDraft: 'errors.generic',
+  assignmentRevisionNotDeclinable: 'errors.generic',
+  assignmentDeclinedReasonTooLong: 'errors.generic',
   // #72 owns the fleet console surface and does not exist yet, so every Vehicle
   // Class and Fleet Vehicle refusal stays generic: inventing message keys for a
   // screen with no inputs would ship copy nothing can render in context.

@@ -341,6 +341,60 @@ export const rateLineDocValidator = v.object({
   ...rateLineFields,
 });
 
+/** Negotiation state for one immutable set of Assignment terms. */
+export const assignmentRevisionStatusValidator = v.union(
+  v.literal('draft'),
+  v.literal('accepted'),
+  v.literal('superseded'),
+  v.literal('declined'),
+);
+
+/** Stable supply identity. Commercial terms live only on its revisions. */
+export const assignmentFields = {
+  organizationId: v.id('organizations'),
+  serviceId: v.id('services'),
+  projectId: v.id('projects'),
+  providerId: v.id('providers'),
+  position: v.number(),
+  notes: v.optional(v.string()),
+  // Maintained only by acceptance/decline transactions; never client supplied.
+  currentRevisionId: v.optional(v.id('assignmentRevisions')),
+};
+
+export const assignmentDocValidator = v.object({
+  _id: v.id('assignments'),
+  _creationTime: v.number(),
+  ...assignmentFields,
+});
+
+/**
+ * A priced snapshot. The commercial columns are never patched after insert;
+ * only lifecycle columns move as the negotiation is accepted or declined.
+ */
+export const assignmentRevisionFields = {
+  organizationId: v.id('organizations'),
+  assignmentId: v.id('assignments'),
+  revisionNumber: v.number(),
+  status: assignmentRevisionStatusValidator,
+  vehicleClassId: v.id('vehicleClasses'),
+  modality: rateModalityValidator,
+  quantity: v.number(),
+  rateCardVersionId: v.id('rateCardVersions'),
+  rateLineId: v.id('rateLines'),
+  unitAmount: v.number(),
+  currency: currencyValidator,
+  lineTotal: v.number(),
+  acceptedAt: v.optional(v.number()),
+  acceptedByUserId: v.optional(v.id('users')),
+  declinedReason: v.optional(v.string()),
+};
+
+export const assignmentRevisionDocValidator = v.object({
+  _id: v.id('assignmentRevisions'),
+  _creationTime: v.number(),
+  ...assignmentRevisionFields,
+});
+
 /**
  * A grant is either live or it is not. There is deliberately no `expired`,
  * `pending` or `suspended` member: every additional state is another way for a
@@ -694,6 +748,12 @@ export const auditActionValidator = v.union(
   v.literal('rateCardVersion.created'),
   v.literal('rateCardVersion.published'),
   v.literal('rateCardVersion.retired'),
+  v.literal('assignment.created'),
+  v.literal('assignment.removed'),
+  v.literal('assignmentRevision.created'),
+  v.literal('assignmentRevision.accepted'),
+  v.literal('assignmentRevision.declined'),
+  v.literal('assignmentRevision.superseded'),
   // The coordinator-side lifecycle of the second principal arm. Both are member
   // operations: a Provider principal can never reach either (issue #71).
   v.literal('providerAccessGrant.granted'),
@@ -740,6 +800,8 @@ export const auditEntityTypeValidator = v.union(
   v.literal('provider'),
   v.literal('rateCard'),
   v.literal('rateCardVersion'),
+  v.literal('assignment'),
+  v.literal('assignmentRevision'),
   v.literal('providerAccessGrant'),
   v.literal('vehicleClass'),
   v.literal('fleetVehicle'),
@@ -767,6 +829,7 @@ export const auditMetadataKeys = [
   'previousStatus',
   'projectId',
   'providerId',
+  'assignmentId',
   'serviceKindVersionId',
   'role',
   'slug',

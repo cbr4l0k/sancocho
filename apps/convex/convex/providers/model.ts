@@ -14,6 +14,7 @@ import { maxEntityNameLength, validateEntityName } from '../lib/names';
 import { providerHasAccessGrants } from './grants';
 import { providerHasFleetVehicles } from '../vehicles/references';
 import { providerHasRateCards } from '../rateCards/references';
+import { providerHasAssignments } from './references';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator, providerClaimStateValidator, providerDocValidator } from '../validators';
@@ -264,7 +265,8 @@ export async function deleteProvider(ctx: MutationCtx, providerId: Id<'providers
   // used to be able to read a Project, so both statuses block deletion.
   // Rate Cards are the fourth referencer: archived Cards retain their Provider
   // reference because their immutable commercial history remains readable.
-  // Assignments (#67) add their own indexed first-hit read when that table lands.
+  // Assignments are the final direct referencer: even an Assignment with no
+  // Revision is stable operational identity and keeps its Provider alive.
   //
   // Fleet Vehicles (#65) are the third: a plate belongs to exactly one Provider
   // row, and destroying that row would leave the vehicle pointing at nothing.
@@ -273,7 +275,8 @@ export async function deleteProvider(ctx: MutationCtx, providerId: Id<'providers
     provider.linkedOrganizationId !== undefined ||
     (await providerHasAccessGrants(ctx, providerId)) ||
     (await providerHasFleetVehicles(ctx, provider.organizationId, providerId)) ||
-    (await providerHasRateCards(ctx, provider.organizationId, providerId))
+    (await providerHasRateCards(ctx, provider.organizationId, providerId)) ||
+    (await providerHasAssignments(ctx, provider.organizationId, providerId))
   ) {
     return invalidInput('providerDeleteBlocked', 'Referenced Providers cannot be deleted; retain the archived Provider instead');
   }

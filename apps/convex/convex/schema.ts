@@ -3,6 +3,8 @@ import { v } from 'convex/values';
 
 import {
   archivalStatusValidator,
+  assignmentFields,
+  assignmentRevisionFields,
   auditEventFields,
   costCentreFields,
   serviceFieldValueValidator,
@@ -317,6 +319,28 @@ export default defineSchema({
     .index('by_version_class_modality', ['rateCardVersionId', 'vehicleClassId', 'modality'])
     // Serves Vehicle Class deletion's first-hit reverse-reference guard.
     .index('by_org_class', ['organizationId', 'vehicleClassId']),
+
+  // Stable demand-to-supply identity. Terms are snapshots in the child table.
+  assignments: defineTable(assignmentFields)
+    // Bounded Service child list and same-Service position uniqueness.
+    .index('by_service_position', ['serviceId', 'position'])
+    // Member Project list; unbounded, therefore always paginated.
+    .index('by_project_position', ['projectId', 'position'])
+    // Provider-principal Project list without reading another Provider's rows.
+    .index('by_project_provider_position', ['projectId', 'providerId', 'position'])
+    // Provider deletion's indexed first-hit reverse-reference guard.
+    .index('by_org_provider', ['organizationId', 'providerId']),
+
+  // Every proposal and agreement is retained as an immutable commercial row.
+  assignmentRevisions: defineTable(assignmentRevisionFields)
+    // Server numbering and ordered negotiation history.
+    .index('by_assignment_revision', ['assignmentId', 'revisionNumber'])
+    // The at-most-one-accepted probe and lifecycle transitions.
+    .index('by_assignment_status', ['assignmentId', 'status'])
+    // Protected-reference first-hit guards.
+    .index('by_org_vehicleClass', ['organizationId', 'vehicleClassId'])
+    .index('by_rateCardVersion', ['rateCardVersionId'])
+    .index('by_rateLine', ['rateLineId']),
 
   // The coordinator-owned Vehicle Class catalogue (#65): what is planned and
   // priced. Tenant-authored, never a code-owned enum.
