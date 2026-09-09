@@ -67,6 +67,12 @@ import type * as services_model from "../services/model.js";
 import type * as services_mutations from "../services/mutations.js";
 import type * as services_queries from "../services/queries.js";
 import type * as validators_index from "../validators/index.js";
+import type * as vehicles_builtins from "../vehicles/builtins.js";
+import type * as vehicles_classes from "../vehicles/classes.js";
+import type * as vehicles_fleet from "../vehicles/fleet.js";
+import type * as vehicles_mutations from "../vehicles/mutations.js";
+import type * as vehicles_queries from "../vehicles/queries.js";
+import type * as vehicles_references from "../vehicles/references.js";
 
 import type {
   ApiFromModules,
@@ -134,6 +140,12 @@ declare const fullApi: ApiFromModules<{
   "services/mutations": typeof services_mutations;
   "services/queries": typeof services_queries;
   "validators/index": typeof validators_index;
+  "vehicles/builtins": typeof vehicles_builtins;
+  "vehicles/classes": typeof vehicles_classes;
+  "vehicles/fleet": typeof vehicles_fleet;
+  "vehicles/mutations": typeof vehicles_mutations;
+  "vehicles/queries": typeof vehicles_queries;
+  "vehicles/references": typeof vehicles_references;
 }>;
 
 /**

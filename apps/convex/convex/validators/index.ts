@@ -329,6 +329,88 @@ export const providerAccessGrantDocValidator = v.object({
 });
 
 /**
+ * The unit of SUPPLY THAT IS PLANNED AND PRICED (#65): "a Sprinter, 18 pax".
+ *
+ * Tenant-authored vocabulary, deliberately NOT a code-owned enum — the exact
+ * Field-Definition argument. One operator prices `Sprinter 18 pax`, `Gama
+ * media` and `Duster`; another city's operator prices something else entirely.
+ * A code-owned union would force every such tenant through a translation layer
+ * that no rate card could then reference.
+ *
+ * `key` is the stable, org-unique identifier (same lowerCamelCase rule as Cost
+ * Centre and Field Definition keys) so the starter catalogue can be provisioned
+ * idempotently and a later import can address a class by name-independent id.
+ *
+ * `passengerCapacity` and `cargoCapacityNote` are the two facts that make a
+ * class *plannable*, and nothing more: this is not a vehicle-specification
+ * system. Cargo is a free-form note rather than a number because "1.5 t / 12 m³
+ * / two pallets" is how operators actually state it, and inventing a unit here
+ * would either lose that or force a conversion engine (I8).
+ *
+ * `searchText` is server-derived from key and name (I4) and required rather
+ * than optional: this table has no pre-column rows to be tolerant of.
+ */
+export const vehicleClassFields = {
+  organizationId: v.id('organizations'),
+  key: v.string(),
+  name: v.string(),
+  description: v.optional(v.string()),
+  passengerCapacity: v.optional(v.number()),
+  cargoCapacityNote: v.optional(v.string()),
+  searchText: v.string(),
+  status: archivalStatusValidator,
+};
+
+export const vehicleClassDocValidator = v.object({
+  _id: v.id('vehicleClasses'),
+  _creationTime: v.number(),
+  ...vehicleClassFields,
+});
+
+/**
+ * The unit of supply THAT ACTUALLY SHOWS UP (#65): "plate ABC123".
+ *
+ * Ownership is settled and is not re-litigated here: this row lives in the
+ * COORDINATOR's organization and points at the coordinator's own Provider
+ * directory row. The provider firm's Organization receives scoped grant
+ * capabilities (#71), never a catalogue of its own — a provider-tenant-owned
+ * fleet would require a cross-tenant sharing and class-mapping system that is
+ * explicitly out of scope.
+ *
+ * `plate` is stored EXACTLY as the coordinator typed it, because that is what a
+ * dispatcher reads off a windscreen. `plateKey` is the server-derived
+ * normalised form (I4) and is the uniqueness key: `ABC 123`, `abc-123` and
+ * `  abc123  ` are one vehicle, and storing the key beside the display value is
+ * what lets both facts be true at once. `searchText` covers both forms so a
+ * search for either spelling finds the row.
+ *
+ * `year` and `notes` are the whole of the "specification"; there is deliberately
+ * no odometer, fuel, insurance, document-expiry or availability column. A Fleet
+ * Vehicle is a plate that belongs to a Provider and is of a Class, and nothing
+ * more (CLAUDE.md non-goals).
+ */
+export const fleetVehicleFields = {
+  organizationId: v.id('organizations'),
+  providerId: v.id('providers'),
+  vehicleClassId: v.id('vehicleClasses'),
+  plate: v.string(),
+  // Server-derived from `plate` through `normalizePlate` in every write path
+  // (I4); never client-supplied, and the only column `by_org_plateKey` reads.
+  plateKey: v.string(),
+  label: v.optional(v.string()),
+  year: v.optional(v.number()),
+  notes: v.optional(v.string()),
+  searchText: v.string(),
+  status: archivalStatusValidator,
+};
+
+export const fleetVehicleDocValidator = v.object({
+  _id: v.id('fleetVehicles'),
+  _creationTime: v.number(),
+  ...fleetVehicleFields,
+});
+
+/**
  * Single definition of the organizationInvitations table shape (issue #56):
  * `schema.ts` builds the table from it and the public queries build their
  * `returns` validator from it. `email` is the addressing key — never a user
@@ -549,6 +631,14 @@ export const auditActionValidator = v.union(
   // operations: a Provider principal can never reach either (issue #71).
   v.literal('providerAccessGrant.granted'),
   v.literal('providerAccessGrant.revoked'),
+  v.literal('vehicleClass.created'),
+  v.literal('vehicleClass.updated'),
+  v.literal('vehicleClass.archived'),
+  v.literal('vehicleClass.deleted'),
+  v.literal('fleetVehicle.created'),
+  v.literal('fleetVehicle.updated'),
+  v.literal('fleetVehicle.archived'),
+  v.literal('fleetVehicle.deleted'),
   v.literal('relationship.created'),
   v.literal('relationship.removed'),
   v.literal('invitation.created'),
@@ -582,6 +672,8 @@ export const auditEntityTypeValidator = v.union(
   v.literal('costCentre'),
   v.literal('provider'),
   v.literal('providerAccessGrant'),
+  v.literal('vehicleClass'),
+  v.literal('fleetVehicle'),
   v.literal('serviceRelationship'),
   v.literal('invitation'),
 );
@@ -600,6 +692,7 @@ export const auditMetadataKeys = [
   'key',
   'name',
   'phase',
+  'plate',
   'position',
   'previousRole',
   'previousStatus',

@@ -14,6 +14,8 @@ import {
   locationFields,
   providerAccessGrantFields,
   providerFields,
+  fleetVehicleFields,
+  vehicleClassFields,
   organizationInvitationFields,
   serviceKindFields,
   serviceKindVersionStatusValidator,
@@ -288,6 +290,57 @@ export default defineSchema({
     // Deliberately keyed by the granting organization AND project so a member
     // can never page another tenant's grants by supplying a foreign project id.
     .index('by_org_project', ['organizationId', 'projectId']),
+
+  // The coordinator-owned Vehicle Class catalogue (#65): what is planned and
+  // priced. Tenant-authored, never a code-owned enum.
+  vehicleClasses: defineTable(vehicleClassFields)
+    // Enforces organization-scoped key uniqueness through a same-mutation read,
+    // and is the same index `provisionStarterVehicleClasses` probes to skip a
+    // key a tenant already has.
+    .index('by_org_key', ['organizationId', 'key'])
+    // Serves the unfiltered organization catalogue in creation order.
+    .index('by_org', ['organizationId'])
+    // Serves status-filtered lists before pagination, never after.
+    .index('by_org_status', ['organizationId', 'status'])
+    // Serves key-or-name search, optionally narrowed by archival status.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['organizationId', 'status'],
+    }),
+
+  // The coordinator-owned Fleet Vehicle catalogue (#65): the plate that arrives.
+  // These rows stay in the COORDINATOR's organization and belong to its Provider
+  // reference row; the provider firm gets scoped grants (#71), not a catalogue.
+  fleetVehicles: defineTable(fleetVehicleFields)
+    // THE uniqueness key: normalised `organizationId + plate`, enforced by an
+    // indexed read-before-write inside the create and update mutations. It reads
+    // `plateKey` (server-derived) rather than `plate`, so `ABC 123`, `abc-123`
+    // and `  abc123  ` collide as they must while the display value survives.
+    .index('by_org_plateKey', ['organizationId', 'plateKey'])
+    // Serves the unfiltered organization catalogue in creation order.
+    .index('by_org', ['organizationId'])
+    // Serves the status-only filter.
+    .index('by_org_status', ['organizationId', 'status'])
+    // Serves the Provider filter, with or without a status narrowing on the same
+    // index. Its (organizationId, providerId) PREFIX is also the first-hit
+    // reverse-reference read `deleteProvider` takes before destroying a Provider
+    // — which is why no separate `by_provider` index exists: the Provider row
+    // already carries the organizationId that completes this key.
+    .index('by_org_provider_status', ['organizationId', 'providerId', 'status'])
+    // Serves the Class filter, with or without a status narrowing. Its
+    // (organizationId, vehicleClassId) prefix is likewise the first-hit read
+    // `deleteVehicleClass` takes before destroying a class.
+    .index('by_org_class_status', ['organizationId', 'vehicleClassId', 'status'])
+    // Serves BOTH filters at once. A prefix of one of the two indexes above
+    // cannot answer this, and answering it by filtering an already-paginated
+    // page would return short pages and make `numItems` a lie (I6).
+    .index('by_org_provider_class_status', ['organizationId', 'providerId', 'vehicleClassId', 'status'])
+    // Serves plate-or-label search, narrowed by the same three filters through
+    // the index rather than after the page is fetched.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['organizationId', 'providerId', 'vehicleClassId', 'status'],
+    }),
 
   serviceRelationships: defineTable({
     organizationId: v.id('organizations'),

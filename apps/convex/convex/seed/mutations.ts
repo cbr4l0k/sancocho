@@ -14,6 +14,7 @@ import { createLocation } from '../locations/model';
 import { addMember, createOrganization } from '../organizations/model';
 import { createProject } from '../projects/model';
 import { provisionStarterServiceKinds } from '../serviceKinds/builtins';
+import { provisionStarterVehicleClasses } from '../vehicles/builtins';
 
 /**
  * Identity accepted by both seed entry points, in provider terms rather than
@@ -156,6 +157,13 @@ export const provisionExistingOrganizations = internalMutation({
         withSeedIdentity(ctx, { issuer: user.authProvider, subject: user.authSubject }),
         organization._id,
         fieldIds,
+      );
+      // Every tenant predates the Vehicle Class catalogue (#65), so this sweep is
+      // how existing organizations receive it. Idempotent per key, so a tenant
+      // already provisioned is skipped by its own indexed lookup.
+      await provisionStarterVehicleClasses(
+        withSeedIdentity(ctx, { issuer: user.authProvider, subject: user.authSubject }),
+        organization._id,
       );
     }
     return null;

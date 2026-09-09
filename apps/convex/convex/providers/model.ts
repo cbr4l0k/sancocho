@@ -12,6 +12,7 @@ import {
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { maxEntityNameLength, validateEntityName } from '../lib/names';
 import { providerHasAccessGrants } from './grants';
+import { providerHasFleetVehicles } from '../vehicles/references';
 import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator, providerClaimStateValidator, providerDocValidator } from '../validators';
@@ -262,7 +263,15 @@ export async function deleteProvider(ctx: MutationCtx, providerId: Id<'providers
   // used to be able to read a Project, so both statuses block deletion.
   // Rate Cards (#66) and Assignments (#67) each add their own indexed
   // first-hit read beside this one when their tables land.
-  if (provider.linkedOrganizationId !== undefined || (await providerHasAccessGrants(ctx, providerId))) {
+  //
+  // Fleet Vehicles (#65) are the third: a plate belongs to exactly one Provider
+  // row, and destroying that row would leave the vehicle pointing at nothing.
+  // Archived vehicles count — see `providerHasFleetVehicles`.
+  if (
+    provider.linkedOrganizationId !== undefined ||
+    (await providerHasAccessGrants(ctx, providerId)) ||
+    (await providerHasFleetVehicles(ctx, provider.organizationId, providerId))
+  ) {
     return invalidInput('providerDeleteBlocked', 'Referenced Providers cannot be deleted; retain the archived Provider instead');
   }
   // Recorded BEFORE the delete so the row's name is still readable, matching
@@ -342,6 +351,33 @@ export async function requireProviderAccess(
     ? await requireOrganizationMembership(ctx, provider.organizationId, authenticated)
     : await requireOrganizationRole(ctx, provider.organizationId, minimumRole, authenticated);
   return { provider, access };
+}
+
+/**
+ * The single statement of "may this organization store a reference to this
+ * Provider?", mirroring `assertUsableCostCentre` and `assertUsableLocation`: it
+ * must exist, belong to that organization, and still be active.
+ *
+ * This is NOT one of the two read gates below and grants nothing: authorization
+ * for the operation must already have been established. It answers the
+ * write-time question "is this a Provider row THIS tenant may point at?".
+ *
+ * Failure is always the generic error. The id arrives from the caller, so a
+ * foreign, archived, or fabricated Provider must be indistinguishable, or every
+ * writer of a Provider reference becomes a directory probe (I1/I9) — in
+ * particular a caller must never learn that another coordinator's Provider
+ * exists but is archived.
+ */
+export async function assertUsableProvider(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  providerId: Id<'providers'>,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'providers'>> {
+  const provider = await ctx.db.get(providerId);
+  if (provider === null || provider.organizationId !== organizationId || provider.status === 'archived') {
+    return notFoundOrInaccessible();
+  }
+  return provider;
 }
 
 /**

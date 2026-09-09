@@ -112,6 +112,25 @@ export const errorCodes = [
   'providerDeleteBlocked',
   'providerGrantRequiresClaim',
   'providerGrantSelfReference',
+  // Vehicle Classes (what is planned and priced) and Fleet Vehicles (the plate
+  // that arrives). There is deliberately no `fleetVehicleDeleteBlocked`: nothing
+  // in the schema references a Fleet Vehicle yet, so a code that can never be
+  // thrown would be a client contract for a refusal that does not exist. #67
+  // (Assignments) and #69 (execution) each add their own guard and their own
+  // code beside `deleteFleetVehicle`'s documented insertion point.
+  'vehicleClassKeyInvalid',
+  'vehicleClassDescriptionTooLong',
+  'vehicleClassCapacityInvalid',
+  'vehicleClassCargoNoteTooLong',
+  'vehicleClassArchived',
+  'vehicleClassArchiveRequired',
+  'vehicleClassDeleteBlocked',
+  'fleetVehiclePlateInvalid',
+  'fleetVehicleLabelInvalid',
+  'fleetVehicleYearInvalid',
+  'fleetVehicleNotesTooLong',
+  'fleetVehicleArchived',
+  'fleetVehicleArchiveRequired',
   // Deployment-only seed and audit input.
   'seedDisabled',
   'seedBuiltinFieldMissing',

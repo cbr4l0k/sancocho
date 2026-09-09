@@ -175,6 +175,22 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   // No provider console surface yet (#87); keep grant failures opaque.
   providerGrantRequiresClaim: 'errors.generic',
   providerGrantSelfReference: 'errors.generic',
+  // #72 owns the fleet console surface and does not exist yet, so every Vehicle
+  // Class and Fleet Vehicle refusal stays generic: inventing message keys for a
+  // screen with no inputs would ship copy nothing can render in context.
+  vehicleClassKeyInvalid: 'errors.generic',
+  vehicleClassDescriptionTooLong: 'errors.generic',
+  vehicleClassCapacityInvalid: 'errors.generic',
+  vehicleClassCargoNoteTooLong: 'errors.generic',
+  vehicleClassArchived: 'errors.generic',
+  vehicleClassArchiveRequired: 'errors.generic',
+  vehicleClassDeleteBlocked: 'errors.generic',
+  fleetVehiclePlateInvalid: 'errors.generic',
+  fleetVehicleLabelInvalid: 'errors.generic',
+  fleetVehicleYearInvalid: 'errors.generic',
+  fleetVehicleNotesTooLong: 'errors.generic',
+  fleetVehicleArchived: 'errors.generic',
+  fleetVehicleArchiveRequired: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

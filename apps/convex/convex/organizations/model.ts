@@ -13,6 +13,7 @@ import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { validateEntityName } from '../lib/names';
 import { canAssignRole, isOwner, type Role } from '../lib/roles';
 import { provisionStarterServiceKinds } from '../serviceKinds/builtins';
+import { provisionStarterVehicleClasses } from '../vehicles/builtins';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const minSlugLength = 3;
@@ -79,6 +80,7 @@ export async function createOrganization(
   // can ever commit without its usable starter configuration.
   const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
   await provisionStarterServiceKinds(ctx, organizationId, fieldIds);
+  await provisionStarterVehicleClasses(ctx, organizationId);
   return organizationId;
 }
 
