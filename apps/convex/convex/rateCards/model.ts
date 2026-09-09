@@ -314,6 +314,28 @@ export async function resolveRate(
   const rateCard = await ctx.db.get(version.rateCardId);
   if (rateCard === null || rateCard.organizationId !== version.organizationId) return notFoundOrInaccessible();
   await requireOrganizationRole(ctx, rateCard.organizationId, organizationConfigurationRole, authenticated);
+  return resolveRateForAssignment(ctx, args);
+}
+
+/**
+ * Resolves the immutable pricing cell after the caller has already authorized
+ * the enclosing operation. This is domain-internal, not a public Convex query:
+ * public Rate Card reads retain their configuration-role gate, while Assignment
+ * authoring is authorized once at the Project gate.
+ */
+export async function resolveRateForAssignment(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  args: {
+    rateCardVersionId: Id<'rateCardVersions'>;
+    providerId: Id<'providers'>;
+    vehicleClassId: Id<'vehicleClasses'>;
+    modality: RateModality;
+  },
+): Promise<{ rateLineId: Id<'rateLines'>; unitAmount: number; currency: Currency }> {
+  const version = await ctx.db.get(args.rateCardVersionId);
+  if (version === null) return notFoundOrInaccessible();
+  const rateCard = await ctx.db.get(version.rateCardId);
+  if (rateCard === null || rateCard.organizationId !== version.organizationId) return notFoundOrInaccessible();
   if (
     version.status !== 'published' ||
     rateCard.status !== 'active' ||

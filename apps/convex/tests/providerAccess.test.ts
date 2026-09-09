@@ -10,6 +10,7 @@ import {
   providerCapabilitySet,
   requirePrincipalForProject,
   type Capability,
+  type ProjectIntent,
 } from '../convex/lib/access';
 import schema from '../convex/schema';
 import { modules } from './helpers';
@@ -117,9 +118,10 @@ type PrincipalSummary =
       providerOrganizationId: Id<'organizations'>;
       grantId: Id<'providerAccessGrants'>;
       capabilities: string[];
+      accessibleProviderIds: Id<'providers'>[];
     };
 
-function resolvePrincipal(client: Client, projectId: Id<'projects'>, intent: Capability): Promise<PrincipalSummary> {
+function resolvePrincipal(client: Client, projectId: Id<'projects'>, intent: ProjectIntent): Promise<PrincipalSummary> {
   return client.query(async (ctx): Promise<PrincipalSummary> => {
     const principal = await requirePrincipalForProject(ctx, projectId, intent);
     if (principal.kind === 'member') {
@@ -137,6 +139,7 @@ function resolvePrincipal(client: Client, projectId: Id<'projects'>, intent: Cap
       providerOrganizationId: principal.providerOrganizationId,
       grantId: principal.grantId,
       capabilities: [...principal.capabilities].sort(),
+      accessibleProviderIds: [...principal.accessibleProviderIds],
     };
   });
 }
@@ -234,6 +237,7 @@ test('a granted Provider Principal resolves with exactly the four capabilities a
   // Exact equality, not `toContain`: a fifth member — `readProject`, say — must
   // fail here, which is the whole point of a set that is closed in code.
   expect(principal.capabilities).toEqual(everyCapability);
+  expect(principal.accessibleProviderIds).toEqual([f.providerId]);
   expect(principal.providerId).toBe(f.providerId);
   expect(principal.providerOrganizationId).toBe(f.providerOrganizationId);
   expect(principal.grantId).toBe(f.grantId);
@@ -244,6 +248,8 @@ test('a granted Provider Principal resolves with exactly the four capabilities a
   for (const intent of everyCapability) {
     await expect(resolvePrincipal(f.providerFirm.client, f.projectId, intent)).resolves.toMatchObject({ kind: 'provider' });
   }
+  await expect(resolvePrincipal(f.providerFirm.client, f.projectId, 'writeAssignmentTerms'))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
 
   // The exported set is the same closed set, and it is a copy: mutating what a
   // caller receives cannot narrow the next principal's reach.
@@ -1109,6 +1115,7 @@ test('a Provider Principal carries identifiers only — never the Provider, Orga
   // authorized for `readAssignment` must not be one property access away from
   // the coordinator's private notes about the firm it is about.
   expect(shape.keys).toEqual([
+    'accessibleProviderIds',
     'capabilities',
     'grantId',
     'identity',

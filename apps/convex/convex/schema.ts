@@ -339,8 +339,7 @@ export default defineSchema({
     .index('by_assignment_status', ['assignmentId', 'status'])
     // Protected-reference first-hit guards.
     .index('by_org_vehicleClass', ['organizationId', 'vehicleClassId'])
-    .index('by_rateCardVersion', ['rateCardVersionId'])
-    .index('by_rateLine', ['rateLineId']),
+    .index('by_rateCardVersion', ['rateCardVersionId']),
 
   // The coordinator-owned Vehicle Class catalogue (#65): what is planned and
   // priced. Tenant-authored, never a code-owned enum.

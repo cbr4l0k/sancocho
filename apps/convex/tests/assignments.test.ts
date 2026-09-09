@@ -10,6 +10,7 @@ import { modules } from './helpers';
 
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
+const addMember = api.organizations.mutations.addMember;
 const createProvider = api.providers.mutations.createProvider;
 const archiveProvider = api.providers.mutations.archiveProvider;
 const deleteProvider = api.providers.mutations.deleteProvider;
@@ -85,7 +86,7 @@ async function insertService(
   });
 }
 
-async function fixture(subject = 'assignments') {
+async function fixture(subject = 'assignments', currency: 'COP' | 'USD' = 'COP') {
   const t = convexTest(schema, modules);
   const owner = await provision(t, `${subject}-owner`);
   const organizationId = await owner.client.mutation(createOrganization, {
@@ -100,7 +101,7 @@ async function fixture(subject = 'assignments') {
     name: `${subject} Class`,
   });
   const rateCardId = await owner.client.mutation(createRateCard, { organizationId, providerId, name: `${subject} Card` });
-  const rateCardVersionId = await owner.client.mutation(createInitialDraftVersion, { rateCardId, currency: 'COP' });
+  const rateCardVersionId = await owner.client.mutation(createInitialDraftVersion, { rateCardId, currency });
   const rateLineId = await owner.client.mutation(addRateLine, {
     rateCardVersionId,
     vehicleClassId,
@@ -144,6 +145,16 @@ async function makeGrantedProvider(
   await f.t.run(async (ctx) => ctx.db.patch(providerId, { linkedOrganizationId: firmOrganizationId }));
   const grantId = await f.owner.client.mutation(grantProjectAccessToProvider, { projectId: f.projectId, providerId });
   return { client: firm.client, providerId, grantId };
+}
+
+async function refusal(promise: Promise<unknown>): Promise<{ message: string; data: unknown }> {
+  try {
+    await promise;
+  } catch (error) {
+    const thrown = error as { message: string; data: unknown };
+    return { message: thrown.message, data: thrown.data };
+  }
+  throw new Error('Expected the call to be refused, but it resolved');
 }
 
 function commercial(revision: Doc<'assignmentRevisions'>) {
@@ -198,6 +209,47 @@ test('creation derives tenant and Project from the Service, trims notes, and pri
     expect(result).toBeInstanceOf(Error);
     expect(result).not.toHaveProperty('data');
   }
+});
+
+test('Revision snapshots store every pricing input and preserve arithmetic in a non-COP currency', async () => {
+  const f = await fixture('assignment-full-snapshot', 'USD');
+  const firstId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    quantity: 2,
+  });
+  const secondId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    quantity: 7,
+  });
+
+  expect(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId })).toMatchObject({
+    organizationId: f.organizationId,
+    assignmentId: f.assignmentId,
+    revisionNumber: 1,
+    status: 'draft',
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    quantity: 2,
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'USD',
+    lineTotal: 24_690,
+  });
+  expect(await f.owner.client.query(getAssignmentRevision, { revisionId: secondId })).toMatchObject({
+    organizationId: f.organizationId,
+    assignmentId: f.assignmentId,
+    revisionNumber: 2,
+    status: 'draft',
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    quantity: 7,
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'USD',
+    lineTotal: 86_415,
+  });
 });
 
 test('foreign Service, Provider, Vehicle Class, Rate Card Version, and Rate Line ids each return the generic error', async () => {
@@ -309,10 +361,11 @@ test('I7: concurrent Revision creation assigns distinct, gapless server numbers'
   const ids = await Promise.all([
     f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 7 }),
     f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 3 }),
+    f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 5 }),
   ]);
-  expect(new Set(ids)).toHaveLength(2);
+  expect(new Set(ids)).toHaveLength(3);
   const rows = await f.owner.client.query(listAssignmentRevisions, { assignmentId: f.assignmentId, paginationOpts: firstPage });
-  expect(rows.page.map((row) => row.revisionNumber)).toEqual([1, 2]);
+  expect(rows.page.map((row) => row.revisionNumber)).toEqual([1, 2, 3]);
 });
 
 test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -326,20 +379,74 @@ test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
 
 test('cancelled Services and write-refusing Projects reject Assignment creation', async () => {
   const cancelled = await fixture('assignment-cancelled');
+  const cancelledRevisionId = await cancelled.owner.client.mutation(createAssignmentRevision, cancelled.revisionArgs);
   await cancelled.owner.client.mutation(changeServiceStatus, { serviceId: cancelled.serviceId, status: 'cancelled' });
   await expect(cancelled.owner.client.mutation(createAssignment, {
     serviceId: cancelled.serviceId,
     providerId: cancelled.providerId,
     position: 20,
   })).rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
+  await expect(cancelled.owner.client.mutation(createAssignmentRevision, cancelled.revisionArgs))
+    .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
+  await expect(cancelled.owner.client.mutation(acceptAssignmentRevision, { revisionId: cancelledRevisionId }))
+    .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
+  await expect(cancelled.owner.client.mutation(declineAssignmentRevision, { revisionId: cancelledRevisionId }))
+    .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
 
   const frozen = await fixture('assignment-frozen');
+  const frozenRevisionId = await frozen.owner.client.mutation(createAssignmentRevision, frozen.revisionArgs);
   await frozen.owner.client.mutation(archiveProject, { projectId: frozen.projectId });
   await expect(frozen.owner.client.mutation(createAssignment, {
     serviceId: frozen.serviceId,
     providerId: frozen.providerId,
     position: 20,
   })).rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+  await expect(frozen.owner.client.mutation(createAssignmentRevision, frozen.revisionArgs))
+    .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+  await expect(frozen.owner.client.mutation(acceptAssignmentRevision, { revisionId: frozenRevisionId }))
+    .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+  await expect(frozen.owner.client.mutation(declineAssignmentRevision, { revisionId: frozenRevisionId }))
+    .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+});
+
+test('viewer and operator are refused while planner can use every Assignment write door', async () => {
+  for (const role of ['viewer', 'operator'] as const) {
+    const f = await fixture(`assignment-role-${role}`);
+    const member = await provision(f.t, `assignment-role-${role}-member`);
+    await f.owner.client.mutation(addMember, { organizationId: f.organizationId, userId: member.userId, role });
+    const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+    await expect(member.client.mutation(createAssignment, {
+      serviceId: f.serviceId,
+      providerId: f.providerId,
+      position: 20,
+    })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(createAssignmentRevision, f.revisionArgs))
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(acceptAssignmentRevision, { revisionId }))
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(declineAssignmentRevision, { revisionId }))
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(member.client.mutation(removeAssignment, { assignmentId: f.assignmentId }))
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+
+  const f = await fixture('assignment-role-planner');
+  const planner = await provision(f.t, 'assignment-role-planner-member');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: planner.userId,
+    role: 'planner',
+  });
+  const removableId = await planner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+  await expect(planner.client.mutation(removeAssignment, { assignmentId: removableId })).resolves.toBeNull();
+  const declinedId = await planner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await expect(planner.client.mutation(declineAssignmentRevision, { revisionId: declinedId })).resolves.toBeNull();
+  const acceptedId = await planner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 4 });
+  await expect(planner.client.mutation(acceptAssignmentRevision, { revisionId: acceptedId })).resolves.toBeNull();
 });
 
 test('the public mutation surface is exact and repricing never edits prior commercial columns', async () => {
@@ -403,18 +510,53 @@ test('concurrent acceptance atomically leaves exactly one accepted Revision and 
   });
 });
 
+test('acceptance stores a bounded timestamp and the accepting actor rather than the Assignment owner', async () => {
+  const f = await fixture('assignment-acceptance-provenance');
+  const acceptingPlanner = await provision(f.t, 'assignment-acceptance-planner');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: acceptingPlanner.userId,
+    role: 'planner',
+  });
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  const startedAt = Date.now();
+  await acceptingPlanner.client.mutation(acceptAssignmentRevision, { revisionId });
+  const finishedAt = Date.now();
+  const revision = await f.owner.client.query(getAssignmentRevision, { revisionId });
+  expect(revision.acceptedAt).toBeGreaterThanOrEqual(startedAt);
+  expect(revision.acceptedAt).toBeLessThanOrEqual(finishedAt);
+  expect(revision.acceptedByUserId).toBe(acceptingPlanner.userId);
+  expect(revision.acceptedByUserId).not.toBe(f.owner.userId);
+});
+
 test('currentRevisionId is present iff one Revision is accepted across acceptance, supersession, and decline', async () => {
   const f = await fixture('assignment-current-mirror');
   const firstId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
   const secondId = await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 4 });
   await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: firstId });
   expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: firstId });
-  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: secondId });
-  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: secondId });
-  expect(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId })).toMatchObject({ status: 'superseded' });
   await f.owner.client.mutation(declineAssignmentRevision, { revisionId: secondId, reason: 'declined' });
-  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).not.toHaveProperty('currentRevisionId');
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: firstId });
   expect(await f.owner.client.query(getAssignmentRevision, { revisionId: secondId })).toMatchObject({ status: 'declined', declinedReason: 'declined' });
+
+  const thirdId = await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 5 });
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: thirdId });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: thirdId });
+  expect(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId })).toMatchObject({ status: 'superseded' });
+
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: firstId }))
+    .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: secondId }))
+    .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: thirdId }))
+    .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: thirdId });
+  const accepted = await f.owner.client.query(getAssignmentRevision, { revisionId: thirdId });
+  expect(accepted).toMatchObject({
+    status: 'accepted',
+    acceptedByUserId: f.owner.userId,
+  });
+  expect(accepted.acceptedAt).toBeGreaterThan(0);
 });
 
 test('a corrupted currentRevisionId mirror refuses both acceptance and decline', async () => {
@@ -426,7 +568,7 @@ test('a corrupted currentRevisionId mirror refuses both acceptance and decline',
   await expect(f.owner.client.mutation(acceptAssignmentRevision, { revisionId: draftId }))
     .rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: acceptedId }))
-    .rejects.toMatchObject({ data: { code: inaccessible } });
+    .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
 });
 
 test('Service and Project lists preserve position, scope multiple rows, paginate, and use declared indexes', async () => {
@@ -491,7 +633,36 @@ test('Provider principals cannot write commercial fields on their own Assignment
   const f = await fixture('assignment-provider-write');
   const granted = await makeGrantedProvider(f, 'assignment-writer-firm', 'Writer Firm');
   const ownId = await f.owner.client.mutation(createAssignment, { serviceId: f.serviceId, providerId: granted.providerId, position: 20 });
-  await expect(granted.client.mutation(createAssignmentRevision, { ...f.revisionArgs, assignmentId: ownId }))
+  const rateCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: granted.providerId,
+    name: 'Writer Firm Card',
+  });
+  const rateCardVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId,
+    currency: 'COP',
+  });
+  const rateLineId = await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    unitAmount: 44_000,
+  });
+  await f.owner.client.mutation(publishRateCardVersion, { rateCardVersionId });
+
+  await expect(granted.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: granted.providerId,
+    position: 40,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(granted.client.mutation(createAssignmentRevision, {
+    assignmentId: ownId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    quantity: 2,
+    rateCardVersionId,
+    rateLineId,
+  }))
     .rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
@@ -503,6 +674,79 @@ test('requireAssignmentAccess delegates live grant policy and revocation takes e
   await f.owner.client.mutation(revokeProviderAccessGrant, { grantId: granted.grantId });
   await expect(granted.client.query(getAssignment, { assignmentId: ownId }))
     .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('unauthenticated Assignment writes refuse real and fabricated ids identically before lookup', async () => {
+  const f = await fixture('assignment-unauthenticated');
+  const realRevisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  const gone = await f.t.run(async (ctx) => {
+    const service = await ctx.db.get(f.serviceId);
+    if (service === null) throw new Error('Expected fixture Service');
+    const goneServiceId = await ctx.db.insert('services', {
+      organizationId: service.organizationId,
+      projectId: service.projectId,
+      eventId: service.eventId,
+      serviceKindId: service.serviceKindId,
+      serviceKindVersionId: service.serviceKindVersionId,
+      name: 'Gone Service',
+      status: 'draft',
+      startsAt: 2,
+    });
+    const goneAssignmentId = await ctx.db.insert('assignments', {
+      organizationId: f.organizationId,
+      serviceId: f.serviceId,
+      projectId: f.projectId,
+      providerId: f.providerId,
+      position: 99,
+    });
+    const goneRevisionId = await ctx.db.insert('assignmentRevisions', {
+      organizationId: f.organizationId,
+      assignmentId: goneAssignmentId,
+      revisionNumber: 1,
+      status: 'draft',
+      vehicleClassId: f.vehicleClassId,
+      modality: 'disposition',
+      quantity: 1,
+      rateCardVersionId: f.rateCardVersionId,
+      rateLineId: f.rateLineId,
+      unitAmount: 12_345,
+      currency: 'COP',
+      lineTotal: 12_345,
+    });
+    await ctx.db.delete(goneRevisionId);
+    await ctx.db.delete(goneAssignmentId);
+    await ctx.db.delete(goneServiceId);
+    return { goneServiceId, goneAssignmentId, goneRevisionId };
+  });
+
+  const pairs = [
+    [
+      () => f.t.mutation(createAssignment, { serviceId: f.serviceId, providerId: f.providerId, position: 20 }),
+      () => f.t.mutation(createAssignment, { serviceId: gone.goneServiceId, providerId: f.providerId, position: 20 }),
+    ],
+    [
+      () => f.t.mutation(createAssignmentRevision, f.revisionArgs),
+      () => f.t.mutation(createAssignmentRevision, { ...f.revisionArgs, assignmentId: gone.goneAssignmentId }),
+    ],
+    [
+      () => f.t.mutation(acceptAssignmentRevision, { revisionId: realRevisionId }),
+      () => f.t.mutation(acceptAssignmentRevision, { revisionId: gone.goneRevisionId }),
+    ],
+    [
+      () => f.t.mutation(declineAssignmentRevision, { revisionId: realRevisionId }),
+      () => f.t.mutation(declineAssignmentRevision, { revisionId: gone.goneRevisionId }),
+    ],
+    [
+      () => f.t.mutation(removeAssignment, { assignmentId: f.assignmentId }),
+      () => f.t.mutation(removeAssignment, { assignmentId: gone.goneAssignmentId }),
+    ],
+  ] as const;
+  for (const [realCall, fabricatedCall] of pairs) {
+    const real = await refusal(realCall());
+    const fabricated = await refusal(fabricatedCall());
+    expect(fabricated).toEqual(real);
+    expect(real.data).toEqual({ code: 'unauthenticated' });
+  }
 });
 
 test('dual-firm dispatchers resolve as the Assignment Provider in both directions', async () => {
@@ -532,6 +776,13 @@ test('dual-firm dispatchers resolve as the Assignment Provider in both direction
   await expect(resolvedProvider(assignmentAId)).resolves.toBe(providerAId);
   await expect(dispatcher.client.query(getAssignment, { assignmentId: assignmentBId })).resolves.toMatchObject({ providerId: providerBId });
   await expect(resolvedProvider(assignmentBId)).resolves.toBe(providerBId);
+  const projectRows = await dispatcher.client.query(listProjectAssignments, {
+    projectId: f.projectId,
+    paginationOpts: firstPage,
+  });
+  expect(projectRows.page.map((row) => row._id)).toEqual([assignmentAId, assignmentBId]);
+  expect(await dispatcher.client.query(listServiceAssignments, { serviceId: f.serviceId }))
+    .toMatchObject([{ _id: assignmentAId }, { _id: assignmentBId }]);
 });
 
 test('Provider, Vehicle Class, and Rate Card Version reference guards include Assignment history', async () => {
@@ -564,6 +815,34 @@ test('Provider, Vehicle Class, and Rate Card Version reference guards include As
   expect(await versionFixture.t.run((ctx) => rateCardVersionHasAssignmentRevisions(ctx, versionFixture.rateCardVersionId))).toBe(true);
 });
 
+test('Assignment position is unique within one Service but reusable by a different Service', async () => {
+  const f = await fixture('assignment-position-unique');
+  await expect(f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 10,
+  })).rejects.toMatchObject({ data: { code: 'conflict' } });
+
+  const otherService = await insertService(f.t, f.organizationId, 'assignment-position-other-service');
+  await expect(f.owner.client.mutation(createAssignment, {
+    serviceId: otherService.serviceId,
+    providerId: f.providerId,
+    position: 10,
+  })).resolves.toBeDefined();
+});
+
+test('archived Provider and Vehicle Class inputs are refused when creating a Revision', async () => {
+  const providerFixture = await fixture('assignment-archived-provider-input');
+  await providerFixture.owner.client.mutation(archiveProvider, { providerId: providerFixture.providerId });
+  await expect(providerFixture.owner.client.mutation(createAssignmentRevision, providerFixture.revisionArgs))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+
+  const classFixture = await fixture('assignment-archived-class-input');
+  await classFixture.owner.client.mutation(archiveVehicleClass, { vehicleClassId: classFixture.vehicleClassId });
+  await expect(classFixture.owner.client.mutation(createAssignmentRevision, classFixture.revisionArgs))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
 test('removeAssignment refuses negotiation history and succeeds before history exists', async () => {
   const f = await fixture('assignment-remove');
   const removableId = await f.owner.client.mutation(createAssignment, { serviceId: f.serviceId, providerId: f.providerId, position: 20 });
@@ -581,7 +860,8 @@ test('Assignment audit rows cover every transition, identify the actor, and cont
   await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: firstId });
   const secondId = await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 4 });
   await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: secondId });
-  await f.owner.client.mutation(declineAssignmentRevision, { revisionId: secondId, reason: 'declined' });
+  const thirdId = await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 5 });
+  await f.owner.client.mutation(declineAssignmentRevision, { revisionId: thirdId, reason: 'declined' });
   const removableId = await f.owner.client.mutation(createAssignment, { serviceId: f.serviceId, providerId: f.providerId, position: 20 });
   await f.owner.client.mutation(removeAssignment, { assignmentId: removableId });
 
@@ -595,6 +875,7 @@ test('Assignment audit rows cover every transition, identify the actor, and cont
       'assignmentRevision.created',
       'assignmentRevision.superseded',
       'assignmentRevision.accepted',
+      'assignmentRevision.created',
       'assignmentRevision.declined',
       'assignment.created',
       'assignment.removed',

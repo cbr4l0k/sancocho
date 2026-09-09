@@ -13,7 +13,7 @@ import {
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { assertMinorUnits, multiply } from '../lib/money';
 import { assertUsableProvider } from '../providers/model';
-import { resolveRate } from '../rateCards/model';
+import { resolveRateForAssignment } from '../rateCards/model';
 import { assertServiceWritable } from '../services/model';
 import type { rateModalityValidator } from '../validators';
 import { assertUsableVehicleClass } from '../vehicles/classes';
@@ -33,8 +33,8 @@ type AssignmentAccess = {
 /**
  * The thin Assignment gate promised by I1. It resolves only the stable row and
  * delegates policy to the one Project principal gate. Supplying the row's
- * Provider is the dual-firm correction: the centralized resolver refuses a
- * provider principal when the first matching grant belongs to another firm.
+ * Provider narrows a dual-firm caller to the principal that owns this target;
+ * list paths omit it so the centralized resolver can return the full union.
  */
 export async function requireAssignmentAccess(
   ctx: QueryCtx | MutationCtx,
@@ -164,7 +164,7 @@ export async function createAssignmentRevision(
   // gates before exposing whether the Service itself is writable (I1/I9).
   await assertUsableProvider(ctx, assignment.providerId, assignment.organizationId);
   await assertUsableVehicleClass(ctx, args.vehicleClassId, assignment.organizationId);
-  const rate = await resolveRate(ctx, {
+  const rate = await resolveRateForAssignment(ctx, {
     rateCardVersionId: args.rateCardVersionId,
     providerId: assignment.providerId,
     vehicleClassId: args.vehicleClassId,
@@ -273,22 +273,10 @@ export async function declineAssignmentRevision(
   );
   const { service, project } = await loadAssignmentService(ctx, assignment);
   assertServiceWritable(service, project);
-  if (revision.status !== 'draft' && revision.status !== 'accepted') {
-    return invalidInput('assignmentRevisionNotDeclinable', 'Only draft or accepted Assignment Revisions can be declined');
+  if (revision.status !== 'draft') {
+    return invalidInput('assignmentRevisionNotDeclinable', 'Only draft Assignment Revisions can be declined');
   }
   const reason = validateDeclinedReason(args.reason);
-
-  if (revision.status === 'accepted') {
-    const accepted = await ctx.db
-      .query('assignmentRevisions')
-      .withIndex('by_assignment_status', (q) =>
-        q.eq('assignmentId', assignment._id).eq('status', 'accepted'),
-      )
-      .unique();
-    assertCurrentRevisionMirror(assignment, accepted);
-    if (accepted?._id !== revision._id) return notFoundOrInaccessible();
-    await ctx.db.patch(assignment._id, { currentRevisionId: undefined });
-  }
   await ctx.db.patch(revision._id, {
     status: 'declined',
     ...(reason === undefined ? {} : { declinedReason: reason }),
@@ -345,9 +333,9 @@ export async function listServiceAssignments(
     .withIndex('by_service_position', (q) => q.eq('serviceId', service._id))
     .take(maxAssignmentsPerService);
   // Response shaping is separate from principal resolution: a Provider sees
-  // only its own rows, while a member sees the complete bounded Service child set.
+  // the union of its granted firms' rows, while a member sees the complete set.
   return principal.kind === 'provider'
-    ? assignments.filter((assignment) => assignment.providerId === principal.providerId)
+    ? assignments.filter((assignment) => principal.accessibleProviderIds.has(assignment.providerId))
     : assignments;
 }
 
@@ -357,12 +345,22 @@ export async function listProjectAssignments(
 ): Promise<PaginationResult<Doc<'assignments'>>> {
   const principal = await requirePrincipalForProject(ctx, args.projectId, 'readAssignment');
   return principal.kind === 'provider'
-    ? ctx.db
-        .query('assignments')
-        .withIndex('by_project_provider_position', (q) =>
-          q.eq('projectId', args.projectId).eq('providerId', principal.providerId),
-        )
-        .paginate(args.paginationOpts)
+    ? principal.accessibleProviderIds.size === 1
+      ? ctx.db
+          .query('assignments')
+          .withIndex('by_project_provider_position', (q) =>
+            q.eq('projectId', args.projectId).eq('providerId', principal.providerId),
+          )
+          .paginate(args.paginationOpts)
+      : ctx.db
+          .query('assignments')
+          .withIndex('by_project_position', (q) => q.eq('projectId', args.projectId))
+          .filter((q) => q.or(
+            ...[...principal.accessibleProviderIds].map((providerId) =>
+              q.eq(q.field('providerId'), providerId),
+            ),
+          ))
+          .paginate(args.paginationOpts)
     : ctx.db
         .query('assignments')
         .withIndex('by_project_position', (q) => q.eq('projectId', args.projectId))

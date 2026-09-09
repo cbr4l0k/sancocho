@@ -227,6 +227,8 @@ export type MemberPrincipal = OrganizationMembershipAccess & { kind: 'member' };
 export type ProviderPrincipal = AuthenticatedUser & {
   kind: 'provider';
   providerId: Id<'providers'>;
+  /** Every Provider row through which this caller may read Project lists. */
+  accessibleProviderIds: ReadonlySet<Id<'providers'>>;
   providerOrganizationId: Id<'organizations'>;
   grantId: Id<'providerAccessGrants'>;
   capabilities: ReadonlySet<Capability>;
@@ -254,6 +256,10 @@ export type Principal = MemberPrincipal | ProviderPrincipal;
  *     grant, dead claim, unheld capability — leaves through the same
  *     `notFoundOrInaccessible()`. Probing an adjacent project id must be
  *     indistinguishable from probing one that never existed, on both arms (I9).
+ *
+ * With no expected Provider (the list case), every valid grant held through
+ * the caller's memberships is retained in `accessibleProviderIds`. Supplying
+ * an expected Provider (the single-row case) narrows that set to the target.
  *
  * A caller who IS a member of the owning organization but whose role does not
  * reach the intent is refused here rather than falling through to the provider
@@ -327,6 +333,8 @@ export async function requirePrincipalForProject(
  * `by_provider_project` admits a single grant per (Provider, Project).
  *
  * Returns `null` rather than throwing so the caller owns the single I9 exit.
+ * For lists it walks the complete bounded membership/grant set so the result
+ * carries every Provider through which the caller has live Project access.
  */
 async function resolveProviderPrincipal(
   ctx: UserAccessContext,
@@ -339,6 +347,8 @@ async function resolveProviderPrincipal(
     .withIndex('by_user', (q) => q.eq('userId', authenticated.user._id))
     .collect();
 
+  let resolved: Omit<ProviderPrincipal, 'accessibleProviderIds'> | null = null;
+  const accessibleProviderIds = new Set<Id<'providers'>>();
   for (const membership of memberships) {
     const grants = await ctx.db
       .query('providerAccessGrants')
@@ -389,7 +399,7 @@ async function resolveProviderPrincipal(
       // dropped: the principal names it by id. Same for `provider` and `grant`
       // — every one of them was needed to DECIDE, and none of them is something
       // a downstream handler should be handed wholesale.
-      return {
+      const candidate = {
         kind: 'provider',
         ...authenticated,
         providerId: provider._id,
@@ -399,10 +409,12 @@ async function resolveProviderPrincipal(
         // truth and never escapes. Tests mutate one returned copy and prove a
         // later principal still receives the complete closed set.
         capabilities: new Set(providerGrantCapabilities),
-      };
+      } satisfies Omit<ProviderPrincipal, 'accessibleProviderIds'>;
+      resolved ??= candidate;
+      accessibleProviderIds.add(provider._id);
     }
   }
-  return null;
+  return resolved === null ? null : { ...resolved, accessibleProviderIds };
 }
 
 /**
