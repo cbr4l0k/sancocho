@@ -112,6 +112,16 @@ export const errorCodes = [
   'providerDeleteBlocked',
   'providerGrantRequiresClaim',
   'providerGrantSelfReference',
+  // Rate Card lifecycle and bounded grid input.
+  'rateCardArchived',
+  'rateCardPublishedVersionRequired',
+  'rateCardVersionNotDraft',
+  'rateCardVersionNotPublished',
+  'rateCardVersionEmpty',
+  'rateCardProviderUnavailable',
+  'rateLineVehicleClassUnavailable',
+  'rateLineDuplicateCell',
+  'rateLineLimitExceeded',
   // Vehicle Classes (what is planned and priced) and Fleet Vehicles (the plate
   // that arrives). There is deliberately no `fleetVehicleDeleteBlocked`: nothing
   // in the schema references a Fleet Vehicle yet, so a code that can never be

@@ -15,6 +15,7 @@ import { organizationConfigurationRole, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator } from '../validators';
 import { vehicleClassHasFleetVehicles } from './references';
+import { vehicleClassHasRateLines } from '../rateCards/references';
 
 type ArchivalStatus = typeof archivalStatusValidator.type;
 type VehicleClassPatch = {
@@ -202,11 +203,13 @@ export async function deleteVehicleClass(ctx: MutationCtx, vehicleClassId: Id<'v
   // and the refusal is always the same code so the caller learns "still
   // referenced", never which table holds the reference.
   //
-  // Fleet Vehicles are the one referencer that exists today and it is a real
-  // one — `fleetVehicles.vehicleClassId` is introduced by this same issue. Rate
-  // Lines (#66) and Assignments (#67) add their own indexed first-hit reads
-  // beside this one when their tables land.
-  if (await vehicleClassHasFleetVehicles(ctx, vehicleClass.organizationId, vehicleClassId)) {
+  // Fleet Vehicles and Rate Lines are the referencers that exist today.
+  // Assignments (#67) add their own indexed first-hit read beside these when
+  // that table lands.
+  if (
+    (await vehicleClassHasFleetVehicles(ctx, vehicleClass.organizationId, vehicleClassId)) ||
+    (await vehicleClassHasRateLines(ctx, vehicleClass.organizationId, vehicleClassId))
+  ) {
     return invalidInput('vehicleClassDeleteBlocked', 'Referenced Vehicle Classes cannot be deleted; retain the archived class instead');
   }
   // Recorded BEFORE the delete so the row's key and name are still readable,

@@ -14,6 +14,9 @@ import {
   locationFields,
   providerAccessGrantFields,
   providerFields,
+  rateCardFields,
+  rateCardVersionFields,
+  rateLineFields,
   fleetVehicleFields,
   vehicleClassFields,
   organizationInvitationFields,
@@ -290,6 +293,30 @@ export default defineSchema({
     // Deliberately keyed by the granting organization AND project so a member
     // can never page another tenant's grants by supplying a foreign project id.
     .index('by_org_project', ['organizationId', 'projectId']),
+
+  // Coordinator-authored Provider terms. The current-version pointer is
+  // advanced or cleared only by the version lifecycle transaction.
+  rateCards: defineTable(rateCardFields)
+    // Serves the member-only paginated catalogue.
+    .index('by_org', ['organizationId'])
+    // Serves Provider deletion's first-hit reverse-reference guard. Archived
+    // cards count because their immutable commercial history still points at
+    // the Provider.
+    .index('by_org_provider', ['organizationId', 'providerId']),
+
+  rateCardVersions: defineTable(rateCardVersionFields)
+    // Serves gapless server numbering and bounded history reads.
+    .index('by_card_version', ['rateCardId', 'versionNumber'])
+    // Serves the at-most-one draft/published probes and lifecycle transitions.
+    .index('by_card_status', ['rateCardId', 'status']),
+
+  rateLines: defineTable(rateLineFields)
+    // Serves the bounded version child-set read used by clone, publish and get.
+    .index('by_version', ['rateCardVersionId'])
+    // Serves uniqueness and the sole resolveRate point lookup.
+    .index('by_version_class_modality', ['rateCardVersionId', 'vehicleClassId', 'modality'])
+    // Serves Vehicle Class deletion's first-hit reverse-reference guard.
+    .index('by_org_class', ['organizationId', 'vehicleClassId']),
 
   // The coordinator-owned Vehicle Class catalogue (#65): what is planned and
   // priced. Tenant-authored, never a code-owned enum.

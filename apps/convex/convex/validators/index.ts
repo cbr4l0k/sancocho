@@ -34,6 +34,20 @@ export const currencyValidator = v.union(
   v.literal('MXN'),
 );
 
+/** Code-owned Rate Card grid axis; tenant-authored modality text is forbidden (I8). */
+export const rateModalityValidator = v.union(
+  v.literal('transfer'),
+  v.literal('disposition'),
+  v.literal('route'),
+  v.literal('fixed'),
+);
+
+export const rateCardVersionStatusValidator = v.union(
+  v.literal('draft'),
+  v.literal('published'),
+  v.literal('retired'),
+);
+
 export const serviceKindStatusValidator = v.union(
   v.literal('draft'),
   v.literal('active'),
@@ -278,6 +292,53 @@ export const providerDocValidator = v.object({
   _creationTime: v.number(),
   ...providerFields,
   claimState: providerClaimStateValidator,
+});
+
+/** Shared persisted and returned shape for coordinator-owned Rate Cards. */
+export const rateCardFields = {
+  organizationId: v.id('organizations'),
+  providerId: v.id('providers'),
+  name: v.string(),
+  status: archivalStatusValidator,
+  // Server-maintained in the same transaction as publication/retirement. It is
+  // never accepted by a public mutation (I4).
+  currentPublishedVersionId: v.optional(v.id('rateCardVersions')),
+};
+
+export const rateCardDocValidator = v.object({
+  _id: v.id('rateCards'),
+  _creationTime: v.number(),
+  ...rateCardFields,
+});
+
+export const rateCardVersionFields = {
+  organizationId: v.id('organizations'),
+  rateCardId: v.id('rateCards'),
+  versionNumber: v.number(),
+  currency: currencyValidator,
+  status: rateCardVersionStatusValidator,
+  publishedAt: v.optional(v.number()),
+};
+
+export const rateCardVersionDocValidator = v.object({
+  _id: v.id('rateCardVersions'),
+  _creationTime: v.number(),
+  ...rateCardVersionFields,
+});
+
+export const rateLineFields = {
+  organizationId: v.id('organizations'),
+  rateCardVersionId: v.id('rateCardVersions'),
+  vehicleClassId: v.id('vehicleClasses'),
+  modality: rateModalityValidator,
+  // Integer minor units; every writer additionally calls assertMinorUnits.
+  unitAmount: v.number(),
+};
+
+export const rateLineDocValidator = v.object({
+  _id: v.id('rateLines'),
+  _creationTime: v.number(),
+  ...rateLineFields,
 });
 
 /**
@@ -627,6 +688,12 @@ export const auditActionValidator = v.union(
   v.literal('provider.updated'),
   v.literal('provider.archived'),
   v.literal('provider.deleted'),
+  v.literal('rateCard.created'),
+  v.literal('rateCard.updated'),
+  v.literal('rateCard.archived'),
+  v.literal('rateCardVersion.created'),
+  v.literal('rateCardVersion.published'),
+  v.literal('rateCardVersion.retired'),
   // The coordinator-side lifecycle of the second principal arm. Both are member
   // operations: a Provider principal can never reach either (issue #71).
   v.literal('providerAccessGrant.granted'),
@@ -671,6 +738,8 @@ export const auditEntityTypeValidator = v.union(
   v.literal('location'),
   v.literal('costCentre'),
   v.literal('provider'),
+  v.literal('rateCard'),
+  v.literal('rateCardVersion'),
   v.literal('providerAccessGrant'),
   v.literal('vehicleClass'),
   v.literal('fleetVehicle'),

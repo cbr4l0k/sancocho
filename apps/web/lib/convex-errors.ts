@@ -175,6 +175,17 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   // No provider console surface yet (#87); keep grant failures opaque.
   providerGrantRequiresClaim: 'errors.generic',
   providerGrantSelfReference: 'errors.generic',
+  // #73 owns the Rate Card console surface; keep this backend vocabulary
+  // generic until there is a screen whose inputs can render specific guidance.
+  rateCardArchived: 'errors.generic',
+  rateCardPublishedVersionRequired: 'errors.generic',
+  rateCardVersionNotDraft: 'errors.generic',
+  rateCardVersionNotPublished: 'errors.generic',
+  rateCardVersionEmpty: 'errors.generic',
+  rateCardProviderUnavailable: 'errors.generic',
+  rateLineVehicleClassUnavailable: 'errors.generic',
+  rateLineDuplicateCell: 'errors.generic',
+  rateLineLimitExceeded: 'errors.generic',
   // #72 owns the fleet console surface and does not exist yet, so every Vehicle
   // Class and Fleet Vehicle refusal stays generic: inventing message keys for a
   // screen with no inputs would ship copy nothing can render in context.
