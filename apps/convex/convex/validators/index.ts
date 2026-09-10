@@ -355,6 +355,7 @@ export const assignmentFields = {
   serviceId: v.id('services'),
   projectId: v.id('projects'),
   providerId: v.id('providers'),
+  costCentreId: v.optional(v.id('costCentres')),
   position: v.number(),
   notes: v.optional(v.string()),
   // Maintained only by acceptance/decline transactions; never client supplied.
@@ -818,6 +819,7 @@ export const auditEntityTypeValidator = v.union(
 export const auditMetadataKeys = [
   'changedFields',
   'clonedFromVersion',
+  'costCentreId',
   'fieldCount',
   'fieldDefinitionId',
   'key',

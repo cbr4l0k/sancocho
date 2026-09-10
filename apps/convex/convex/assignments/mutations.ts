@@ -15,6 +15,7 @@ export const createAssignment = mutation({
   args: {
     serviceId: v.id('services'),
     providerId: v.id('providers'),
+    costCentreId: v.optional(v.id('costCentres')),
     position: v.number(),
     notes: v.optional(v.string()),
   },

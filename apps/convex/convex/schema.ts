@@ -329,7 +329,10 @@ export default defineSchema({
     // Provider-principal Project list without reading another Provider's rows.
     .index('by_project_provider_position', ['projectId', 'providerId', 'position'])
     // Provider deletion's indexed first-hit reverse-reference guard.
-    .index('by_org_provider', ['organizationId', 'providerId']),
+    .index('by_org_provider', ['organizationId', 'providerId'])
+    // Serves only Cost Centre deletion's first-hit reference check; no list
+    // surface reads Assignments through this index.
+    .index('by_costCentre', ['costCentreId']),
 
   // Every proposal and agreement is retained as an immutable commercial row.
   assignmentRevisions: defineTable(assignmentRevisionFields)

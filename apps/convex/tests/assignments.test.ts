@@ -1,4 +1,5 @@
 import { convexTest } from 'convex-test';
+import type { PaginationResult } from 'convex/server';
 import { expect, test } from 'vitest';
 
 import { api } from '../convex/_generated/api';
@@ -11,6 +12,10 @@ import { modules } from './helpers';
 const ensureUser = api.auth.mutations.ensureUser;
 const createOrganization = api.organizations.mutations.createOrganization;
 const addMember = api.organizations.mutations.addMember;
+const createCostCentre = api.costCentres.mutations.createCostCentre;
+const archiveCostCentre = api.costCentres.mutations.archiveCostCentre;
+const deleteCostCentre = api.costCentres.mutations.deleteCostCentre;
+const updateEvent = api.events.mutations.updateEvent;
 const createProvider = api.providers.mutations.createProvider;
 const archiveProvider = api.providers.mutations.archiveProvider;
 const deleteProvider = api.providers.mutations.deleteProvider;
@@ -27,6 +32,8 @@ const publishRateCardVersion = api.rateCards.mutations.publishRateCardVersion;
 const retireRateCardVersion = api.rateCards.mutations.retireRateCardVersion;
 const changeServiceStatus = api.services.mutations.changeServiceStatus;
 const archiveProject = api.projects.mutations.archiveProject;
+const listOrganizationAuditEvents = api.audit.queries.listOrganizationAuditEvents;
+const listEntityAuditEvents = api.audit.queries.listEntityAuditEvents;
 
 const createAssignment = api.assignments.mutations.createAssignment;
 const createAssignmentRevision = api.assignments.mutations.createAssignmentRevision;
@@ -60,7 +67,7 @@ async function insertService(
   t: SchemaTest,
   organizationId: Id<'organizations'>,
   name: string,
-): Promise<{ projectId: Id<'projects'>; serviceId: Id<'services'> }> {
+): Promise<{ projectId: Id<'projects'>; eventId: Id<'events'>; serviceId: Id<'services'> }> {
   return t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', { organizationId, name: `${name} project`, status: 'active' });
     const eventId = await ctx.db.insert('events', { organizationId, projectId, name: `${name} event`, status: 'active', startsAt: 0 });
@@ -82,7 +89,7 @@ async function insertService(
       status: 'draft',
       startsAt: 1,
     });
-    return { projectId, serviceId };
+    return { projectId, eventId, serviceId };
   });
 }
 
@@ -93,7 +100,7 @@ async function fixture(subject = 'assignments', currency: 'COP' | 'USD' = 'COP')
     name: `${subject} organization`,
     slug: 'assignment-fixture',
   });
-  const { projectId, serviceId } = await insertService(t, organizationId, `${subject} service`);
+  const { projectId, eventId, serviceId } = await insertService(t, organizationId, `${subject} service`);
   const providerId = await owner.client.mutation(createProvider, { organizationId, name: `${subject} Provider` });
   const vehicleClassId = await owner.client.mutation(createVehicleClass, {
     organizationId,
@@ -123,6 +130,7 @@ async function fixture(subject = 'assignments', currency: 'COP' | 'USD' = 'COP')
     owner,
     organizationId,
     projectId,
+    eventId,
     serviceId,
     providerId,
     vehicleClassId,
@@ -145,6 +153,24 @@ async function makeGrantedProvider(
   await f.t.run(async (ctx) => ctx.db.patch(providerId, { linkedOrganizationId: firmOrganizationId }));
   const grantId = await f.owner.client.mutation(grantProjectAccessToProvider, { projectId: f.projectId, providerId });
   return { client: firm.client, providerId, grantId };
+}
+
+/**
+ * Grants the fixture's OWN Provider, rather than a fresh one, so the fixture's
+ * published Rate Card still resolves for that Provider's Revisions.
+ * `makeGrantedProvider` deliberately creates a new Provider and is the right
+ * helper when the commercial chain is not being exercised.
+ */
+async function grantFixtureProvider(
+  f: Awaited<ReturnType<typeof fixture>>,
+  subject: string,
+  name: string,
+): Promise<{ client: Client; firmOrganizationId: Id<'organizations'> }> {
+  const firm = await provision(f.t, subject);
+  const firmOrganizationId = await firm.client.mutation(createOrganization, { name, slug: subject });
+  await f.t.run(async (ctx) => ctx.db.patch(f.providerId, { linkedOrganizationId: firmOrganizationId }));
+  await f.owner.client.mutation(grantProjectAccessToProvider, { projectId: f.projectId, providerId: f.providerId });
+  return { client: firm.client, firmOrganizationId };
 }
 
 async function refusal(promise: Promise<unknown>): Promise<{ message: string; data: unknown }> {
@@ -209,6 +235,164 @@ test('creation derives tenant and Project from the Service, trims notes, and pri
     expect(result).toBeInstanceOf(Error);
     expect(result).not.toHaveProperty('data');
   }
+});
+
+test('explicit Cost Centre references reject foreign, fabricated, and archived ids generically', async () => {
+  const f = await fixture('assignment-cost-centre-invalid');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Cost Centre organization',
+    slug: 'assignment-cost-centre-foreign',
+  });
+  const foreignCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: foreignOrganizationId,
+    key: 'foreignCharge',
+    name: 'Foreign charge',
+  });
+  const fabricatedCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'removedCharge',
+    name: 'Removed charge',
+  });
+  await f.owner.client.mutation(archiveCostCentre, { costCentreId: fabricatedCostCentreId });
+  await f.owner.client.mutation(deleteCostCentre, { costCentreId: fabricatedCostCentreId });
+  const archivedCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'archivedCharge',
+    name: 'Archived charge',
+  });
+  await f.owner.client.mutation(archiveCostCentre, { costCentreId: archivedCostCentreId });
+
+  for (const costCentreId of [foreignCostCentreId, fabricatedCostCentreId, archivedCostCentreId]) {
+    await expect(f.owner.client.mutation(createAssignment, {
+      serviceId: f.serviceId,
+      providerId: f.providerId,
+      costCentreId,
+      position: 20,
+    })).rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+});
+
+test('omitting a Cost Centre leaves Assignment attribution absent', async () => {
+  const f = await fixture('assignment-cost-centre-absent');
+  const assignment = await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId });
+  // Absent means the key is not stored at all, not stored as undefined.
+  expect(assignment).not.toHaveProperty('costCentreId');
+});
+
+test('Event Cost Centre defaults materialize while an explicit Cost Centre overrides them', async () => {
+  const f = await fixture('assignment-cost-centre-default');
+  const eventCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'eventCharge',
+    name: 'Event charge',
+  });
+  const explicitCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'explicitCharge',
+    name: 'Explicit charge',
+  });
+  await f.owner.client.mutation(updateEvent, {
+    eventId: f.eventId,
+    clientCostCentreId: eventCostCentreId,
+  });
+
+  const inheritedAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+  const explicitAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    costCentreId: explicitCostCentreId,
+    position: 30,
+  });
+
+  expect(await f.owner.client.query(getAssignment, { assignmentId: inheritedAssignmentId }))
+    .toMatchObject({ costCentreId: eventCostCentreId });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: explicitAssignmentId }))
+    .toMatchObject({ costCentreId: explicitCostCentreId });
+});
+
+test('changing the Event Cost Centre affects only Assignments created afterward', async () => {
+  const f = await fixture('assignment-cost-centre-materialized');
+  const firstCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'firstCharge',
+    name: 'First charge',
+  });
+  const secondCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'secondCharge',
+    name: 'Second charge',
+  });
+  await f.owner.client.mutation(updateEvent, {
+    eventId: f.eventId,
+    clientCostCentreId: firstCostCentreId,
+  });
+  const firstAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+
+  await f.owner.client.mutation(updateEvent, {
+    eventId: f.eventId,
+    clientCostCentreId: secondCostCentreId,
+  });
+  const secondAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 30,
+  });
+
+  expect(await f.owner.client.query(getAssignment, { assignmentId: firstAssignmentId }))
+    .toMatchObject({ costCentreId: firstCostCentreId });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: secondAssignmentId }))
+    .toMatchObject({ costCentreId: secondCostCentreId });
+});
+
+test('an archived Event Cost Centre is still inherited by a new Assignment', async () => {
+  const f = await fixture('assignment-cost-centre-archived-default');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'historicalCharge',
+    name: 'Historical charge',
+  });
+  await f.owner.client.mutation(updateEvent, { eventId: f.eventId, clientCostCentreId: costCentreId });
+  await f.owner.client.mutation(archiveCostCentre, { costCentreId });
+
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+  expect(await f.owner.client.query(getAssignment, { assignmentId }))
+    .toMatchObject({ costCentreId });
+});
+
+test('Cost Centre deletion is blocked only while an Assignment still references it', async () => {
+  const f = await fixture('assignment-cost-centre-delete');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'deletionCharge',
+    name: 'Deletion charge',
+  });
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    costCentreId,
+    position: 20,
+  });
+  await f.owner.client.mutation(archiveCostCentre, { costCentreId });
+
+  await expect(f.owner.client.mutation(deleteCostCentre, { costCentreId }))
+    .rejects.toMatchObject({ data: { code: 'costCentreDeleteBlocked' } });
+  await f.owner.client.mutation(removeAssignment, { assignmentId });
+  await expect(f.owner.client.mutation(deleteCostCentre, { costCentreId })).resolves.toBeNull();
+  await f.t.run(async (ctx) => {
+    expect(await ctx.db.get(costCentreId)).toBeNull();
+  });
 });
 
 test('Revision snapshots store every pricing input and preserve arithmetic in a non-COP currency', async () => {
@@ -783,6 +967,227 @@ test('dual-firm dispatchers resolve as the Assignment Provider in both direction
   expect(projectRows.page.map((row) => row._id)).toEqual([assignmentAId, assignmentBId]);
   expect(await dispatcher.client.query(listServiceAssignments, { serviceId: f.serviceId }))
     .toMatchObject([{ _id: assignmentAId }, { _id: assignmentBId }]);
+});
+
+/**
+ * Every column the Provider arm may read, as a closed set. Asserting the whole
+ * key set — rather than only that `costCentreId` is absent — is what makes
+ * `providerAssignmentView` testable in both directions: it fails if a forbidden
+ * column starts riding along, AND it fails if an optional column a Provider
+ * legitimately needs is silently dropped. The compiler only catches a new
+ * REQUIRED column, so optional ones are exactly the class that needs this.
+ */
+function expectNoForbiddenProviderKeys(row: object): void {
+  expect(Object.keys(row).filter((key) => !providerAssignmentKeys.includes(key))).toEqual([]);
+}
+
+const providerAssignmentKeys = [
+  '_creationTime',
+  '_id',
+  'currentRevisionId',
+  'notes',
+  'organizationId',
+  'position',
+  'projectId',
+  'providerId',
+  'serviceId',
+];
+
+test('a granted Provider receives its Assignment without the charge attribution', async () => {
+  const f = await fixture('assignment-cost-centre-confinement');
+  const firm = await grantFixtureProvider(f, 'assignment-confinement-firm', 'Confinement Firm');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'confinedCharge',
+    name: 'Confined charge',
+  });
+  await f.owner.client.mutation(updateEvent, { eventId: f.eventId, clientCostCentreId: costCentreId });
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+    notes: 'confined supply line',
+  });
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    assignmentId,
+  });
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+
+  // The attribution must genuinely reach all three coordinator surfaces, or
+  // every negative below would pass against a projection that returns nothing
+  // and against a write path that never stored the value.
+  expect(await f.owner.client.query(getAssignment, { assignmentId }))
+    .toMatchObject({ costCentreId });
+  expect(await f.owner.client.query(listServiceAssignments, { serviceId: f.serviceId }))
+    .toEqual(expect.arrayContaining([expect.objectContaining({ _id: assignmentId, costCentreId })]));
+  expect((await f.owner.client.query(listProjectAssignments, { projectId: f.projectId, paginationOpts: firstPage })).page)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ _id: assignmentId, costCentreId })]));
+
+  // The Provider sees the row, keeps everything it is entitled to, and loses
+  // exactly one column.
+  const providerRow = await firm.client.query(getAssignment, { assignmentId });
+  expect(Object.keys(providerRow).sort()).toEqual(providerAssignmentKeys);
+  expect(providerRow).toMatchObject({
+    _id: assignmentId,
+    providerId: f.providerId,
+    position: 20,
+    notes: 'confined supply line',
+    currentRevisionId: revisionId,
+  });
+
+  const serviceRows = await firm.client.query(listServiceAssignments, { serviceId: f.serviceId });
+  expect(serviceRows.map((row) => row._id)).toEqual([f.assignmentId, assignmentId]);
+  const projectRows = await firm.client.query(listProjectAssignments, {
+    projectId: f.projectId,
+    paginationOpts: firstPage,
+  });
+  expect(projectRows.page.map((row) => row._id)).toEqual([f.assignmentId, assignmentId]);
+  for (const row of [...serviceRows, ...projectRows.page]) {
+    expectNoForbiddenProviderKeys(row);
+  }
+});
+
+test('the Provider Project list narrows every page while paging to the end', async () => {
+  const f = await fixture('assignment-cost-centre-paged');
+  const firm = await grantFixtureProvider(f, 'assignment-paged-firm', 'Paged Firm');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'pagedCharge',
+    name: 'Paged charge',
+  });
+  await f.owner.client.mutation(updateEvent, { eventId: f.eventId, clientCostCentreId: costCentreId });
+  const expected: Id<'assignments'>[] = [f.assignmentId];
+  for (const position of [20, 30]) {
+    expected.push(await f.owner.client.mutation(createAssignment, {
+      serviceId: f.serviceId,
+      providerId: f.providerId,
+      position,
+    }));
+  }
+
+  // One row per page, so the projection wrapper has to preserve the cursor and
+  // `isDone` it rebuilds — a wrapper that mangles either would truncate the
+  // Provider's list to its first row with no other test noticing.
+  const seen: Id<'assignments'>[] = [];
+  let cursor: string | null = null;
+  for (let request = 0; request < 5; request += 1) {
+    const page: PaginationResult<Doc<'assignments'>> = await firm.client.query(listProjectAssignments, {
+      projectId: f.projectId,
+      paginationOpts: { numItems: 1, cursor },
+    });
+    for (const row of page.page) {
+      seen.push(row._id);
+      expectNoForbiddenProviderKeys(row);
+    }
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  expect(seen).toEqual(expected);
+});
+
+test('a granted Provider cannot reach the audit log that records the attribution', async () => {
+  const f = await fixture('assignment-cost-centre-audit');
+  const firm = await grantFixtureProvider(f, 'assignment-audit-firm', 'Audit Firm');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'auditedCharge',
+    name: 'Audited charge',
+  });
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    costCentreId,
+    position: 20,
+  });
+
+  // The attribution is materialized once and no path rewrites it, so this row
+  // is the only place the log can answer who a movement was charged to.
+  const recorded = await f.owner.client.query(listEntityAuditEvents, {
+    organizationId: f.organizationId,
+    entityType: 'assignment',
+    entityId: assignmentId,
+    paginationOpts: firstPage,
+  });
+  expect(recorded.page.map((event) => event.metadata))
+    .toEqual([expect.objectContaining({ costCentreId })]);
+
+  // The log is the second channel the same value travels on, so the Provider
+  // arm is refused on both queries...
+  for (const refused of [
+    firm.client.query(listOrganizationAuditEvents, { organizationId: f.organizationId, paginationOpts: firstPage }),
+    firm.client.query(listEntityAuditEvents, {
+      organizationId: f.organizationId,
+      entityType: 'assignment',
+      entityId: assignmentId,
+      paginationOpts: firstPage,
+    }),
+  ]) {
+    await expect(refused).rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+  // ...including the substitution where the role gate legitimately passes,
+  // because the firm really is owner of its OWN organization.
+  expect((await firm.client.query(listEntityAuditEvents, {
+    organizationId: firm.firmOrganizationId,
+    entityType: 'assignment',
+    entityId: assignmentId,
+    paginationOpts: firstPage,
+  })).page).toEqual([]);
+});
+
+test('inheritance re-proves the Event belongs to the Service tenant', async () => {
+  const f = await fixture('assignment-cost-centre-foreign-event');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Event organization',
+    slug: 'assignment-foreign-event',
+  });
+  const foreign = await insertService(f.t, foreignOrganizationId, 'assignment-foreign-event');
+  // Unreachable through any public mutation — `service.eventId` has one writer,
+  // behind a gate that already proves this. Fabricated directly so the I4
+  // re-proof is pinned before some future re-parenting path makes it reachable,
+  // at which point it would otherwise stamp a foreign Cost Centre onto a local
+  // Assignment that no update path exists to correct.
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.serviceId, { eventId: foreign.eventId });
+  });
+
+  await expect(f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('a caller-supplied Cost Centre is proven before any lifecycle state is revealed', async () => {
+  const f = await fixture('assignment-cost-centre-ordering');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Ordering Cost Centre organization',
+    slug: 'assignment-cost-centre-ordering',
+  });
+  const foreignCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: foreignOrganizationId,
+    key: 'orderingCharge',
+    name: 'Ordering charge',
+  });
+
+  // Position 10 is already taken by the fixture, so a caller who supplies both
+  // a foreign Cost Centre and a colliding position must learn nothing about
+  // the collision: the reference is proven first, generically.
+  await expect(f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    costCentreId: foreignCostCentreId,
+    position: 10,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  // Same rule against a Service whose lifecycle would otherwise refuse the write.
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'cancelled' });
+  await expect(f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    costCentreId: foreignCostCentreId,
+    position: 20,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('Provider, Vehicle Class, and Rate Card Version reference guards include Assignment history', async () => {

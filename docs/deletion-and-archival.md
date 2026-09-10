@@ -37,9 +37,12 @@ references through indexes first.
   remain. The audit row is self-describing so removal is still reconstructible.
 - **Memberships.** A removed membership is an access revocation, not history; the audit row
   records `previousRole`.
-- **Cost Centres.** A Cost Centre an Event still names as its client is history in the same
-  sense a venue is: archival keeps it readable where it is already referenced, deletion is
-  refused until nothing points at it.
+- **Cost Centres.** A Cost Centre an Event still names as its client, or that any
+  Assignment records as its charge attribution, is history in the same sense a venue is:
+  archival keeps it readable where it is already referenced, deletion is refused until
+  nothing points at it. The two references are independent — either one alone retains the
+  row — and the Assignment's is the one that survives longest, because it is materialized
+  at creation and no path rewrites it.
 
 ### Why accountability does *not* guard member removal
 

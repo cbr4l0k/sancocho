@@ -124,7 +124,10 @@ Enumerated, and every entry is a required negative test in #71 and #87.
    as values on the projection, never as a browsable tenant catalogue.
 7. **Cost Centres** and the party a movement is charged to. Provider principals never
    read the `costCentres` table; #87 enforces that exclusion in the linked-Service
-   projection.
+   projection. The Assignment row carries its own `costCentreId` (#68), so the Provider
+   arm of every Assignment read returns a narrowed view that omits it — filtering which
+   rows a Provider sees is not sufficient when a forbidden field rides along on a row it
+   is entitled to.
 8. **Rate Cards**, Rate Card Versions and Rate Lines. A Provider knows what it charges,
    because that is on its own revisions; it never learns the coordinator's card, the grid
    it was resolved from, or what any other Provider charges.

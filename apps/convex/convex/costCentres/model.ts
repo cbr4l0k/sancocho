@@ -156,13 +156,20 @@ export async function deleteCostCentre(ctx: MutationCtx, costCentreId: Id<'costC
     return invalidInput('costCentreArchiveRequired', 'Cost Centres must be archived before deletion');
   }
   // Each referencing table is checked first-hit through its mirror index before
-  // this delete, exactly as `deleteLocation` does. `events.clientCostCentreId`
-  // is the first such reference; #68 and #67 add later guards beside it.
+  // this delete, exactly as `deleteLocation` does. Events and Assignments are
+  // independent live references, so either one retains the catalogue row.
   const eventReference = await ctx.db
     .query('events')
     .withIndex('by_clientCostCentre', (q) => q.eq('clientCostCentreId', costCentreId))
     .first();
   if (eventReference !== null) {
+    return invalidInput('costCentreDeleteBlocked', 'Referenced Cost Centres cannot be deleted; retain the archived Cost Centre instead');
+  }
+  const assignmentReference = await ctx.db
+    .query('assignments')
+    .withIndex('by_costCentre', (q) => q.eq('costCentreId', costCentreId))
+    .first();
+  if (assignmentReference !== null) {
     return invalidInput('costCentreDeleteBlocked', 'Referenced Cost Centres cannot be deleted; retain the archived Cost Centre instead');
   }
   // Recorded BEFORE the delete so the row's name is still readable, matching

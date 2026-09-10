@@ -3,6 +3,7 @@ import type { PaginationOptions, PaginationResult } from 'convex/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { recordAuditEvent } from '../audit/model';
+import { assertUsableCostCentre } from '../costCentres/model';
 import {
   auditActorFor,
   requireAuthenticatedUser,
@@ -11,12 +12,13 @@ import {
   type ProjectIntent,
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
-import { assertMinorUnits, multiply } from '../lib/money';
+import { assertMinorUnits } from '../lib/money';
 import { assertUsableProvider } from '../providers/model';
 import { resolveRateForAssignment } from '../rateCards/model';
 import { assertServiceWritable } from '../services/model';
 import type { rateModalityValidator } from '../validators';
 import { assertUsableVehicleClass } from '../vehicles/classes';
+import { lineTotal } from './costing';
 
 type RateModality = typeof rateModalityValidator.type;
 
@@ -61,6 +63,7 @@ export async function createAssignment(
   args: {
     serviceId: Id<'services'>;
     providerId: Id<'providers'>;
+    costCentreId?: Id<'costCentres'>;
     position: number;
     notes?: string;
   },
@@ -75,9 +78,32 @@ export async function createAssignment(
   }
   // Prove every caller-controlled reference before exposing lifecycle state.
   await assertUsableProvider(ctx, args.providerId, service.organizationId);
+  if (args.costCentreId !== undefined) {
+    await assertUsableCostCentre(ctx, args.costCentreId, service.organizationId);
+  }
   assertServiceWritable(service, project);
   assertPosition(args.position);
   const notes = validateNotes(args.notes);
+
+  // The Event default is not a caller choice: its ownership was proven when
+  // written. Copy it without an archival re-check so catalogue configuration
+  // cannot block operational work after the Event has already selected it.
+  //
+  // The org equality below is unreachable today — `service.eventId` has one
+  // writer, and it resolves the Event through a gate that already proves this.
+  // It is re-proven anyway because I4 says a denormalized link is checked and
+  // never trusted, and because the day an Event can be re-parented this line
+  // would otherwise stamp a foreign Cost Centre onto a local Assignment that
+  // no update path exists to correct.
+  let inheritedCostCentreId: Id<'costCentres'> | undefined;
+  if (args.costCentreId === undefined) {
+    const event = await ctx.db.get(service.eventId);
+    if (event === null || event.organizationId !== service.organizationId) {
+      return notFoundOrInaccessible();
+    }
+    inheritedCostCentreId = event.clientCostCentreId;
+  }
+  const costCentreId = args.costCentreId ?? inheritedCostCentreId;
 
   const duplicatePosition = await ctx.db
     .query('assignments')
@@ -99,6 +125,7 @@ export async function createAssignment(
     serviceId: service._id,
     projectId: service.projectId,
     providerId: args.providerId,
+    ...(costCentreId === undefined ? {} : { costCentreId }),
     position: args.position,
     ...(notes === undefined ? {} : { notes }),
   });
@@ -108,7 +135,13 @@ export async function createAssignment(
     action: 'assignment.created',
     entityType: 'assignment',
     entityId: assignmentId,
-    metadata: { providerId: args.providerId, position: args.position },
+    // Attribution is recorded here because it is materialized once and no update
+    // path exists: without it the log cannot answer who a movement was charged to.
+    metadata: {
+      providerId: args.providerId,
+      position: args.position,
+      ...(costCentreId === undefined ? {} : { costCentreId }),
+    },
   });
   return assignmentId;
 }
@@ -172,7 +205,7 @@ export async function createAssignmentRevision(
   });
   if (rate.rateLineId !== args.rateLineId) return notFoundOrInaccessible();
   assertMinorUnits(rate.unitAmount);
-  const lineTotal = multiply(rate.unitAmount, args.quantity);
+  const resolvedLineTotal = lineTotal(rate.unitAmount, args.quantity);
 
   const { service, project } = await loadAssignmentService(ctx, assignment);
   assertServiceWritable(service, project);
@@ -194,7 +227,7 @@ export async function createAssignmentRevision(
     rateLineId: rate.rateLineId,
     unitAmount: rate.unitAmount,
     currency: rate.currency,
-    lineTotal,
+    lineTotal: resolvedLineTotal,
   });
   await recordAuditEvent(ctx, {
     organizationId: assignment.organizationId,
@@ -291,11 +324,46 @@ export async function declineAssignmentRevision(
   });
 }
 
+/**
+ * The Provider arm's Assignment shape.
+ *
+ * `docs/provider-access.md` may-not-see #7 forbids a Provider from learning the
+ * party a movement is charged to, and #9 names the Event's `clientCostCentreId`
+ * specifically. Whenever the Event default was inherited, `costCentreId` IS that
+ * value copied verbatim, so returning the stored row would smuggle the forbidden
+ * field back as data hanging off an Assignment — exactly the shape may-not-see #1
+ * rules out. Filtering rows is not enough; the columns have to narrow too.
+ *
+ * The body is a whitelist and the return type is an `Omit` of the stored row, so
+ * a new REQUIRED Assignment column fails to compile here until someone decides
+ * whether a Provider may see it, and a new OPTIONAL one is excluded by default.
+ * Both outcomes fail closed. #87 owns the wider Service projection; this is only
+ * the Assignment row itself.
+ */
+type ProviderAssignmentView = Omit<Doc<'assignments'>, 'costCentreId'>;
+
+function providerAssignmentView(assignment: Doc<'assignments'>): ProviderAssignmentView {
+  return {
+    _id: assignment._id,
+    _creationTime: assignment._creationTime,
+    organizationId: assignment.organizationId,
+    serviceId: assignment.serviceId,
+    projectId: assignment.projectId,
+    providerId: assignment.providerId,
+    position: assignment.position,
+    ...(assignment.notes === undefined ? {} : { notes: assignment.notes }),
+    ...(assignment.currentRevisionId === undefined
+      ? {}
+      : { currentRevisionId: assignment.currentRevisionId }),
+  };
+}
+
 export async function getAssignment(
   ctx: QueryCtx,
   assignmentId: Id<'assignments'>,
-): Promise<Doc<'assignments'>> {
-  return (await requireAssignmentAccess(ctx, assignmentId, 'readAssignment')).assignment;
+): Promise<Doc<'assignments'> | ProviderAssignmentView> {
+  const { assignment, principal } = await requireAssignmentAccess(ctx, assignmentId, 'readAssignment');
+  return principal.kind === 'provider' ? providerAssignmentView(assignment) : assignment;
 }
 
 export async function getAssignmentRevision(
@@ -319,7 +387,7 @@ export async function listAssignmentRevisions(
 export async function listServiceAssignments(
   ctx: QueryCtx,
   serviceId: Id<'services'>,
-): Promise<Doc<'assignments'>[]> {
+): Promise<(Doc<'assignments'> | ProviderAssignmentView)[]> {
   await requireAuthenticatedUser(ctx);
   const service = await ctx.db.get(serviceId);
   if (service === null) return notFoundOrInaccessible();
@@ -332,20 +400,30 @@ export async function listServiceAssignments(
     .query('assignments')
     .withIndex('by_service_position', (q) => q.eq('serviceId', service._id))
     .take(maxAssignmentsPerService);
-  // Response shaping is separate from principal resolution: a Provider sees
-  // the union of its granted firms' rows, while a member sees the complete set.
+  // Response shaping is separate from principal resolution, and it narrows in
+  // BOTH directions: a Provider sees only the union of its granted firms' rows
+  // (which rows), and only the columns its arm may read (which fields).
   return principal.kind === 'provider'
-    ? assignments.filter((assignment) => principal.accessibleProviderIds.has(assignment.providerId))
+    ? assignments
+        .filter((assignment) => principal.accessibleProviderIds.has(assignment.providerId))
+        .map(providerAssignmentView)
     : assignments;
 }
 
 export async function listProjectAssignments(
   ctx: QueryCtx,
   args: { projectId: Id<'projects'>; paginationOpts: PaginationOptions },
-): Promise<PaginationResult<Doc<'assignments'>>> {
+): Promise<PaginationResult<Doc<'assignments'> | ProviderAssignmentView>> {
   const principal = await requirePrincipalForProject(ctx, args.projectId, 'readAssignment');
-  return principal.kind === 'provider'
-    ? principal.accessibleProviderIds.size === 1
+  if (principal.kind !== 'provider') {
+    return ctx.db
+      .query('assignments')
+      .withIndex('by_project_position', (q) => q.eq('projectId', args.projectId))
+      .paginate(args.paginationOpts);
+  }
+  // The page is narrowed to the Provider arm's columns after pagination, so the
+  // index range and page size stay exactly what the member path uses (I6).
+  const page = await (principal.accessibleProviderIds.size === 1
       ? ctx.db
           .query('assignments')
           .withIndex('by_project_provider_position', (q) =>
@@ -360,11 +438,8 @@ export async function listProjectAssignments(
               q.eq(q.field('providerId'), providerId),
             ),
           ))
-          .paginate(args.paginationOpts)
-    : ctx.db
-        .query('assignments')
-        .withIndex('by_project_position', (q) => q.eq('projectId', args.projectId))
-        .paginate(args.paginationOpts);
+          .paginate(args.paginationOpts));
+  return { ...page, page: page.page.map(providerAssignmentView) };
 }
 
 async function requireRevisionAccess(
