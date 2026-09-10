@@ -59,10 +59,9 @@ function providerAudits(t: SchemaTest, organizationId: Id<'organizations'>, prov
 }
 
 /**
- * Stands in for #86's verified claim mutation, which does not exist yet. It
- * writes the link directly so the claimed half of the lifecycle is exercised
- * today; when #86 lands, these tests switch to its mutation and assert nothing
- * different.
+ * Directly establishes claim state because these Provider catalogue tests
+ * isolate the derived discriminator from #86's separately-covered invitation
+ * flow. The production link remains writable only through that flow.
  */
 function linkProvider(t: SchemaTest, providerId: Id<'providers'>, linkedOrganizationId: Id<'organizations'>) {
   return t.run(async (ctx) => ctx.db.patch(providerId, { linkedOrganizationId }));

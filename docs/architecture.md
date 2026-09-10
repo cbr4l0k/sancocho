@@ -161,7 +161,7 @@ Rules that hold everywhere:
 - Table shapes that appear in both the schema and a public `returns` validator are declared
   once in `validators/` — seven of them: `projectFields`, `serviceFields`, `locationFields`,
   `fieldDefinitionFields`, `auditEventFields`, `serviceKindFields` (the `serviceKinds` shape,
-  not the `serviceKindFields` table) and `organizationInvitationFields` — and spread into both,
+  not the `serviceKindFields` table) and `organizationInvitationValidator` — and reused by both,
   so the stored document and the documented contract cannot drift.
 - Cross-domain reuse goes through exported model helpers, not through duplicated logic. The
   load-bearing shared ones are `fields/values.ts:validateFieldValueAgainstConfig` (used by

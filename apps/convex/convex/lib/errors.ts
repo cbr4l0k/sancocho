@@ -20,6 +20,7 @@ export const errorCodes = [
   'invitationEmailInvalid',
   'invitationNotPending',
   'invitationExpired',
+  'invitationKindMismatch',
   'projectDescriptionTooLong',
   'projectArchived',
   'projectArchiveRequired',
@@ -110,6 +111,8 @@ export const errorCodes = [
   'providerArchived',
   'providerArchiveRequired',
   'providerDeleteBlocked',
+  'providerClaimAlreadyClaimed',
+  'providerClaimOrganizationConflict',
   'providerGrantRequiresClaim',
   'providerGrantSelfReference',
   // Rate Card lifecycle and bounded grid input.

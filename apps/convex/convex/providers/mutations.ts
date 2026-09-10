@@ -7,8 +7,12 @@ import {
 } from './grants';
 import {
   archiveProvider as archiveProviderModel,
+  claimProviderOrganization as claimProviderOrganizationModel,
   createProvider as createProviderModel,
   deleteProvider as deleteProviderModel,
+  inviteProviderOrganization as inviteProviderOrganizationModel,
+  revokeProviderClaimInvitation as revokeProviderClaimInvitationModel,
+  revokeProviderOrganizationClaim as revokeProviderOrganizationClaimModel,
   updateProvider as updateProviderModel,
 } from './model';
 
@@ -67,6 +71,42 @@ export const deleteProvider = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await deleteProviderModel(ctx, args.providerId);
+    return null;
+  },
+});
+
+export const inviteProviderOrganization = mutation({
+  args: { providerId: v.id('providers'), email: v.string() },
+  returns: v.id('organizationInvitations'),
+  handler: (ctx, args) => inviteProviderOrganizationModel(ctx, args),
+});
+
+export const claimProviderOrganization = mutation({
+  args: {
+    invitationId: v.id('organizationInvitations'),
+    organizationId: v.id('organizations'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await claimProviderOrganizationModel(ctx, args);
+    return null;
+  },
+});
+
+export const revokeProviderOrganizationClaim = mutation({
+  args: { providerId: v.id('providers') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await revokeProviderOrganizationClaimModel(ctx, args.providerId);
+    return null;
+  },
+});
+
+export const revokeProviderClaimInvitation = mutation({
+  args: { invitationId: v.id('organizationInvitations') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await revokeProviderClaimInvitationModel(ctx, args.invitationId);
     return null;
   },
 });

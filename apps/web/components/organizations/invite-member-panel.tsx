@@ -155,6 +155,11 @@ export function InviteMemberPanel({
             ) : (
               <TableBody>
                 {invitations.results.map((invitation) => {
+                  // The query is index-narrowed to membership rows, but its
+                  // table-level return type is the full discriminated union.
+                  // Keep the UI honest about the boundary: a claim has no role
+                  // and must never become revocable through the member panel.
+                  if (invitation.kind !== 'membership') return null;
                   const expired = invitation.expiresAt <= now;
                   return (
                     <TableRow key={invitation._id}>

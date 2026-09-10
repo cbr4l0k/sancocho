@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as assignments_costing from "../assignments/costing.js";
+import type * as assignments_execution from "../assignments/execution.js";
 import type * as assignments_model from "../assignments/model.js";
 import type * as assignments_mutations from "../assignments/mutations.js";
 import type * as assignments_queries from "../assignments/queries.js";
@@ -89,6 +91,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "assignments/costing": typeof assignments_costing;
+  "assignments/execution": typeof assignments_execution;
   "assignments/model": typeof assignments_model;
   "assignments/mutations": typeof assignments_mutations;
   "assignments/queries": typeof assignments_queries;

@@ -37,6 +37,8 @@ import { requireProjectAccess } from '../projects/model';
  */
 const providerAccessGrantRole = organizationConfigurationRole;
 
+const maxClaimRevocationCascade = 256;
+
 /**
  * Issues (or reinstates) the one grant that lets a claimed Provider reach one
  * Project.
@@ -198,6 +200,34 @@ export async function revokeProviderAccessGrant(
     providerId: grant.providerId,
     projectId: grant.projectId,
   });
+}
+
+/**
+ * Bookkeeping half of claim revocation. The claim writer owns when this runs;
+ * this grants module owns how grant rows are found and retired, preserving the
+ * rule that only it and the single authorization gate ever read the grant
+ * table. The caller passes one already-captured timestamp so every row in the
+ * same access withdrawal records the same instant.
+ */
+export async function revokeAllProviderAccessGrants(
+  ctx: MutationCtx,
+  providerId: Id<'providers'>,
+  revokedAt: number,
+): Promise<void> {
+  const grants = await ctx.db
+    .query('providerAccessGrants')
+    .withIndex('by_provider_project', (q) => q.eq('providerId', providerId))
+    // Clearing the Provider link is the security effect: `lib/access.ts`
+    // re-proves that live claim on every call. If this bounded bookkeeping
+    // pass stops short, the remaining rows look cosmetically active only in
+    // coordinator grant lists and confer no access; that is strictly safer
+    // than letting an unbounded cascade prevent the link clear from committing.
+    .take(maxClaimRevocationCascade);
+  for (const grant of grants) {
+    if (grant.status === 'active') {
+      await ctx.db.patch(grant._id, { status: 'revoked', revokedAt });
+    }
+  }
 }
 
 /**

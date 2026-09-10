@@ -15,7 +15,7 @@ import { canAssignRole, type Role } from '../lib/roles';
  * by the recipient authenticated as themselves.
  */
 
-const invitationTtlMs = 14 * 24 * 60 * 60 * 1000;
+export const invitationTtlMs = 14 * 24 * 60 * 60 * 1000;
 const maxInvitationEmailLength = 254; // RFC 5321 mailbox length ceiling.
 const invitationEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,12 +26,12 @@ const invitationEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * same case, so a mixed-case IdP claim (`Jane.Doe@Example.com`) still finds
  * and can still accept an invitation stored lowercase.
  */
-function normalizeEmailForComparison(email: string): string {
+export function normalizeEmailForComparison(email: string): string {
   return email.trim().toLowerCase();
 }
 
 /** Normalizes, then checks a pragmatic shape for the caller's OWN input (I9: message may be specific). */
-function normalizeInvitationEmail(email: string): string {
+export function normalizeInvitationEmail(email: string): string {
   const normalized = normalizeEmailForComparison(email);
   if (
     normalized.length === 0 ||
@@ -79,6 +79,7 @@ export async function createInvitation(
   }
 
   const invitationId = await ctx.db.insert('organizationInvitations', {
+    kind: 'membership',
     organizationId: args.organizationId,
     email,
     role: args.role,
@@ -112,6 +113,13 @@ export async function revokeInvitation(ctx: MutationCtx, invitationId: Id<'organ
   // else (I9). `preResolvedUser` reuses the identity already proven above
   // instead of resolving it a second time (lib/access.ts).
   const access = await requireOrganizationRole(ctx, invitation.organizationId, 'admin', authenticated);
+  // Revoking a membership invitation and revoking a Provider claim are
+  // different authority transitions with different audit vocabulary. Refuse
+  // the wrong arm here so the generic invitation endpoint can never become an
+  // unaudited claim-management shortcut.
+  if (invitation.kind !== 'membership') {
+    return invalidInput('invitationKindMismatch', 'Invitation kind does not match this operation');
+  }
   if (invitation.status !== 'pending') {
     return invalidInput('invitationNotPending', 'Invitation is no longer pending');
   }
@@ -144,6 +152,14 @@ export async function acceptInvitation(
   const callerEmail = user.email;
   if (callerEmail === undefined || normalizeEmailForComparison(callerEmail) !== invitation.email) {
     return notFoundOrInaccessible();
+  }
+
+  // The recipient has now been proven, so identifying the wrong transition is
+  // safe. More importantly, this narrowing occurs before `role` is read: the
+  // providerClaim arm has no role in its stored shape and therefore cannot be
+  // accepted into coordinator membership.
+  if (invitation.kind !== 'membership') {
+    return invalidInput('invitationKindMismatch', 'Invitation kind does not match this operation');
   }
 
   if (invitation.status === 'revoked' || invitation.status === 'accepted') {
@@ -207,7 +223,9 @@ export async function listPendingInvitations(
   await requireOrganizationRole(ctx, organizationId, 'admin');
   return ctx.db
     .query('organizationInvitations')
-    .withIndex('by_org_status', (q) => q.eq('organizationId', organizationId).eq('status', 'pending'))
+    .withIndex('by_org_kind_status', (q) =>
+      q.eq('organizationId', organizationId).eq('kind', 'membership').eq('status', 'pending'),
+    )
     .order('desc')
     .paginate(paginationOpts);
 }
@@ -255,11 +273,17 @@ export async function listMyPendingInvitations(
   const email = normalizeEmailForComparison(user.email);
   const page = await ctx.db
     .query('organizationInvitations')
-    .withIndex('by_email_status', (q) => q.eq('email', email).eq('status', 'pending'))
+    .withIndex('by_email_kind_status', (q) => q.eq('email', email).eq('kind', 'membership').eq('status', 'pending'))
     .order('desc')
     .paginate(paginationOpts);
   const entries = await Promise.all(
     page.page.map(async (invitation): Promise<MyPendingInvitationEntry> => {
+      // The index range makes this branch unreachable for valid stored data,
+      // but narrowing here keeps the projection structurally honest: only the
+      // membership arm owns `role`, and no cast is allowed to erase that fact.
+      if (invitation.kind !== 'membership') {
+        return notFoundOrInaccessible();
+      }
       const organization = await ctx.db.get(invitation.organizationId);
       if (organization === null) {
         return notFoundOrInaccessible();

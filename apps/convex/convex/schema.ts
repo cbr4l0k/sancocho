@@ -21,7 +21,7 @@ import {
   rateLineFields,
   fleetVehicleFields,
   vehicleClassFields,
-  organizationInvitationFields,
+  organizationInvitationValidator,
   serviceKindFields,
   serviceKindVersionStatusValidator,
   projectFields,
@@ -65,17 +65,23 @@ export default defineSchema({
   // validator are built from the same definition (issue #56). An invitation
   // is addressed to `email`, never a user id — nothing here is ever produced
   // by looking a user up by address (I9).
-  organizationInvitations: defineTable(organizationInvitationFields)
+  organizationInvitations: defineTable(organizationInvitationValidator)
     // Uniqueness = indexed read-before-write on (org, email, status) inside
     // `createInvitation`: one open (`pending`) invitation per address per
     // org. The status column is part of the key so a resolved invitation
     // (accepted/revoked/expired) never blocks re-inviting the same address.
     .index('by_org_email_status', ['organizationId', 'email', 'status'])
-    // Serves the org's own pending-invitation list (I6, paginated).
-    .index('by_org_status', ['organizationId', 'status'])
+    // Serves the org's own pending-invitation list (I6, paginated). `kind` sits
+    // between the two so the membership console narrows in the index rather
+    // than filtering claim rows out of an already-paginated page — the same
+    // reason every other list here is index-narrowed before `.paginate`.
+    // It REPLACES the former `by_org_status`, which lost its last consumer when
+    // this arm appeared; an index with no reader is pure write amplification.
+    .index('by_org_kind_status', ['organizationId', 'kind', 'status'])
     // Serves the caller's own pending invitations, keyed by their verified
-    // email (I6, paginated) — the recipient-facing accept surface.
-    .index('by_email_status', ['email', 'status']),
+    // email (I6, paginated) — the recipient-facing accept surface. Replaces the
+    // former `by_email_status` for the same reason.
+    .index('by_email_kind_status', ['email', 'kind', 'status']),
 
   // Field shape lives in validators/ so the table and the public `returns`
   // validator are built from the same definition.
@@ -260,16 +266,16 @@ export default defineSchema({
     .index('by_org', ['organizationId'])
     // Serves status-filtered lists before pagination, never after.
     .index('by_org_status', ['organizationId', 'status'])
+    // Serves #86's per-coordinator claim uniqueness read-before-write, and the
+    // revocation path's reverse lookup. `linkedOrganizationId` is NOT globally
+    // unique: one firm working for three coordinators has three Provider rows,
+    // one per directory, all linked to its single Organization. The pair is the key.
+    .index('by_linkedOrganization_org', ['linkedOrganizationId', 'organizationId'])
     // Serves name search, optionally narrowed by archival status.
     .searchIndex('search_text', {
       searchField: 'searchText',
       filterFields: ['organizationId', 'status'],
     }),
-    // There is deliberately NO by_linkedOrganization index yet: nothing reads
-    // Providers by the organization they are linked to. The delete guard reads
-    // the link off the Provider row it already holds. #86 (claim/revocation)
-    // and #71 (grants) add the reverse index when they add its first consumer;
-    // an index without one is pure write amplification.
 
   // The SECOND principal arm's stored proof (#71, docs/provider-access.md shape
   // (b)). One row = "this claimed Provider may reach this one Project, and

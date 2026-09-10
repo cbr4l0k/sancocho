@@ -410,6 +410,7 @@ test('a fabricated or foreign-org invitation id is opaque to acceptInvitation an
   const outsider = await provision(t, 'invite-fabricated-outsider');
   const fakeInvitationId = await t.run(async (ctx) => {
     const id = await ctx.db.insert('organizationInvitations', {
+      kind: 'membership',
       organizationId,
       email: 'ghost@example.com',
       role: 'viewer',
@@ -515,6 +516,47 @@ test('listMyPendingInvitations returns only invitations addressed to the caller,
   const none = await nobody.client.query(listMyPendingInvitations, { paginationOpts: firstPage });
   expect(none.page).toEqual([]);
   expect(none.isDone).toBe(true);
+});
+
+test('membership pending lists exclude a Provider claim for the same organization and address', async () => {
+  const t = convexTest(schema, modules);
+  const { admin, organizationId } = await orgWithAdmin(t, 'membership-lists-kind-boundary');
+  const recruit = await provision(t, 'membership-lists-kind-recruit', 'same-address@example.com');
+  const membershipInvitationId = await admin.client.mutation(createInvitation, {
+    organizationId,
+    email: 'same-address@example.com',
+    role: 'viewer',
+  });
+  const claimInvitationId = await t.run(async (ctx) => {
+    // Public writers deliberately prevent two pending rows on this shared key.
+    // Seed both arms together so the list's kind boundary itself is observable.
+    const providerId = await ctx.db.insert('providers', {
+      organizationId,
+      name: 'Kind Boundary Provider',
+      searchText: 'kind boundary provider',
+      status: 'active',
+    });
+    return ctx.db.insert('organizationInvitations', {
+      kind: 'providerClaim',
+      organizationId,
+      email: 'same-address@example.com',
+      providerId,
+      status: 'pending',
+      invitedByUserId: admin.userId,
+      expiresAt: Date.now() + 60_000,
+    });
+  });
+
+  const organizationSide = await admin.client.query(listPendingInvitations, {
+    organizationId,
+    paginationOpts: firstPage,
+  });
+  expect(organizationSide.page.map((invitation) => invitation._id)).toEqual([membershipInvitationId]);
+  expect(organizationSide.page.map((invitation) => invitation._id)).not.toContain(claimInvitationId);
+
+  const recipientSide = await recruit.client.query(listMyPendingInvitations, { paginationOpts: firstPage });
+  expect(recipientSide.page.map((entry) => entry.invitation._id)).toEqual([membershipInvitationId]);
+  expect(recipientSide.page.map((entry) => entry.invitation._id)).not.toContain(claimInvitationId);
 });
 
 test('createInvitation for a foreign organization is opaque, same as a fabricated id', async () => {

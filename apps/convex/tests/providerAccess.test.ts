@@ -92,9 +92,9 @@ async function provision(t: SchemaTest, subject: string) {
 }
 
 /**
- * Stands in for #86's verified claim mutation, which does not exist yet — the
- * same stand-in `providers.test.ts` already uses. Passing `undefined` revokes
- * the claim, which is the shape #86's revocation will take.
+ * Directly establishes claim state because these #71 gate tests isolate grant
+ * resolution rather than retesting #86's invitation flow. Passing `undefined`
+ * exercises the gate's live response to the same link removal #86 performs.
  */
 function setClaim(t: SchemaTest, providerId: Id<'providers'>, linkedOrganizationId: Id<'organizations'> | undefined) {
   return t.run(async (ctx) => ctx.db.patch(providerId, { linkedOrganizationId }));
@@ -1252,15 +1252,17 @@ test('exactly one helper resolves both principal arms, and no operation inlines 
   //    allowed by a looser pattern.
   expect(sourcesMatching(/\.query\('providerAccessGrants'\)/)).toEqual(['lib/access.ts', 'providers/grants.ts']);
 
-  // The lifecycle module may expose only these four operations. In particular,
-  // it cannot export a grant-reading authorization helper for another module to
-  // consume while still hiding behind this file's legitimate table reads.
+  // The lifecycle module exposes the four public operations plus #86's bulk
+  // bookkeeping helper. The latter only retires this Provider's rows after the
+  // claim gate has already withdrawn access; it neither resolves a principal
+  // nor answers an authorization question for its caller.
   const grantsSource = Object.entries(backendSources).find(([path]) => path.endsWith('/providers/grants.ts'))?.[1];
   expect(grantsSource).toBeDefined();
   expect(exportedRuntimeNames(grantsSource ?? '')).toEqual([
     'grantProjectAccessToProvider',
     'listProjectProviderAccessGrants',
     'providerHasAccessGrants',
+    'revokeAllProviderAccessGrants',
     'revokeProviderAccessGrant',
   ]);
 

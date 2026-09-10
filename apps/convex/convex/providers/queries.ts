@@ -7,9 +7,14 @@ import {
   paginatedResult,
   providerAccessGrantDocValidator,
   providerDocValidator,
+  organizationInvitationDocValidator,
 } from '../validators';
 import { listProjectProviderAccessGrants as listProjectProviderAccessGrantsModel } from './grants';
-import { getProvider as getProviderModel, listProviders as listProvidersModel } from './model';
+import {
+  getProvider as getProviderModel,
+  listProviderClaimInvitations as listProviderClaimInvitationsModel,
+  listProviders as listProvidersModel,
+} from './model';
 
 export const getProvider = query({
   args: { providerId: v.id('providers') },
@@ -29,6 +34,12 @@ export const listProviders = query({
     ...(args.status === undefined ? {} : { status: args.status }),
     ...(args.search === undefined ? {} : { search: args.search }),
   }),
+});
+
+export const listProviderClaimInvitations = query({
+  args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator },
+  returns: paginatedResult(organizationInvitationDocValidator),
+  handler: (ctx, args) => listProviderClaimInvitationsModel(ctx, args),
 });
 
 /**

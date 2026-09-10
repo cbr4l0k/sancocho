@@ -12,6 +12,9 @@ export type ConvexErrorMessageKey =
   | 'errors.invitationEmailInvalid'
   | 'errors.invitationNotPending'
   | 'errors.invitationExpired'
+  | 'errors.invitationKindMismatch'
+  | 'errors.providerClaimAlreadyClaimed'
+  | 'errors.providerClaimOrganizationConflict'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
@@ -71,6 +74,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   invitationEmailInvalid: 'errors.invitationEmailInvalid',
   invitationNotPending: 'errors.invitationNotPending',
   invitationExpired: 'errors.invitationExpired',
+  invitationKindMismatch: 'errors.invitationKindMismatch',
   projectDescriptionTooLong: 'errors.projectDescriptionTooLong',
   projectArchived: 'errors.projectArchived',
   projectArchiveRequired: 'errors.projectArchiveRequired',
@@ -172,6 +176,8 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   providerArchived: 'errors.generic',
   providerArchiveRequired: 'errors.generic',
   providerDeleteBlocked: 'errors.generic',
+  providerClaimAlreadyClaimed: 'errors.providerClaimAlreadyClaimed',
+  providerClaimOrganizationConflict: 'errors.providerClaimOrganizationConflict',
   // No provider console surface yet (#87); keep grant failures opaque.
   providerGrantRequiresClaim: 'errors.generic',
   providerGrantSelfReference: 'errors.generic',

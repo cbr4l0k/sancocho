@@ -548,16 +548,20 @@ export const fleetVehicleDocValidator = v.object({
 });
 
 /**
- * Single definition of the organizationInvitations table shape (issue #56):
- * `schema.ts` builds the table from it and the public queries build their
- * `returns` validator from it. `email` is the addressing key — never a user
- * id — so an invitation to an address with no account is indistinguishable
- * from one to an address that has one (I9); nothing about this table is ever
- * resolved by looking a user up by email. `status`, `invitedByUserId` and
- * `expiresAt` are server-assigned (I4); a caller supplies only `email` and
- * `role`.
+ * The invitation kind is a structural security boundary, not an optional
+ * column plus a convention. A Provider claim can never carry `role`, so the
+ * ordinary membership acceptance path cannot turn the claim recipient into a
+ * coordinator member even if a future caller forgets a runtime check. Keeping
+ * the two shapes as a discriminated union makes that escalation unrepresentable
+ * in the table and forces every consumer to narrow before reading arm-specific
+ * fields.
+ *
+ * `email` remains the addressing key — never a user id — so inviting an address
+ * with an account is indistinguishable from inviting one without one (I9).
+ * Nothing about either arm is resolved by looking a user up by email.
  */
-export const organizationInvitationFields = {
+const membershipInvitationFields = {
+  kind: v.literal('membership'),
   organizationId: v.id('organizations'),
   // Normalized (trimmed, lowercased) at write time so the uniqueness index
   // and the recipient's equality check both compare like-for-like.
@@ -568,11 +572,35 @@ export const organizationInvitationFields = {
   expiresAt: v.number(),
 };
 
-export const organizationInvitationDocValidator = v.object({
+const providerClaimInvitationFields = {
+  kind: v.literal('providerClaim'),
+  organizationId: v.id('organizations'),
+  email: v.string(),
+  providerId: v.id('providers'),
+  status: invitationStatusValidator,
+  invitedByUserId: v.id('users'),
+  expiresAt: v.number(),
+};
+
+const invitationSystemFields = {
   _id: v.id('organizationInvitations'),
   _creationTime: v.number(),
-  ...organizationInvitationFields,
-});
+};
+
+export const organizationInvitationValidator = v.union(
+  v.object(membershipInvitationFields),
+  v.object(providerClaimInvitationFields),
+);
+
+// Spread from the same two arm definitions above rather than restated, so the
+// stored document and the published API contract cannot drift — the property
+// this module has held since #56 and the reason the shape lives here at all.
+// Two hand-copied unions would let a column reach the table while the `returns`
+// validator silently rejected it at runtime.
+export const organizationInvitationDocValidator = v.union(
+  v.object({ ...invitationSystemFields, ...membershipInvitationFields }),
+  v.object({ ...invitationSystemFields, ...providerClaimInvitationFields }),
+);
 
 /**
  * Single definition of the services table shape: `schema.ts` builds the table from
@@ -785,6 +813,10 @@ export const auditActionValidator = v.union(
   // operations: a Provider principal can never reach either (issue #71).
   v.literal('providerAccessGrant.granted'),
   v.literal('providerAccessGrant.revoked'),
+  v.literal('providerClaim.invited'),
+  v.literal('providerClaim.invitationRevoked'),
+  v.literal('providerClaim.accepted'),
+  v.literal('providerClaim.revoked'),
   v.literal('vehicleClass.created'),
   v.literal('vehicleClass.updated'),
   v.literal('vehicleClass.archived'),
@@ -830,6 +862,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('assignment'),
   v.literal('assignmentRevision'),
   v.literal('providerAccessGrant'),
+  v.literal('providerClaimInvitation'),
   v.literal('vehicleClass'),
   v.literal('fleetVehicle'),
   v.literal('serviceRelationship'),
@@ -849,6 +882,7 @@ export const auditMetadataKeys = [
   'fieldCount',
   'fieldDefinitionId',
   'key',
+  'linkedOrganizationId',
   'name',
   'phase',
   'plate',

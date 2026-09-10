@@ -4,18 +4,24 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { recordAuditEvent } from '../audit/model';
 import {
+  assertCurrentMember,
   requireAuthenticatedUser,
   requireOrganizationMembership,
   requireOrganizationRole,
   type OrganizationMembershipAccess,
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import {
+  invitationTtlMs,
+  normalizeEmailForComparison,
+  normalizeInvitationEmail,
+} from '../invitations/model';
 import { maxEntityNameLength, validateEntityName } from '../lib/names';
-import { providerHasAccessGrants } from './grants';
+import { providerHasAccessGrants, revokeAllProviderAccessGrants } from './grants';
 import { providerHasFleetVehicles } from '../vehicles/references';
 import { providerHasRateCards } from '../rateCards/references';
 import { providerHasAssignments } from './references';
-import { organizationConfigurationRole, type Role } from '../lib/roles';
+import { organizationConfigurationRole, roleAtLeast, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
 import type { archivalStatusValidator, providerClaimStateValidator, providerDocValidator } from '../validators';
 
@@ -291,6 +297,286 @@ export async function deleteProvider(ctx: MutationCtx, providerId: Id<'providers
     metadata: { name: provider.name },
   });
   await ctx.db.delete(providerId);
+}
+
+/**
+ * Invites an address to attach its own Organization to one coordinator-owned
+ * Provider row. The address is stored without an account lookup (I9), and the
+ * recipient supplies the Organization only after authenticating as that
+ * address; the coordinator can therefore invite a firm that has not signed up
+ * yet without learning whether an account exists.
+ */
+export async function inviteProviderOrganization(
+  ctx: MutationCtx,
+  args: { providerId: Id<'providers'>; email: string },
+): Promise<Id<'organizationInvitations'>> {
+  // This named Provider gate comes first. Every specific lifecycle result below
+  // is consequently about the caller's own directory rather than a foreign row
+  // whose existence or state could otherwise be probed (I1/I9).
+  const { provider, access } = await requireProviderAccess(ctx, args.providerId, organizationConfigurationRole);
+  if (provider.status === 'archived') {
+    return invalidInput('providerArchived', 'Archived Providers cannot be invited to claim an Organization');
+  }
+  if (provider.linkedOrganizationId !== undefined) {
+    return invalidInput('providerClaimAlreadyClaimed', 'Provider is already linked to an Organization');
+  }
+  const email = normalizeInvitationEmail(args.email);
+
+  // Claims share the invitation address key with membership invites. That is
+  // intentional: one live row is one unambiguous action for an address inside
+  // this coordinator, while settled rows no longer occupy the key. As in the
+  // membership path, this successful mutation can durably settle a dead row;
+  // an accepting mutation that throws cannot.
+  const existing = await ctx.db
+    .query('organizationInvitations')
+    .withIndex('by_org_email_status', (q) =>
+      q.eq('organizationId', provider.organizationId).eq('email', email).eq('status', 'pending'),
+    )
+    .unique();
+  if (existing !== null) {
+    if (existing.expiresAt <= Date.now()) {
+      await ctx.db.patch(existing._id, { status: 'expired' });
+    } else {
+      return conflict();
+    }
+  }
+
+  const invitationId = await ctx.db.insert('organizationInvitations', {
+    kind: 'providerClaim',
+    organizationId: provider.organizationId,
+    email,
+    providerId: provider._id,
+    status: 'pending',
+    invitedByUserId: access.user._id,
+    expiresAt: Date.now() + invitationTtlMs,
+  });
+  await recordAuditEvent(ctx, {
+    organizationId: provider.organizationId,
+    actorUserId: access.user._id,
+    action: 'providerClaim.invited',
+    entityType: 'providerClaimInvitation',
+    entityId: invitationId,
+    metadata: { providerId: provider._id },
+  });
+  return invitationId;
+}
+
+/**
+ * Accepts the Provider claim and writes both halves of the transition in one
+ * transaction. The invitation is proof of control over the addressed mailbox;
+ * the current admin membership is independent proof that the recipient may
+ * attach the Organization they named.
+ */
+export async function claimProviderOrganization(
+  ctx: MutationCtx,
+  args: { invitationId: Id<'organizationInvitations'>; organizationId: Id<'organizations'> },
+): Promise<void> {
+  const authenticated = await requireAuthenticatedUser(ctx);
+  const invitation = await ctx.db.get(args.invitationId);
+  if (invitation === null) {
+    return notFoundOrInaccessible();
+  }
+  // This comparison deliberately precedes kind, status, expiry and every graph
+  // lookup. A non-recipient learns only the same generic result as for a made-up
+  // id, never whether the row is a claim or which coordinator sent it (I9).
+  const callerEmail = authenticated.user.email;
+  if (callerEmail === undefined || normalizeEmailForComparison(callerEmail) !== invitation.email) {
+    return notFoundOrInaccessible();
+  }
+  if (invitation.kind !== 'providerClaim') {
+    return invalidInput('invitationKindMismatch', 'Invitation kind does not match this operation');
+  }
+
+  const provider = await ctx.db.get(invitation.providerId);
+  // The invitation's denormalized organization must agree with the Provider's
+  // authoritative owner before either is used. A broken or dangling stored
+  // graph is not recipient-facing lifecycle information (I4/I9).
+  if (provider === null || provider.organizationId !== invitation.organizationId) {
+    return notFoundOrInaccessible();
+  }
+
+  // The target Organization is caller-supplied, so prove current authority
+  // before comparing it with a completed claim. Otherwise an accepted row lets
+  // its recipient use status differences to test which foreign Organization
+  // currently holds the link (I9).
+  await requireOrganizationRole(ctx, args.organizationId, 'admin', authenticated);
+
+  if (
+    invitation.status === 'revoked' ||
+    (invitation.status === 'accepted' && provider.linkedOrganizationId !== args.organizationId)
+  ) {
+    return invalidInput('invitationNotPending', 'Invitation is no longer pending');
+  }
+  // An ACCEPTED claim is exempt from the clock. The TTL bounds how long an
+  // unanswered offer stays open; it says nothing about a link that already
+  // exists, which has no expiry. Without this exemption the idempotent replay
+  // below becomes unreachable fourteen days after acceptance — that is, for
+  // every claim in steady state rather than for an unusual few.
+  if (invitation.status !== 'accepted' && (invitation.status === 'expired' || invitation.expiresAt <= Date.now())) {
+    // Throwing rolls back every write in a Convex mutation, so patching status
+    // immediately before this error could never settle it. Read the clock-bound
+    // lifecycle directly, matching ordinary membership acceptance.
+    return invalidInput('invitationExpired', 'Invitation has expired');
+  }
+
+  // Claim authority is live, unlike the deliberately grandfathered membership
+  // arm. The inviter's current membership is read by its indexed relationship
+  // and ranked centrally; this proves a stored authoritative relationship, not
+  // a second caller principal or an identity-derived permission (I1/I4).
+  if (invitation.status === 'pending') {
+    const inviterMembership = await assertCurrentMember(
+      ctx,
+      invitation.invitedByUserId,
+      invitation.organizationId,
+    );
+    if (!roleAtLeast(inviterMembership.role, 'admin')) {
+      // The recipient has no principal in the coordinator tenant. A generic
+      // result keeps its staffing and permission changes private (I9).
+      return notFoundOrInaccessible();
+    }
+  }
+
+  if (provider.organizationId === args.organizationId) {
+    return invalidInput(
+      'providerGrantSelfReference',
+      'A coordinator cannot link its own Organization as an external Provider',
+    );
+  }
+  // A client retry after an ambiguous network result observes the completed
+  // pair and succeeds without another patch or audit row. It still re-proves
+  // current authority over the attached Organization above, but only the exact
+  // same invitation, Provider and target Organization qualify for the no-op.
+  if (invitation.status === 'accepted') return;
+  if (provider.status === 'archived') {
+    return invalidInput('providerArchived', 'Archived Providers cannot be claimed');
+  }
+  if (provider.linkedOrganizationId !== undefined) {
+    return invalidInput('providerClaimAlreadyClaimed', 'Provider is already linked to an Organization');
+  }
+
+  // The pair, not `linkedOrganizationId` alone, is the uniqueness key. A firm
+  // may work for many coordinators, but one coordinator cannot create two
+  // directory identities that resolve to the same outside principal. This
+  // indexed read participates in the mutation's OCC conflict set, so a retry
+  // sees and refuses the winning sequential claim without a scan.
+  const existingLink = await ctx.db
+    .query('providers')
+    .withIndex('by_linkedOrganization_org', (q) =>
+      q.eq('linkedOrganizationId', args.organizationId).eq('organizationId', provider.organizationId),
+    )
+    .first();
+  if (existingLink !== null) {
+    return invalidInput(
+      'providerClaimOrganizationConflict',
+      'This Organization is already linked to another Provider in the coordinator directory',
+    );
+  }
+
+  await ctx.db.patch(provider._id, { linkedOrganizationId: args.organizationId });
+  await ctx.db.patch(invitation._id, { status: 'accepted' });
+  await recordAuditEvent(ctx, {
+    organizationId: provider.organizationId,
+    actorUserId: authenticated.user._id,
+    action: 'providerClaim.accepted',
+    entityType: 'providerClaimInvitation',
+    entityId: invitation._id,
+    metadata: { providerId: provider._id, linkedOrganizationId: args.organizationId },
+  });
+}
+
+/** Withdraws an unanswered claim offer without touching any live Provider link. */
+export async function revokeProviderClaimInvitation(
+  ctx: MutationCtx,
+  invitationId: Id<'organizationInvitations'>,
+): Promise<void> {
+  // Resolve identity before the caller-supplied id, so fabricated ids and
+  // foreign invitations remain indistinguishable (I9).
+  const authenticated = await requireAuthenticatedUser(ctx);
+  const invitation = await ctx.db.get(invitationId);
+  if (invitation === null) return notFoundOrInaccessible();
+
+  if (invitation.kind === 'providerClaim') {
+    // Authorization follows the Provider row rather than trusting the
+    // invitation's denormalized organization id; a broken stored graph grants
+    // neither authority nor visibility (I4/I9).
+    const { provider, access } = await requireProviderAccess(
+      ctx,
+      invitation.providerId,
+      organizationConfigurationRole,
+    );
+    if (provider.organizationId !== invitation.organizationId) return notFoundOrInaccessible();
+    if (invitation.status !== 'pending') {
+      return invalidInput('invitationNotPending', 'Invitation is no longer pending');
+    }
+    await ctx.db.patch(invitation._id, { status: 'revoked' });
+    await recordAuditEvent(ctx, {
+      organizationId: provider.organizationId,
+      actorUserId: access.user._id,
+      action: 'providerClaim.invitationRevoked',
+      entityType: 'providerClaimInvitation',
+      entityId: invitation._id,
+      metadata: { providerId: provider._id },
+    });
+    return;
+  }
+
+  // Prove the membership invitation belongs to the caller's own tenant before
+  // disclosing that it is the wrong transition for this endpoint (I9).
+  await requireOrganizationRole(ctx, invitation.organizationId, organizationConfigurationRole, authenticated);
+  return invalidInput('invitationKindMismatch', 'Invitation kind does not match this operation');
+}
+
+/** Lists the coordinator's still-withdrawable Provider claim offers. */
+export async function listProviderClaimInvitations(
+  ctx: QueryCtx,
+  args: { organizationId: Id<'organizations'>; paginationOpts: PaginationOptions },
+): Promise<PaginationResult<Doc<'organizationInvitations'>>> {
+  await requireOrganizationRole(ctx, args.organizationId, organizationConfigurationRole);
+  // Kind and status are part of the indexed range before pagination. Filtering
+  // a page afterward would create short pages and false pagination metadata.
+  return ctx.db
+    .query('organizationInvitations')
+    .withIndex('by_org_kind_status', (q) =>
+      q.eq('organizationId', args.organizationId).eq('kind', 'providerClaim').eq('status', 'pending'),
+    )
+    .order('desc')
+    .paginate(args.paginationOpts);
+}
+
+/**
+ * Withdraws the Organization link and retires this coordinator's project
+ * grants. It is intentionally idempotent: removing access must remain possible
+ * even when a caller retries after the link is already absent.
+ */
+export async function revokeProviderOrganizationClaim(
+  ctx: MutationCtx,
+  providerId: Id<'providers'>,
+): Promise<void> {
+  const { provider, access } = await requireProviderAccess(ctx, providerId, organizationConfigurationRole);
+  const revokedAt = Date.now();
+  const linkedOrganizationId = provider.linkedOrganizationId;
+  if (linkedOrganizationId !== undefined) {
+    await ctx.db.patch(provider._id, { linkedOrganizationId: undefined });
+  }
+
+  // This cascade is defence-in-depth and bookkeeping, not the authorization
+  // boundary: the single project gate already re-proves the live claim on every
+  // call, so clearing the link alone removes access immediately. Retiring this
+  // Provider row's own grants prevents coordinator lists from showing
+  // phantom-active access. Walking by Provider is essential — walking by the
+  // linked Organization would revoke grants issued by other coordinators who
+  // have no relationship to this caller.
+  await revokeAllProviderAccessGrants(ctx, provider._id, revokedAt);
+  if (linkedOrganizationId === undefined) return;
+
+  await recordAuditEvent(ctx, {
+    organizationId: provider.organizationId,
+    actorUserId: access.user._id,
+    action: 'providerClaim.revoked',
+    entityType: 'provider',
+    entityId: provider._id,
+    metadata: { providerId: provider._id, linkedOrganizationId },
+  });
 }
 
 /**

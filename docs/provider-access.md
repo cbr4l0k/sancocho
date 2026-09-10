@@ -6,10 +6,9 @@ discriminator derived from it. **#71 landed the second principal**: the `Princip
 the `providerAccessGrants` table, the closed capability set and the single gate
 `requirePrincipalForProject(ctx, projectId, intent)` in
 `apps/convex/convex/lib/access.ts`, which is now the only place either arm is resolved.
-Still missing: the verified claim flow (#86) — grants are written against a link that
-today only a seed or a repair can set — the portal read surface and the semantic
-projection (#87), provider writes (#88), and the Assignment layer (#67) that the enumerated
-may-see list is mostly about.
+**#86 landed the verified claim flow** described below, and #67 landed the Assignment
+layer. Still missing: the portal read surface and semantic projection (#87), and provider
+writes (#88).
 
 The two Provider read gates named for extension, `requireProviderAccess` and
 `requireProviderCatalogueAccess` in `apps/convex/convex/providers/model.ts`, deliberately
@@ -70,6 +69,34 @@ enumerated, closed capability set — nothing else.
 The two links are deliberately separate objects. A claimed Provider with no grant reads
 nothing. A revoked grant loses access on the very next call; no grant decision is ever
 cached in a token, a session, or a resolved result.
+
+## Claim lifecycle
+
+A coordinator `admin` invites an email address against one active, unclaimed Provider row.
+The invitation never names or looks up an app user, so sending it reveals nothing about
+whether that address already has an account (I9). Its stored `providerClaim` arm has no
+`role` field at all; the table is a discriminated union, making it impossible to feed a
+claim through ordinary membership acceptance and manufacture coordinator membership.
+
+The recipient authenticates with that provider-verified email and chooses an Organization
+where they currently hold `admin`. Acceptance re-proves the original inviter's current
+`admin` rank, refuses the coordinator's own Organization, and atomically writes the
+Provider's `linkedOrganizationId` plus the invitation's `accepted` state. A Provider can be
+linked only once, and within one coordinator directory an outside Organization can occupy
+only one Provider row. The same outside firm may still be linked from different
+coordinators' directories; the uniqueness key is `(linkedOrganizationId,
+coordinatorOrganizationId)`, not the outside Organization globally.
+
+Claim revocation clears the link and retires active grants issued through that Provider
+row. The link clear is the authorization event: the single gate re-proves it on every call,
+so access disappears immediately even before considering grant status. Cascading the grant
+rows is defence-in-depth and bookkeeping so coordinator grant lists do not report phantom
+active access.
+
+**A claim is not a grant.** It establishes which Organization controls one Provider identity
+in a coordinator's directory. It confers no coordinator capability by itself. Cross-tenant
+access exists only when the coordinator separately issues an active, project-scoped grant,
+and every call must satisfy both the live claim and that grant through the single gate.
 
 What this costs, stated plainly so nobody discovers it later:
 
@@ -266,7 +293,7 @@ Sequencing:
 | #92 | `stage:M` | The future Event table between Project and Service |
 | #71 | `stage:N` | ✅ The `Principal` union, `providerAccessGrants`, the single `requirePrincipalForProject` gate, the closed capability set |
 | #67 | `stage:O` | `assignments`, and the thin `requireAssignmentAccess` wrapper over that gate |
-| #86 | `stage:P` | Provider Organization accounts: invite, verified claim, single-shot link, revocation |
+| #86 | `stage:P` | ✅ Provider Organization accounts: invite, verified claim, single-shot link, revocation |
 | #87 | `stage:P` | The portal read surface and the one definition of the semantic projection |
 | #88 | `stage:P` | Provider writes: accept / counter / decline, checkpoints |
 

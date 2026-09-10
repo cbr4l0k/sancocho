@@ -433,6 +433,9 @@ export type MessageSchema = {
     invitationEmailInvalid: string;
     invitationNotPending: string;
     invitationExpired: string;
+    invitationKindMismatch: string;
+    providerClaimAlreadyClaimed: string;
+    providerClaimOrganizationConflict: string;
     projectDescriptionTooLong: string;
     projectArchived: string;
     projectArchiveRequired: string;
