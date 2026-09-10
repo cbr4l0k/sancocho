@@ -349,6 +349,16 @@ export const assignmentRevisionStatusValidator = v.union(
   v.literal('declined'),
 );
 
+/** Operational lifecycle of the stable Assignment row. */
+export const executionStatusValidator = v.union(
+  v.literal('unassigned'),
+  v.literal('assigned'),
+  v.literal('confirmed'),
+  v.literal('dispatched'),
+  v.literal('completed'),
+  v.literal('notExecuted'),
+);
+
 /** Stable supply identity. Commercial terms live only on its revisions. */
 export const assignmentFields = {
   organizationId: v.id('organizations'),
@@ -358,6 +368,17 @@ export const assignmentFields = {
   costCentreId: v.optional(v.id('costCentres')),
   position: v.number(),
   notes: v.optional(v.string()),
+  executionStatus: executionStatusValidator,
+  fleetVehicleId: v.optional(v.id('fleetVehicles')),
+  vehiclePlateOverride: v.optional(v.string()),
+  driverName: v.optional(v.string()),
+  driverPhone: v.optional(v.string()),
+  dispatchedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  notExecutedReason: v.optional(v.string()),
+  notExecutedAmount: v.optional(v.number()),
+  additionalCharges: v.optional(v.number()),
+  additionalDetail: v.optional(v.string()),
   // Maintained only by acceptance/decline transactions; never client supplied.
   currentRevisionId: v.optional(v.id('assignmentRevisions')),
 };
@@ -751,6 +772,11 @@ export const auditActionValidator = v.union(
   v.literal('rateCardVersion.retired'),
   v.literal('assignment.created'),
   v.literal('assignment.removed'),
+  v.literal('assignment.dispatchStatusChanged'),
+  v.literal('assignment.vehicleAssigned'),
+  v.literal('assignment.driverAssigned'),
+  v.literal('assignment.notExecuted'),
+  v.literal('assignment.adjustmentsRecorded'),
   v.literal('assignmentRevision.created'),
   v.literal('assignmentRevision.accepted'),
   v.literal('assignmentRevision.declined'),

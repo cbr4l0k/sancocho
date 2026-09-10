@@ -195,6 +195,16 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   assignmentRevisionNotDraft: 'errors.generic',
   assignmentRevisionNotDeclinable: 'errors.generic',
   assignmentDeclinedReasonTooLong: 'errors.generic',
+  assignmentExecutionTerminal: 'errors.generic',
+  assignmentExecutionStatusTransitionInvalid: 'errors.generic',
+  assignmentExecutionVehicleInvalid: 'errors.generic',
+  assignmentExecutionDriverRequired: 'errors.generic',
+  assignmentExecutionDriverPhoneInvalid: 'errors.generic',
+  paginationNumItemsInvalid: 'errors.generic',
+  assignmentExecutionServiceNotConfirmed: 'errors.generic',
+  assignmentNotExecutedReasonInvalid: 'errors.generic',
+  assignmentVehiclePlateOverrideInvalid: 'errors.generic',
+  assignmentAcceptedRevisionRequired: 'errors.generic',
   // #72 owns the fleet console surface and does not exist yet, so every Vehicle
   // Class and Fleet Vehicle refusal stays generic: inventing message keys for a
   // screen with no inputs would ship copy nothing can render in context.
@@ -211,6 +221,7 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   fleetVehicleNotesTooLong: 'errors.generic',
   fleetVehicleArchived: 'errors.generic',
   fleetVehicleArchiveRequired: 'errors.generic',
+  fleetVehicleDeleteBlocked: 'errors.generic',
   seedDisabled: 'errors.generic',
   seedBuiltinFieldMissing: 'errors.generic',
   seedDemonstrationOrganizationMissing: 'errors.generic',

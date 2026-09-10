@@ -326,13 +326,24 @@ export default defineSchema({
     .index('by_service_position', ['serviceId', 'position'])
     // Member Project list; unbounded, therefore always paginated.
     .index('by_project_position', ['projectId', 'position'])
+    // Each requested dispatch status is read as its own bounded range, never
+    // by filtering a scan of every Assignment in the Project.
+    .index('by_project_execution_position', ['projectId', 'executionStatus', 'position'])
+    // The Provider arm's mirror of the index above. Without it a single-firm
+    // dispatcher's range read falls back to `.filter()`, which Convex applies
+    // AFTER reading off the index — so a firm owning three rows in a large
+    // Project walks the whole status range to find them, per status, per page.
+    // `listProjectAssignments` already makes exactly this substitution.
+    .index('by_project_provider_execution_position', ['projectId', 'providerId', 'executionStatus', 'position'])
     // Provider-principal Project list without reading another Provider's rows.
     .index('by_project_provider_position', ['projectId', 'providerId', 'position'])
     // Provider deletion's indexed first-hit reverse-reference guard.
     .index('by_org_provider', ['organizationId', 'providerId'])
     // Serves only Cost Centre deletion's first-hit reference check; no list
     // surface reads Assignments through this index.
-    .index('by_costCentre', ['costCentreId']),
+    .index('by_costCentre', ['costCentreId'])
+    // Fleet deletion must preserve every historical execution reference.
+    .index('by_fleetVehicle', ['fleetVehicleId']),
 
   // Every proposal and agreement is retained as an immutable commercial row.
   assignmentRevisions: defineTable(assignmentRevisionFields)

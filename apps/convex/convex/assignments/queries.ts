@@ -5,6 +5,7 @@ import { query } from '../_generated/server';
 import {
   assignmentDocValidator,
   assignmentRevisionDocValidator,
+  executionStatusValidator,
   paginatedResult,
 } from '../validators';
 import {
@@ -13,6 +14,7 @@ import {
   listAssignmentRevisions as listAssignmentRevisionsModel,
   listProjectAssignments as listProjectAssignmentsModel,
   listServiceAssignments as listServiceAssignmentsModel,
+  assignmentsAwaitingDispatch as assignmentsAwaitingDispatchModel,
 } from './model';
 
 export const getAssignment = query({
@@ -43,4 +45,14 @@ export const listProjectAssignments = query({
   args: { projectId: v.id('projects'), paginationOpts: paginationOptsValidator },
   returns: paginatedResult(assignmentDocValidator),
   handler: (ctx, args) => listProjectAssignmentsModel(ctx, args),
+});
+
+export const assignmentsAwaitingDispatch = query({
+  args: {
+    projectId: v.id('projects'),
+    statuses: v.array(executionStatusValidator),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginatedResult(assignmentDocValidator),
+  handler: (ctx, args) => assignmentsAwaitingDispatchModel(ctx, args),
 });

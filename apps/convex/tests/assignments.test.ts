@@ -22,6 +22,9 @@ const deleteProvider = api.providers.mutations.deleteProvider;
 const grantProjectAccessToProvider = api.providers.mutations.grantProjectAccessToProvider;
 const revokeProviderAccessGrant = api.providers.mutations.revokeProviderAccessGrant;
 const createVehicleClass = api.vehicles.mutations.createVehicleClass;
+const createFleetVehicle = api.vehicles.mutations.createFleetVehicle;
+const archiveFleetVehicle = api.vehicles.mutations.archiveFleetVehicle;
+const deleteFleetVehicle = api.vehicles.mutations.deleteFleetVehicle;
 const archiveVehicleClass = api.vehicles.mutations.archiveVehicleClass;
 const deleteVehicleClass = api.vehicles.mutations.deleteVehicleClass;
 const createRateCard = api.rateCards.mutations.createRateCard;
@@ -40,11 +43,14 @@ const createAssignmentRevision = api.assignments.mutations.createAssignmentRevis
 const acceptAssignmentRevision = api.assignments.mutations.acceptAssignmentRevision;
 const declineAssignmentRevision = api.assignments.mutations.declineAssignmentRevision;
 const removeAssignment = api.assignments.mutations.removeAssignment;
+const transitionAssignmentExecution = api.assignments.mutations.transitionAssignmentExecution;
+const recordAssignmentAdjustments = api.assignments.mutations.recordAssignmentAdjustments;
 const getAssignment = api.assignments.queries.getAssignment;
 const getAssignmentRevision = api.assignments.queries.getAssignmentRevision;
 const listAssignmentRevisions = api.assignments.queries.listAssignmentRevisions;
 const listServiceAssignments = api.assignments.queries.listServiceAssignments;
 const listProjectAssignments = api.assignments.queries.listProjectAssignments;
+const assignmentsAwaitingDispatch = api.assignments.queries.assignmentsAwaitingDispatch;
 
 const inaccessible = 'notFoundOrInaccessible';
 const issuer = 'https://example.clerk.accounts.dev';
@@ -206,6 +212,7 @@ test('creation derives tenant and Project from the Service, trims notes, and pri
     providerId: f.providerId,
     position: 10,
     notes: 'first bus',
+    executionStatus: 'unassigned',
   });
   const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
   expect(await f.owner.client.query(getAssignmentRevision, { revisionId })).toMatchObject({
@@ -644,6 +651,8 @@ test('the public mutation surface is exact and repricing never edits prior comme
     'acceptAssignmentRevision',
     'declineAssignmentRevision',
     'removeAssignment',
+    'transitionAssignmentExecution',
+    'recordAssignmentAdjustments',
   ]);
 
   const f = await fixture('assignment-immutable');
@@ -882,6 +891,7 @@ test('unauthenticated Assignment writes refuse real and fabricated ids identical
       projectId: f.projectId,
       providerId: f.providerId,
       position: 99,
+      executionStatus: 'unassigned',
     });
     const goneRevisionId = await ctx.db.insert('assignmentRevisions', {
       organizationId: f.organizationId,
@@ -967,6 +977,19 @@ test('dual-firm dispatchers resolve as the Assignment Provider in both direction
   expect(projectRows.page.map((row) => row._id)).toEqual([assignmentAId, assignmentBId]);
   expect(await dispatcher.client.query(listServiceAssignments, { serviceId: f.serviceId }))
     .toMatchObject([{ _id: assignmentAId }, { _id: assignmentBId }]);
+
+  // The dispatch queue is the only Assignment read path that keys a SINGLE-firm
+  // Provider straight into an index and falls back to a post-read filter for a
+  // dual-firm one. Both halves of that branch need proving: the union must be
+  // complete (firm B is not lost) and it must still exclude the fixture's own
+  // ungranted Provider.
+  const queue = await dispatcher.client.query(assignmentsAwaitingDispatch, {
+    projectId: f.projectId,
+    statuses: ['unassigned'],
+    paginationOpts: firstPage,
+  });
+  expect(queue.page.map((row) => row._id)).toEqual([assignmentAId, assignmentBId]);
+  for (const row of queue.page) expectNoForbiddenProviderKeys(row);
 });
 
 /**
@@ -979,18 +1002,32 @@ test('dual-firm dispatchers resolve as the Assignment Provider in both direction
  */
 function expectNoForbiddenProviderKeys(row: object): void {
   expect(Object.keys(row).filter((key) => !providerAssignmentKeys.includes(key))).toEqual([]);
+  // A row that simply lacks the forbidden columns passes the check above for
+  // the wrong reason, so require it to be a real Assignment row first: this is
+  // what makes the assertion bite on a call site that forgot to project.
+  expect(Object.keys(row)).toEqual(expect.arrayContaining([
+    '_id', '_creationTime', 'organizationId', 'serviceId', 'projectId', 'providerId', 'position', 'executionStatus',
+  ]));
 }
 
 const providerAssignmentKeys = [
   '_creationTime',
   '_id',
+  'completedAt',
   'currentRevisionId',
+  'dispatchedAt',
+  'driverName',
+  'driverPhone',
+  'executionStatus',
+  'fleetVehicleId',
   'notes',
+  'notExecutedReason',
   'organizationId',
   'position',
   'projectId',
   'providerId',
   'serviceId',
+  'vehiclePlateOverride',
 ];
 
 test('a granted Provider receives its Assignment without the charge attribution', async () => {
@@ -1027,7 +1064,7 @@ test('a granted Provider receives its Assignment without the charge attribution'
   // The Provider sees the row, keeps everything it is entitled to, and loses
   // exactly one column.
   const providerRow = await firm.client.query(getAssignment, { assignmentId });
-  expect(Object.keys(providerRow).sort()).toEqual(providerAssignmentKeys);
+  expectNoForbiddenProviderKeys(providerRow);
   expect(providerRow).toMatchObject({
     _id: assignmentId,
     providerId: f.providerId,
@@ -1295,5 +1332,703 @@ test('Assignment audit rows cover every transition, identify the actor, and cont
           : ['assignmentId', 'versionNumber'],
       );
     }
+  });
+});
+
+test('execution preconditions validate vehicle sources, driver, Fleet Vehicle ownership, and Service readiness', async () => {
+  const f = await fixture('assignment-execution-preconditions');
+  const ownFleetVehicleId = await f.owner.client.mutation(createFleetVehicle, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    plate: 'OWN 100',
+  });
+  const archivedFleetVehicleId = await f.owner.client.mutation(createFleetVehicle, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    plate: 'OLD 100',
+  });
+  await f.owner.client.mutation(archiveFleetVehicle, { fleetVehicleId: archivedFleetVehicleId });
+  const otherProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: f.organizationId,
+    name: 'Other execution Provider',
+  });
+  const otherProviderVehicleId = await f.owner.client.mutation(createFleetVehicle, {
+    organizationId: f.organizationId,
+    providerId: otherProviderId,
+    vehicleClassId: f.vehicleClassId,
+    plate: 'RIV 100',
+  });
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign execution organization',
+    slug: 'foreign-execution-org',
+  });
+  const foreignProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign execution Provider',
+  });
+  const foreignClassId = await f.owner.client.mutation(createVehicleClass, {
+    organizationId: foreignOrganizationId,
+    key: 'foreignExecutionClass',
+    name: 'Foreign execution class',
+  });
+  const foreignVehicleId = await f.owner.client.mutation(createFleetVehicle, {
+    organizationId: foreignOrganizationId,
+    providerId: foreignProviderId,
+    vehicleClassId: foreignClassId,
+    plate: 'FOR 100',
+  });
+
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionVehicleInvalid' } });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    fleetVehicleId: ownFleetVehicleId,
+    vehiclePlateOverride: 'SUB 100',
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionVehicleInvalid' } });
+  for (const fleetVehicleId of [foreignVehicleId, archivedFleetVehicleId, otherProviderVehicleId]) {
+    await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+      assignmentId: f.assignmentId,
+      status: 'assigned',
+      fleetVehicleId,
+    })).rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    fleetVehicleId: ownFleetVehicleId,
+  });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionDriverRequired' } });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+    driverName: '  María Pérez  ',
+    driverPhone: '  +57 300 000 0000  ',
+  });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'dispatched',
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionServiceNotConfirmed' } });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'planned' });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'dispatched',
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionServiceNotConfirmed' } });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'confirmed' });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'dispatched',
+  })).resolves.toBeNull();
+  await f.owner.client.mutation(archiveFleetVehicle, { fleetVehicleId: ownFleetVehicleId });
+  await expect(f.owner.client.mutation(deleteFleetVehicle, {
+    fleetVehicleId: ownFleetVehicleId,
+  })).rejects.toMatchObject({ data: { code: 'fleetVehicleDeleteBlocked' } });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({
+    executionStatus: 'dispatched',
+    fleetVehicleId: ownFleetVehicleId,
+    driverName: 'María Pérez',
+    driverPhone: '+57 300 000 0000',
+    dispatchedAt: expect.any(Number),
+  });
+});
+
+test('operator and Provider execution access cannot cross the member-only adjustment gate', async () => {
+  const f = await fixture('assignment-execution-security');
+  const operator = await provision(f.t, 'assignment-execution-operator');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: operator.userId,
+    role: 'operator',
+  });
+  await expect(operator.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'OP 100',
+  })).resolves.toBeNull();
+  await expect(operator.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 100,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  const firm = await grantFixtureProvider(f, 'assignment-security-firm', 'Security Firm');
+  await expect(firm.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+    driverName: 'Provider Driver',
+    driverPhone: '+57 311 111 1111',
+  })).resolves.toBeNull();
+  await expect(firm.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 999_999,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  const viewer = await provision(f.t, 'assignment-execution-viewer');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: viewer.userId,
+    role: 'viewer',
+  });
+  for (const call of [
+    viewer.client.mutation(transitionAssignmentExecution, {
+      assignmentId: f.assignmentId,
+      status: 'dispatched',
+    }),
+    viewer.client.mutation(recordAssignmentAdjustments, {
+      assignmentId: f.assignmentId,
+      additionalCharges: 1,
+    }),
+  ]) await expect(call).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('ungranted, revoked, and differently scoped Providers are refused on both execution mutations', async () => {
+  for (const scenario of ['ungranted', 'revoked', 'differentProject'] as const) {
+    const f = await fixture(`assignment-execution-${scenario}`);
+    const firm = await provision(f.t, `assignment-execution-${scenario}-firm`);
+    const firmOrganizationId = await firm.client.mutation(createOrganization, {
+      name: `${scenario} firm`,
+      slug: `assignment-${scenario.toLowerCase()}-firm`,
+    });
+    await f.t.run(async (ctx) => ctx.db.patch(f.providerId, { linkedOrganizationId: firmOrganizationId }));
+    if (scenario === 'revoked') {
+      const grantId = await f.owner.client.mutation(grantProjectAccessToProvider, {
+        projectId: f.projectId,
+        providerId: f.providerId,
+      });
+      await f.owner.client.mutation(revokeProviderAccessGrant, { grantId });
+    }
+    if (scenario === 'differentProject') {
+      const other = await insertService(f.t, f.organizationId, `${scenario} other`);
+      await f.owner.client.mutation(grantProjectAccessToProvider, {
+        projectId: other.projectId,
+        providerId: f.providerId,
+      });
+    }
+    for (const call of [
+      firm.client.mutation(transitionAssignmentExecution, {
+        assignmentId: f.assignmentId,
+        status: 'assigned',
+        vehiclePlateOverride: 'NO 100',
+      }),
+      firm.client.mutation(recordAssignmentAdjustments, {
+        assignmentId: f.assignmentId,
+        additionalCharges: 1,
+      }),
+    ]) await expect(call).rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+});
+
+test('adjustments require accepted terms, reject a negative net, and never patch the accepted Revision', async () => {
+  const f = await fixture('assignment-adjustments');
+  await expect(f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 100,
+  })).rejects.toMatchObject({ data: { code: 'assignmentAcceptedRevisionRequired' } });
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  const before = await f.owner.client.query(getAssignmentRevision, { revisionId });
+  await expect(f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    notExecutedAmount: before.lineTotal + 1,
+  })).rejects.toMatchObject({ data: { code: 'moneyAmountNegative' } });
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    notExecutedAmount: 500,
+    additionalCharges: 750,
+    additionalDetail: '  Peaje adicional  ',
+  });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({
+    notExecutedAmount: 500,
+    additionalCharges: 750,
+    additionalDetail: 'Peaje adicional',
+  });
+  const after = await f.owner.client.query(getAssignmentRevision, { revisionId });
+  expect({ lineTotal: after.lineTotal, unitAmount: after.unitAmount, currency: after.currency })
+    .toEqual({ lineTotal: before.lineTotal, unitAmount: before.unitAmount, currency: before.currency });
+});
+
+test('a cancelled Service still records that a movement did not happen and what it cost', async () => {
+  const f = await fixture('assignment-execution-cancelled-billing');
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  const strandedId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 40,
+  });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'cancelled' });
+
+  // Everything else about the Assignment is frozen...
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'CAN 200',
+  })).rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
+
+  // ...but the two writes that record the cancellation itself must stay open,
+  // or a service cancelled at 03:00 strands its Assignments and its fee.
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'notExecuted',
+    notExecutedReason: 'Cancelled by the client overnight',
+  });
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    notExecutedAmount: 1_000,
+  });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId }))
+    .toMatchObject({ executionStatus: 'notExecuted', notExecutedAmount: 1_000 });
+  // Each terminal has its own audit action; without this only the two mid-lifecycle
+  // ones are ever asserted.
+  expect((await f.owner.client.query(listEntityAuditEvents, {
+    organizationId: f.organizationId,
+    entityType: 'assignment',
+    entityId: f.assignmentId,
+    paginationOpts: firstPage,
+  })).page.map((event) => event.action)).toContain('assignment.notExecuted');
+
+  // The Project freeze is the boundary that does apply — to BOTH of the writes
+  // the cancelled Service still allows, not just the money one.
+  await f.owner.client.mutation(archiveProject, { projectId: f.projectId });
+  await expect(f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 5,
+  })).rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: strandedId,
+    status: 'notExecuted',
+    notExecutedReason: 'Too late',
+  })).rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
+});
+
+test('a not-executed reason is bounded and never rides along on another transition', async () => {
+  const f = await fixture('assignment-execution-reason-bound');
+  // Without a bound HERE, any holder of writeExecution — a granted Provider
+  // included — writes an unbounded string onto the coordinator's row through a
+  // transition whose own gate never inspects the reason.
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'RSN 100',
+    notExecutedReason: 'x'.repeat(5_000),
+  });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId }))
+    .not.toHaveProperty('notExecutedReason');
+
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'notExecuted',
+    notExecutedReason: 'x'.repeat(1_001),
+  })).rejects.toMatchObject({ data: { code: 'assignmentNotExecutedReasonInvalid' } });
+});
+
+test('every caller-supplied execution text is trimmed and bounded', async () => {
+  const f = await fixture('assignment-execution-text-bounds');
+  const cases = [
+    { field: 'vehiclePlateOverride', value: 'P'.repeat(33), code: 'assignmentVehiclePlateOverrideInvalid' },
+    { field: 'vehiclePlateOverride', value: '   ', code: 'assignmentVehiclePlateOverrideInvalid' },
+    { field: 'driverName', value: 'D'.repeat(201), code: 'assignmentExecutionDriverRequired' },
+    { field: 'driverPhone', value: '9'.repeat(65), code: 'assignmentExecutionDriverPhoneInvalid' },
+  ];
+  for (const { field, value, code } of cases) {
+    await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+      assignmentId: f.assignmentId,
+      status: 'assigned',
+      ...(field === 'vehiclePlateOverride' ? {} : { vehiclePlateOverride: 'TXT 100' }),
+      [field]: value,
+    })).rejects.toMatchObject({ data: { code } });
+  }
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: '  TRM 100  ',
+  });
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId }))
+    .toMatchObject({ vehiclePlateOverride: 'TRM 100' });
+});
+
+test('recording adjustments is audited, and a no-op records nothing', async () => {
+  const f = await fixture('assignment-execution-adjustment-audit');
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 250,
+  });
+
+  const audited = async () => (await f.owner.client.query(listEntityAuditEvents, {
+    organizationId: f.organizationId,
+    entityType: 'assignment',
+    entityId: f.assignmentId,
+    paginationOpts: firstPage,
+  })).page.filter((event) => event.action === 'assignment.adjustmentsRecorded');
+
+  // The net payable moves even though the accepted Revision cannot, so the log
+  // has to answer who moved it.
+  expect(await audited()).toEqual([
+    expect.objectContaining({ metadata: expect.objectContaining({ changedFields: 'additionalCharges' }) }),
+  ]);
+
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    additionalCharges: 250,
+  });
+  expect(await audited()).toHaveLength(1);
+});
+
+test('the dispatch queue caps an oversized page request at its own ceiling', async () => {
+  const f = await fixture('assignment-dispatch-queue-cap');
+  // Inserted directly: this test is about the read path's ceiling, and 201
+  // round-trips through the create mutation would only be slower, not truer.
+  await f.t.run(async (ctx) => {
+    for (let index = 0; index < 201; index += 1) {
+      await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId: f.serviceId,
+        projectId: f.projectId,
+        providerId: f.providerId,
+        position: 1_000 + index,
+        executionStatus: 'unassigned',
+      });
+    }
+  });
+
+  // A caller asking for everything gets one bounded page, not the Project's
+  // whole Assignment set — the read the pagination API exists to prevent (I6).
+  const page = await f.owner.client.query(assignmentsAwaitingDispatch, {
+    projectId: f.projectId,
+    statuses: ['unassigned'],
+    paginationOpts: { numItems: 5_000_000, cursor: null },
+  });
+  expect(page.page).toHaveLength(200);
+  expect(page.isDone).toBe(false);
+});
+
+test('the dispatch queue refuses an unbounded page request', async () => {
+  const f = await fixture('assignment-execution-queue-bounds');
+  for (const numItems of [Number.POSITIVE_INFINITY, Number.NaN, 0, -5, 2.5]) {
+    await expect(f.owner.client.query(assignmentsAwaitingDispatch, {
+      projectId: f.projectId,
+      statuses: ['unassigned'],
+      paginationOpts: { numItems, cursor: null },
+    })).rejects.toMatchObject({ data: { code: 'paginationNumItemsInvalid' } });
+  }
+  await expect(f.owner.client.query(assignmentsAwaitingDispatch, {
+    projectId: f.projectId,
+    statuses: Array.from({ length: 50 }, () => 'unassigned' as const),
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: 'paginationNumItemsInvalid' } });
+});
+
+test('the execution lifecycle runs end to end and both terminals are terminal', async () => {
+  const f = await fixture('assignment-execution-lifecycle');
+  const step = (status: 'assigned' | 'confirmed' | 'dispatched' | 'completed', extra: Record<string, string> = {}) =>
+    f.owner.client.mutation(transitionAssignmentExecution, { assignmentId: f.assignmentId, status, ...extra });
+
+  // Skipping ahead is refused before anything else, so the happy path below
+  // cannot be reached by accident.
+  await expect(step('dispatched')).rejects
+    .toMatchObject({ data: { code: 'assignmentExecutionStatusTransitionInvalid' } });
+
+  await step('assigned', { vehiclePlateOverride: 'LIF 100' });
+  const early = await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId });
+  expect(early).not.toHaveProperty('dispatchedAt');
+  expect(early).not.toHaveProperty('completedAt');
+  await step('confirmed', { driverName: 'Ana Restrepo' });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'planned' });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'confirmed' });
+  await step('dispatched');
+  await step('completed');
+
+  const row = await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId });
+  expect(row).toMatchObject({ executionStatus: 'completed' });
+  expect(row.dispatchedAt).toEqual(expect.any(Number));
+  expect(row.completedAt).toEqual(expect.any(Number));
+
+  await expect(step('assigned', { vehiclePlateOverride: 'LIF 200' })).rejects
+    .toMatchObject({ data: { code: 'assignmentExecutionTerminal' } });
+});
+
+test('a dispatched Assignment can still be completed after its Service closes out', async () => {
+  const f = await fixture('assignment-execution-completed-service');
+  const step = (status: 'assigned' | 'confirmed' | 'dispatched' | 'completed', extra: Record<string, string> = {}) =>
+    f.owner.client.mutation(transitionAssignmentExecution, { assignmentId: f.assignmentId, status, ...extra });
+  await step('assigned', { vehiclePlateOverride: 'CLS 100' });
+  await step('confirmed', { driverName: 'Iván Gómez' });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'planned' });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'confirmed' });
+  await step('dispatched');
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'active' });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'completed' });
+
+  // Closing the Service must not leave "it did not happen" as the only
+  // reachable terminal for a bus that demonstrably went.
+  await step('completed');
+  expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId }))
+    .toMatchObject({ executionStatus: 'completed' });
+});
+
+test('unassignment clears the stored vehicle and driver, and reassignment clears the driver', async () => {
+  const f = await fixture('assignment-execution-clearing');
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'CLR 100',
+  });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+    driverName: 'Sara Nieto',
+    driverPhone: '+57 300 000 0000',
+  });
+
+  await f.owner.client.mutation(transitionAssignmentExecution, { assignmentId: f.assignmentId, status: 'assigned' });
+  const reassigned = await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId });
+  expect(reassigned).toMatchObject({ vehiclePlateOverride: 'CLR 100' });
+  expect(reassigned).not.toHaveProperty('driverName');
+  expect(reassigned).not.toHaveProperty('driverPhone');
+
+  // The clearing has to reach the DATABASE, not merely the pure gate's return.
+  await f.owner.client.mutation(transitionAssignmentExecution, { assignmentId: f.assignmentId, status: 'unassigned' });
+  const cleared = await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId });
+  expect(cleared).toMatchObject({ executionStatus: 'unassigned' });
+  for (const field of ['vehiclePlateOverride', 'fleetVehicleId', 'driverName', 'driverPhone']) {
+    expect(cleared).not.toHaveProperty(field);
+  }
+});
+
+test('a row can never name two vehicles, whichever transition adds the second', async () => {
+  const f = await fixture('assignment-execution-two-vehicles');
+  const fleetVehicleId = await f.owner.client.mutation(createFleetVehicle, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    plate: 'TWO123',
+  });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'TWO 100',
+  });
+  // The plate survives the transition, so supplying a Fleet Vehicle on the NEXT
+  // one would leave the row naming two different vehicles.
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+    driverName: 'Dual Driver',
+    fleetVehicleId,
+  })).rejects.toMatchObject({ data: { code: 'assignmentExecutionVehicleInvalid' } });
+});
+
+test('adjustment amounts go through the money boundary in both directions', async () => {
+  const f = await fixture('assignment-execution-adjustment-bounds');
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  // A negative amount widens the net in the payee's favour and would otherwise
+  // pass, because `assignmentNet` only refuses a net BELOW zero.
+  for (const amounts of [
+    { notExecutedAmount: -1 },
+    { additionalCharges: -1 },
+    { additionalCharges: 10.5 },
+  ]) {
+    await expect(f.owner.client.mutation(recordAssignmentAdjustments, { assignmentId: f.assignmentId, ...amounts }))
+      .rejects.toMatchObject({ data: { code: expect.stringMatching(/^moneyAmount/) } });
+  }
+});
+
+test('accepting cheaper terms cannot strand the net below zero', async () => {
+  const f = await fixture('assignment-execution-cheaper-terms');
+  const firstRevisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: firstRevisionId });
+  const agreed = await f.owner.client.query(getAssignmentRevision, { revisionId: firstRevisionId });
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    notExecutedAmount: agreed.lineTotal,
+  });
+
+  // Halving the quantity halves the line total, so the stored adjustment would
+  // exceed it and no read could price the Assignment afterwards.
+  const cheaperId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    quantity: 1,
+  });
+  await expect(f.owner.client.mutation(acceptAssignmentRevision, { revisionId: cheaperId }))
+    .rejects.toMatchObject({ data: { code: 'moneyAmountNegative' } });
+});
+
+test('Service cancellation preserves every execution status and freezes later execution writes', async () => {
+  const f = await fixture('assignment-execution-cancellation');
+  const secondId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: secondId,
+    status: 'assigned',
+    vehiclePlateOverride: 'CAN 100',
+  });
+  const before = await f.t.run(async (ctx) => {
+    const rows = await ctx.db.query('assignments').withIndex('by_service_position', (q) => q.eq('serviceId', f.serviceId)).collect();
+    return rows.map((row) => [row._id, row.executionStatus] as const);
+  });
+  await f.owner.client.mutation(changeServiceStatus, { serviceId: f.serviceId, status: 'cancelled' });
+  const after = await f.t.run(async (ctx) => {
+    const rows = await ctx.db.query('assignments').withIndex('by_service_position', (q) => q.eq('serviceId', f.serviceId)).collect();
+    return rows.map((row) => [row._id, row.executionStatus] as const);
+  });
+  expect(after).toEqual(before);
+  await expect(f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: secondId,
+    status: 'confirmed',
+    driverName: 'Late Driver',
+  })).rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
+});
+
+test('dispatch queue reads only requested indexed statuses, paginates by position, and narrows Provider rows', async () => {
+  const f = await fixture('assignment-dispatch-queue');
+  const firm = await grantFixtureProvider(f, 'assignment-queue-firm', 'Queue Firm');
+  const rivalProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: f.organizationId,
+    name: 'Queue Rival',
+  });
+  const ownAssignedId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 30,
+  });
+  const rivalAssignedId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: rivalProviderId,
+    position: 20,
+  });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: ownAssignedId,
+    status: 'assigned',
+    vehiclePlateOverride: 'OWN 300',
+  });
+  await f.owner.client.mutation(transitionAssignmentExecution, {
+    assignmentId: rivalAssignedId,
+    status: 'assigned',
+    vehiclePlateOverride: 'RIV 200',
+  });
+
+  // Created LAST but positioned FIRST, so a merge comparator that ordered by
+  // creation time instead of position would produce a different sequence.
+  const latecomerId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 5,
+  });
+
+  const seen: Id<'assignments'>[] = [];
+  let cursor: string | null = null;
+  let finished = false;
+  for (let request = 0; request < 8; request += 1) {
+    const result: PaginationResult<Doc<'assignments'>> = await f.owner.client.query(assignmentsAwaitingDispatch, {
+      projectId: f.projectId,
+      statuses: ['assigned', 'unassigned'],
+      paginationOpts: { numItems: 1, cursor },
+    });
+    seen.push(...result.page.map((row) => row._id));
+    if (result.isDone) { finished = true; break; }
+    cursor = result.continueCursor;
+  }
+  // The loop must end because the queue SAID it was done, not because the
+  // request budget ran out — otherwise a queue that never reports completion
+  // pages forever and no test notices.
+  expect(finished).toBe(true);
+  expect(seen).toEqual([latecomerId, f.assignmentId, rivalAssignedId, ownAssignedId]);
+
+
+  // The Provider's row must carry the forbidden columns before it is read, or
+  // the projection assertion below passes against an empty document.
+  const queueCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'queueCharge',
+    name: 'Queue charge',
+  });
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(ownAssignedId, {
+      costCentreId: queueCostCentreId,
+      notExecutedAmount: 10,
+      additionalCharges: 20,
+      additionalDetail: 'queue detail',
+    });
+  });
+  const providerPage = await firm.client.query(assignmentsAwaitingDispatch, {
+    projectId: f.projectId,
+    statuses: ['assigned'],
+    paginationOpts: firstPage,
+  });
+  expect(providerPage.page.map((row) => row._id)).toEqual([ownAssignedId]);
+  expectNoForbiddenProviderKeys(providerPage.page[0] ?? {});
+  expect(await firm.client.query(assignmentsAwaitingDispatch, {
+    projectId: f.projectId,
+    statuses: ['confirmed'],
+    paginationOpts: firstPage,
+  })).toMatchObject({ page: [] });
+
+  const source = Object.values(import.meta.glob('../convex/assignments/model.ts', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }))[0] ?? '';
+  expect(source).toContain("withIndex('by_project_execution_position'");
+  expect(source).not.toContain('.collect()');
+});
+
+test('Provider execution shaping is exhaustive and execution audit metadata contains no driver PII', async () => {
+  const f = await fixture('assignment-execution-shaping');
+  const firm = await grantFixtureProvider(f, 'assignment-shaping-firm', 'Shaping Firm');
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  await f.owner.client.mutation(recordAssignmentAdjustments, {
+    assignmentId: f.assignmentId,
+    notExecutedAmount: 10,
+    additionalCharges: 20,
+    additionalDetail: 'Coordinator-only adjustment',
+  });
+  await firm.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'assigned',
+    vehiclePlateOverride: 'SUB 900',
+  });
+  const driverName = 'PII Driver Name';
+  const driverPhone = '+57 399 999 9999';
+  await firm.client.mutation(transitionAssignmentExecution, {
+    assignmentId: f.assignmentId,
+    status: 'confirmed',
+    driverName,
+    driverPhone,
+  });
+  const providerRow = await firm.client.query(getAssignment, { assignmentId: f.assignmentId });
+  expect(providerRow).toMatchObject({ executionStatus: 'confirmed', driverName, driverPhone, vehiclePlateOverride: 'SUB 900' });
+  expectNoForbiddenProviderKeys(providerRow);
+  expect(providerRow).not.toHaveProperty('notExecutedAmount');
+  expect(providerRow).not.toHaveProperty('additionalCharges');
+  expect(providerRow).not.toHaveProperty('additionalDetail');
+
+  const seenProviderKeys = new Set(Object.keys(providerRow));
+  for (const key of providerAssignmentKeys) {
+    if (['completedAt', 'dispatchedAt', 'fleetVehicleId', 'notExecutedReason'].includes(key)) continue;
+    expect(seenProviderKeys.has(key)).toBe(true);
+  }
+  await f.t.run(async (ctx) => {
+    const audits = await ctx.db.query('auditEvents').withIndex('by_org', (q) => q.eq('organizationId', f.organizationId)).collect();
+    const executionAudits = audits.filter((row) =>
+      row.action === 'assignment.vehicleAssigned' || row.action === 'assignment.driverAssigned',
+    );
+    expect(executionAudits).toHaveLength(2);
+    expect(executionAudits.every((row) => row.onBehalfOfProviderId === f.providerId)).toBe(true);
+    const allMetadata = audits.map((row) => JSON.stringify(row.metadata)).join('\n');
+    expect(allMetadata).not.toContain(driverName);
+    expect(allMetadata).not.toContain(driverPhone);
   });
 });

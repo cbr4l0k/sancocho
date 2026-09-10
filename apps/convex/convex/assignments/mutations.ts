@@ -1,13 +1,15 @@
 import { v } from 'convex/values';
 
 import { mutation } from '../_generated/server';
-import { rateModalityValidator } from '../validators';
+import { executionStatusValidator, rateModalityValidator } from '../validators';
 import {
   acceptAssignmentRevision as acceptAssignmentRevisionModel,
   createAssignment as createAssignmentModel,
   createAssignmentRevision as createAssignmentRevisionModel,
   declineAssignmentRevision as declineAssignmentRevisionModel,
   removeAssignment as removeAssignmentModel,
+  recordAssignmentAdjustments as recordAssignmentAdjustmentsModel,
+  transitionAssignmentExecution as transitionAssignmentExecutionModel,
 } from './model';
 
 /** Organization and Project are derived from the stored Service (I4). */
@@ -60,6 +62,39 @@ export const removeAssignment = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await removeAssignmentModel(ctx, args.assignmentId);
+    return null;
+  },
+});
+
+/** Dispatch timestamps are assigned inside the model and are never client input. */
+export const transitionAssignmentExecution = mutation({
+  args: {
+    assignmentId: v.id('assignments'),
+    status: executionStatusValidator,
+    fleetVehicleId: v.optional(v.id('fleetVehicles')),
+    vehiclePlateOverride: v.optional(v.string()),
+    driverName: v.optional(v.string()),
+    driverPhone: v.optional(v.string()),
+    notExecutedReason: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await transitionAssignmentExecutionModel(ctx, args);
+    return null;
+  },
+});
+
+/** Commercial adjustments remain on the member-only terms gate. */
+export const recordAssignmentAdjustments = mutation({
+  args: {
+    assignmentId: v.id('assignments'),
+    notExecutedAmount: v.optional(v.number()),
+    additionalCharges: v.optional(v.number()),
+    additionalDetail: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await recordAssignmentAdjustmentsModel(ctx, args);
     return null;
   },
 });

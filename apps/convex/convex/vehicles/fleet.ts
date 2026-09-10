@@ -300,14 +300,13 @@ export async function deleteFleetVehicle(ctx: MutationCtx, fleetVehicleId: Id<'f
   if (fleetVehicle.status !== 'archived') {
     return invalidInput('fleetVehicleArchiveRequired', 'Fleet Vehicles must be archived before deletion');
   }
-  // REFERENCE GUARD INSERTION POINT. Nothing in the schema references a Fleet
-  // Vehicle today — Assignments are #67 and the execution path that names a
-  // physical vehicle is #69 — so there is deliberately no read here and no
-  // `fleetVehicleDeleteBlocked` code in the catalogue. Writing either now would
-  // be a guard that can never fire and a test that can only pass vacuously.
-  // #67 and #69 each add an indexed first-hit read here, exactly as
-  // `deleteVehicleClass` above reads `by_org_class_status`, and add the refusal
-  // code alongside it.
+  const assignment = await ctx.db
+    .query('assignments')
+    .withIndex('by_fleetVehicle', (q) => q.eq('fleetVehicleId', fleetVehicle._id))
+    .first();
+  if (assignment !== null) {
+    return invalidInput('fleetVehicleDeleteBlocked', 'Fleet Vehicles referenced by Assignments cannot be deleted');
+  }
   //
   // Recorded BEFORE the delete so the plate is still readable, matching
   // `deleteLocation`, `deleteCostCentre` and `deleteProvider`.
@@ -320,6 +319,26 @@ export async function deleteFleetVehicle(ctx: MutationCtx, fleetVehicleId: Id<'f
     metadata: { plate: fleetVehicle.plate, providerId: fleetVehicle.providerId },
   });
   await ctx.db.delete(fleetVehicleId);
+}
+
+/**
+ * Resolves the caller-supplied execution reference without granting catalogue
+ * access. Every mismatch is deliberately the same opaque failure (I9).
+ */
+export async function assertAssignableFleetVehicle(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  fleetVehicleId: Id<'fleetVehicles'>,
+  organizationId: Id<'organizations'>,
+  providerId: Id<'providers'>,
+): Promise<Doc<'fleetVehicles'>> {
+  const fleetVehicle = await ctx.db.get(fleetVehicleId);
+  if (
+    fleetVehicle === null ||
+    fleetVehicle.organizationId !== organizationId ||
+    fleetVehicle.providerId !== providerId ||
+    fleetVehicle.status === 'archived'
+  ) return notFoundOrInaccessible();
+  return fleetVehicle;
 }
 
 /** Authenticates before lookup so foreign and fabricated ids stay opaque (I9). */
