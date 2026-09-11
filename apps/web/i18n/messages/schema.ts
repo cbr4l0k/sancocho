@@ -1,5 +1,7 @@
 import type {
   archivalStatusValidator,
+  assignmentRevisionStatusValidator,
+  executionStatusValidator,
   serviceStatusValidator,
   fieldDataTypeValidator,
   locationTypeValidator,
@@ -7,6 +9,7 @@ import type {
   serviceKindStatusValidator,
   serviceKindVersionStatusValidator,
   relationshipTypeValidator,
+  rateModalityValidator,
   roleValidator,
 } from '@priamo/convex/validators';
 import type { SemanticCapability } from '@priamo/convex/validators';
@@ -22,6 +25,9 @@ type ServiceKindStatus = typeof serviceKindStatusValidator.type;
 type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
 type ServiceStatus = typeof serviceStatusValidator.type;
 type ArchivalStatus = typeof archivalStatusValidator.type;
+type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
+type ExecutionStatus = typeof executionStatusValidator.type;
+type RateModality = typeof rateModalityValidator.type;
 type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
 type RelationshipType = typeof relationshipTypeValidator.type;
@@ -298,6 +304,64 @@ export type MessageSchema = {
     rowReadOnly: string;
     serviceKindColumnsNotice: string;
     statuses: Record<ServiceStatus, string>;
+  };
+  portal: {
+    application: string;
+    standing: string;
+    actingFirm: string;
+    firmSelectorLabel: string;
+    chooseFirm: string;
+    chooseFirmBody: string;
+    engagementsTitle: string;
+    engagementsDescription: string;
+    engagementsEmpty: string;
+    engagementsEmptyBody: string;
+    engagementLabel: string;
+    engagementHint: string;
+    openAssignments: string;
+    backToEngagements: string;
+    assignmentsTitle: string;
+    assignmentsDescription: string;
+    assignmentsEmpty: string;
+    assignmentsEmptyBody: string;
+    assignment: string;
+    assignmentLabel: string;
+    assignmentDetailDescription: string;
+    executionStatus: string;
+    driver: string;
+    driverPhone: string;
+    vehicle: string;
+    vehicleAssigned: string;
+    vehiclePlate: string;
+    dispatchedAt: string;
+    completedAt: string;
+    notes: string;
+    notExecutedReason: string;
+    notSet: string;
+    backToAssignments: string;
+    serviceProjectionTitle: string;
+    serviceProjectionDescription: string;
+    projectionEmpty: string;
+    projectionEmptyBody: string;
+    projectionGroups: Record<'service' | 'route' | 'passengers' | 'aviation' | 'contact', string>;
+    revisionsTitle: string;
+    revisionsDescription: string;
+    revisionsEmpty: string;
+    revisionsEmptyBody: string;
+    revision: string;
+    revisionLabel: string;
+    termsStatus: string;
+    quantity: string;
+    unitAmount: string;
+    lineTotal: string;
+    modality: string;
+    recordedAt: string;
+    revisionDetail: string;
+    acceptedAt: string;
+    moneyValue: string;
+    executionStatuses: Record<ExecutionStatus, string>;
+    revisionStatuses: Record<AssignmentRevisionStatus, string>;
+    modalities: Record<RateModality, string>;
   };
   locations: {
     title: string;

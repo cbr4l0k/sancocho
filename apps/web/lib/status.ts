@@ -1,5 +1,7 @@
 import type {
   archivalStatusValidator,
+  assignmentRevisionStatusValidator,
+  executionStatusValidator,
   serviceStatusValidator,
   projectStatusValidator,
   serviceKindStatusValidator,
@@ -49,6 +51,8 @@ export type ServiceKindStatus = typeof serviceKindStatusValidator.type;
 export type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
 export type ServiceStatus = typeof serviceStatusValidator.type;
 export type ArchivalStatus = typeof archivalStatusValidator.type;
+export type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
+export type ExecutionStatus = typeof executionStatusValidator.type;
 
 /**
  * The catalogue paths for the localized labels. Spelling them out as a union
@@ -60,6 +64,8 @@ export type StatusLabelKey =
   | `serviceKinds.statuses.${ServiceKindStatus}`
   | `serviceKinds.versionStatuses.${ServiceKindVersionStatus}`
   | `services.statuses.${ServiceStatus}`
+  | `portal.executionStatuses.${ExecutionStatus}`
+  | `portal.revisionStatuses.${AssignmentRevisionStatus}`
   | `fields.statuses.${ArchivalStatus}`;
 
 /** Everything the interface needs to render one status, resolved by key. */
@@ -104,8 +110,31 @@ export const archivalStatusTokens = {
   archived: { tone: 'shelf', shape: 'square', labelKey: 'fields.statuses.archived' },
 } as const satisfies Record<ArchivalStatus, StatusToken>;
 
+export const executionStatusTokens = {
+  unassigned: { tone: 'mute', shape: 'ring', labelKey: 'portal.executionStatuses.unassigned' },
+  assigned: { tone: 'hold', shape: 'bar', labelKey: 'portal.executionStatuses.assigned' },
+  confirmed: { tone: 'go', shape: 'diamond', labelKey: 'portal.executionStatuses.confirmed' },
+  dispatched: { tone: 'live', shape: 'pulse', labelKey: 'portal.executionStatuses.dispatched' },
+  completed: { tone: 'done', shape: 'square', labelKey: 'portal.executionStatuses.completed' },
+  notExecuted: { tone: 'stop', shape: 'cross', labelKey: 'portal.executionStatuses.notExecuted' },
+} as const satisfies Record<ExecutionStatus, StatusToken>;
+
+export const assignmentRevisionStatusTokens = {
+  draft: { tone: 'mute', shape: 'ring', labelKey: 'portal.revisionStatuses.draft' },
+  accepted: { tone: 'go', shape: 'diamond', labelKey: 'portal.revisionStatuses.accepted' },
+  superseded: { tone: 'shelf', shape: 'square', labelKey: 'portal.revisionStatuses.superseded' },
+  declined: { tone: 'stop', shape: 'cross', labelKey: 'portal.revisionStatuses.declined' },
+} as const satisfies Record<AssignmentRevisionStatus, StatusToken>;
+
 /** The set a chip belongs to. Chosen at the call site, never inferred. */
-export type StatusKind = 'project' | 'serviceKind' | 'serviceKindVersion' | 'service' | 'archival';
+export type StatusKind =
+  | 'project'
+  | 'serviceKind'
+  | 'serviceKindVersion'
+  | 'service'
+  | 'archival'
+  | 'execution'
+  | 'assignmentRevision';
 
 /**
  * Discriminated on `kind`, so `<StatusChip kind="serviceKind" status="planned" />`
@@ -117,6 +146,8 @@ export type StatusSelection =
   | { kind: 'serviceKind'; status: ServiceKindStatus }
   | { kind: 'serviceKindVersion'; status: ServiceKindVersionStatus }
   | { kind: 'service'; status: ServiceStatus }
+  | { kind: 'execution'; status: ExecutionStatus }
+  | { kind: 'assignmentRevision'; status: AssignmentRevisionStatus }
   | { kind: 'archival'; status: ArchivalStatus };
 
 export function statusToken(selection: StatusSelection): StatusToken {
@@ -129,6 +160,10 @@ export function statusToken(selection: StatusSelection): StatusToken {
       return serviceKindVersionStatusTokens[selection.status];
     case 'service':
       return serviceStatusTokens[selection.status];
+    case 'execution':
+      return executionStatusTokens[selection.status];
+    case 'assignmentRevision':
+      return assignmentRevisionStatusTokens[selection.status];
     case 'archival':
       return archivalStatusTokens[selection.status];
   }
@@ -149,15 +184,24 @@ export const serviceKindStatuses = ['draft', 'active', 'archived'] as const;
 export const serviceKindVersionStatuses = ['draft', 'published', 'retired'] as const;
 export const serviceStatuses = ['draft', 'planned', 'confirmed', 'active', 'completed', 'cancelled'] as const;
 export const archivalStatuses = ['active', 'archived'] as const;
+export const executionStatuses = ['unassigned', 'assigned', 'confirmed', 'dispatched', 'completed', 'notExecuted'] as const;
+export const assignmentRevisionStatuses = ['draft', 'accepted', 'superseded', 'declined'] as const;
 
 const _projectStatusesInSync: CoversExactly<(typeof projectStatuses)[number], ProjectStatus> = true;
 const _serviceKindStatusesInSync: CoversExactly<(typeof serviceKindStatuses)[number], ServiceKindStatus> = true;
 const _serviceKindVersionStatusesInSync: CoversExactly<(typeof serviceKindVersionStatuses)[number], ServiceKindVersionStatus> = true;
 const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], ServiceStatus> = true;
 const _archivalStatusesInSync: CoversExactly<(typeof archivalStatuses)[number], ArchivalStatus> = true;
+const _executionStatusesInSync: CoversExactly<(typeof executionStatuses)[number], ExecutionStatus> = true;
+const _assignmentRevisionStatusesInSync: CoversExactly<
+  (typeof assignmentRevisionStatuses)[number],
+  AssignmentRevisionStatus
+> = true;
 
 void _projectStatusesInSync;
 void _serviceKindStatusesInSync;
 void _serviceKindVersionStatusesInSync;
 void _serviceStatusesInSync;
 void _archivalStatusesInSync;
+void _executionStatusesInSync;
+void _assignmentRevisionStatusesInSync;

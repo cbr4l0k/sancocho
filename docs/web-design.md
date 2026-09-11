@@ -563,3 +563,59 @@ The theme toggle remains deferred. The shell preserves the documented
 OS-preference and `data-theme` token behavior, but does not add a preference
 control or persistence policy before that behavior has a dedicated product
 decision.
+
+## 15. The Provider portal frame (#87)
+
+The portal is a **second frame, not a filtered console**. `docs/provider-access.md`
+enumerates what a Provider may see, and almost every affordance in the coordinator shell
+corresponds to something it may not: the nav pills lead to Projects and Services it cannot
+read, the organization switcher implies a choice between tenants it does not have, and the
+settings entry leads to Fields, Service Kinds and Locations that are all refused. Chrome
+that suggests a capability the backend will refuse is worse than no chrome.
+
+What it **shares** is the guard order, which is load-bearing and stays one implementation:
+`AuthenticatedOrganizationGate` in `components/application/app-shell.tsx` is the extracted
+Clerk → Convex provisioning → organization sequence, and both frames compose it. Only the
+chrome differs.
+
+What differs, and why:
+
+- A narrower measure (`72rem` against the console's `88rem`) — the portal has one column of
+  content and no dense tables to widen for.
+- No navigation pill group. The portal has one root and drills down; a nav that named
+  surfaces would name surfaces that do not exist for this principal.
+- No settings entry and no Chat.
+- The organization control is labelled as **which firm you are acting as**, not as a tenant
+  switcher. For a Provider it selects among its own Organizations, never among
+  coordinators'.
+- ES/EN and the Clerk `UserButton` are retained: those are account controls, not
+  coordinator capability.
+
+### Naming what cannot be named
+
+An engagement — the (Project, Provider) pair — has **no disclosable human-readable name**.
+The Project is refused, the coordinator's Organization is refused, the firm's own directory
+row is refused (`deviations.md` gap 8), and a count would be an aggregate, which may-not-see
+#10 forbids outright. This is the specification working, not a gap.
+
+The resolution is structural rather than cosmetic: **the portal opens on the work, not on a
+chooser.** With a single engagement — one firm, one project, one coordinator, the ordinary
+case — `/{locale}/portal` renders that engagement's Assignments directly. The list appears
+only when there is genuinely something to choose between, and then rows are ordinals. No
+surface ever renders a raw Convex id as if it were a name.
+
+The engagement route is keyed on the **Project** id, not the grant id, because
+`listProjectAssignments` resolves the Provider arm from the caller anyway. Keying it on the
+grant forced a deep link to find that grant by paging the whole engagement list
+client-side — defeating the very pagination it was reading — for no disclosure benefit.
+
+### The Service projection
+
+Rendered as a definition list, grouped by semantic category, preserving the backend's field
+order (so a category may appear more than once rather than have entries reordered under it).
+
+Each entry shows the **code-owned semantic name as its primary label**, translated through
+`semanticTypeMessageKey`, with the tenant's own field label beside it as a qualifier,
+rendered exactly as entered and never translated. That ordering is the point: the semantic
+is what the code guarantees, and the tenant label is what distinguishes two fields sharing
+one semantic — "adults" and "children" under `passenger.count`.

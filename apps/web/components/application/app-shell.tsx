@@ -26,8 +26,21 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 type ApplicationShellProps = { children: ReactNode };
 
 export function ApplicationShell({ children }: ApplicationShellProps) {
+  return (
+    <AuthenticatedOrganizationGate>
+      <ShellFrame>{children}</ShellFrame>
+    </AuthenticatedOrganizationGate>
+  );
+}
+
+/**
+ * Shared, load-bearing console guard. Frames compose this gate so Clerk auth,
+ * Convex provisioning, and organization selection remain one implementation
+ * while their capability-specific chrome stays separate.
+ */
+export function AuthenticatedOrganizationGate({ children }: ApplicationShellProps) {
   /* Guard order: AuthLoading → Unauthenticated → Authenticated → provisioning → organization.
-   * Stage-G screens mount as children in ShellFrame and inherit nav, org context, and error handling.
+   * Console frames mount as children and inherit provisioning, organization context, and error handling.
    */
   return (
     <>
@@ -127,7 +140,7 @@ function OrganizationGate({ children }: ApplicationShellProps) {
 
   return (
     <CurrentOrganizationProvider organizations={organizations}>
-      {organizations.length === 0 ? <CreateOrganization /> : <ShellFrame>{children}</ShellFrame>}
+      {organizations.length === 0 ? <CreateOrganization /> : children}
     </CurrentOrganizationProvider>
   );
 }

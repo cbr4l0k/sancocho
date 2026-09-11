@@ -184,6 +184,14 @@ a decision to stop rather than guess.
     opaque id — because no orderable column is disclosable to a Provider; ordering becomes
     meaningful only if MAY-see #1 (gap 8) lands.
 
+11. **Execution and revision status labels live under the `portal.` i18n group.** They are
+    backend-owned vocabulary that `stage:Q`'s coordinator surfaces (#90, #72) will also need,
+    so those issues will either reach into `portal.` or duplicate the keys. Left as-is rather
+    than pre-emptively moved, because where stage:Q wants its status vocabulary is a decision
+    that stage should make with its screens in front of it. The tokens themselves are already
+    shared, in `lib/status.ts`, and are `satisfies Record<Status, StatusToken>` — so a new
+    backend status is a `tsc` failure either way.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
