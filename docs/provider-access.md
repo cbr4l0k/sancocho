@@ -6,17 +6,25 @@ discriminator derived from it. **#71 landed the second principal**: the `Princip
 the `providerAccessGrants` table, the closed capability set and the single gate
 `requirePrincipalForProject(ctx, projectId, intent)` in
 `apps/convex/convex/lib/access.ts`, which is now the only place either arm is resolved.
-**#86 landed the verified claim flow** described below, and #67 landed the Assignment
-layer. Still missing: the portal read surface and semantic projection (#87), and provider
-writes (#88).
+**#86 landed the verified claim flow** described below, #67 landed the Assignment layer,
+and **#87 landed the portal read surface and the semantic projection**. Still missing:
+provider writes (#88), and MAY-see #1 below.
 
 The two Provider read gates named for extension, `requireProviderAccess` and
 `requireProviderCatalogueAccess` in `apps/convex/convex/providers/model.ts`, deliberately
 still refuse the provider arm. Admitting a Provider Principal there is only half a change:
 the gate centralizes AUTHORIZATION, not SHAPING, and `getProvider` publishes the whole
 stored row — `notes`, `taxId`, `searchText`, `linkedOrganizationId` — which is correct for
-a member of the owning tenant and wrong for the firm the row is about. #87 owns that
-projection and admits the arm with it.
+a member of the owning tenant and wrong for the firm the row is about.
+
+**This moved from #87 to #88.** #87's own scope list never carried it, and the work is not
+a projection but a third resolution path: `requireProviderAccess` resolves a Provider row
+with no Project in hand, so the provider arm there needs "does this caller's Organization
+hold a live grant naming this Provider row", which is a different question from the one
+`requirePrincipalForProject` answers. It belongs beside #88's other provider-side surfaces
+rather than bolted onto the read surface. The portal is usable without it: the Assignment
+detail carries the Service projection, so the WORK is legible; only the engagement list
+is identified by ids alone. See `docs/deviations.md`.
 
 This document records the target so that #82 (the rename), #92 (the Event layer), #71 (the
 principal union and grants), #86 (provider accounts), #87 (the portal) and #88 (provider

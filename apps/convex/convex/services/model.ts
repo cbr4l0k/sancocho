@@ -689,7 +689,7 @@ async function decorateServices(ctx: QueryCtx, services: Doc<'services'>[]): Pro
  * on the way out: a stored reference is not a licence to read across tenants,
  * even though every write path already enforces it (I1).
  */
-async function locationNameOf(
+export async function locationNameOf(
   ctx: QueryCtx,
   cache: Map<Id<'locations'>, Doc<'locations'> | null>,
   organizationId: Id<'organizations'>,

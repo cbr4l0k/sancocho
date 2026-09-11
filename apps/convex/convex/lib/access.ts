@@ -1,3 +1,5 @@
+import type { PaginationOptions, PaginationResult } from 'convex/server';
+
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { getAuthenticatedIdentity, type AuthenticatedIdentity } from './authAdapter';
@@ -90,6 +92,76 @@ export function requireOrganizationAccess(
   organizationId: Id<'organizations'>,
 ): Promise<OrganizationMembershipAccess> {
   return requireOrganizationMembership(ctx, organizationId);
+}
+
+export type ProviderEngagement = Pick<
+  Doc<'providerAccessGrants'>,
+  '_id' | 'projectId' | 'providerId' | 'organizationId'
+>;
+
+/**
+ * The Provider portal's front door.
+ *
+ * Every other Provider-facing read is Project-scoped, and the gate's first
+ * argument is a `projectId` — but a Provider may not read a Project and may not
+ * list Projects, so it can never learn one to pass. This is the one read that
+ * starts from something a Provider genuinely knows: its own Organization.
+ *
+ * Each candidate row is put through `grantConfersAccess`, the SAME predicate
+ * `requirePrincipalForProject` uses. A row whose `status` still says `active`
+ * is not enough: the coordinator may have archived the Provider or the claim
+ * may have been revoked, and both of those must close this door at the same
+ * moment they close every other one. Anything less would make this a second,
+ * weaker principal resolver — see that function's comment.
+ *
+ * Consequence worth knowing: a page is narrowed twice, so it can come back
+ * shorter than `numItems` (or empty) while `isDone` is false. That is ordinary
+ * Convex pagination behaviour and the console's "load more" handles it; the
+ * alternative — resolving before paginating — is an unbounded read.
+ */
+export async function listMyProviderEngagements(
+  ctx: UserAccessContext,
+  args: {
+    providerOrganizationId: Id<'organizations'>;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<ProviderEngagement>> {
+  const authenticated = await requireAuthenticatedUser(ctx);
+  // The caller's OWN Organization, proven the ordinary way. A non-member is
+  // refused generically here, before any grant row is read (I9).
+  await requireOrganizationMembership(ctx, args.providerOrganizationId, authenticated);
+  const grants = await ctx.db
+    .query('providerAccessGrants')
+    .withIndex('by_providerOrganization_project', (q) =>
+      q.eq('providerOrganizationId', args.providerOrganizationId),
+    )
+    // A cheap pre-narrow only. The authoritative decision is the predicate
+    // below; this merely keeps obviously-dead rows out of the page budget.
+    .filter((q) => q.eq(q.field('status'), 'active'))
+    .paginate(args.paginationOpts);
+
+  const page: ProviderEngagement[] = [];
+  for (const grant of grants.page) {
+    const project = await ctx.db.get(grant.projectId);
+    if (project === null) continue;
+    const provider = await grantConfersAccess(ctx, {
+      grant,
+      project,
+      providerOrganizationId: args.providerOrganizationId,
+    });
+    if (provider === null) continue;
+    // Ids only, and only ids the Provider already holds or can act on. The
+    // Project is deliberately NOT joined: may-not-see #1 forbids returning it
+    // as contextual data hanging off another response, and a name or a date
+    // here would be exactly that.
+    page.push({
+      _id: grant._id,
+      projectId: grant.projectId,
+      providerId: grant.providerId,
+      organizationId: grant.organizationId,
+    });
+  }
+  return { ...grants, page };
 }
 
 /**
@@ -317,6 +389,72 @@ export async function requirePrincipalForProject(
 }
 
 /**
+ * THE predicate. Every question "does this grant row actually confer access
+ * right now" is answered here and nowhere else, because a grant row's own
+ * `status` is only the first of seven conditions and the other six are the ones
+ * that carry the coordinator's controls.
+ *
+ * It exists as a function rather than as a block inside `resolveProviderPrincipal`
+ * because #87 added a second caller. `listMyProviderEngagements` originally
+ * asked only for membership plus `status === 'active'`, which made it a second,
+ * weaker resolver wearing this module's address: archiving a Provider — the
+ * coordinator's documented off switch — refused every gated call while the
+ * firm went on enumerating that coordinator's Project ids through the portal's
+ * front door. Revoking a claim had the same shape, and `revokeAllProviderAccessGrants`
+ * bounds its cascade at 256 rows precisely on the argument that a stale `active`
+ * row "confers no access", which was true only while this predicate had one
+ * caller. One definition, two callers, one edit to move both.
+ *
+ * Returns the proven Provider row, or `null` — never throws, so the caller
+ * keeps its single I9 exit.
+ */
+async function grantConfersAccess(
+  ctx: UserAccessContext,
+  args: {
+    grant: Doc<'providerAccessGrants'>;
+    project: Doc<'projects'>;
+    providerOrganizationId: Id<'organizations'>;
+    // Explicitly `| undefined`: the caller forwards its own optional argument
+    // straight through, and `exactOptionalPropertyTypes` distinguishes an absent
+    // property from a present one holding `undefined`.
+    expectedProviderId?: Id<'providers'> | undefined;
+  },
+): Promise<Doc<'providers'> | null> {
+  const { grant, project, providerOrganizationId, expectedProviderId } = args;
+  // Read from the stored row on THIS call. Revocation is effective on the
+  // very next call because there is nothing anywhere that remembers the
+  // previous answer — no token claim, no session, no memoized principal.
+  if (grant.status !== 'active') return null;
+  // A caller who belongs to two granted firms must resolve as the firm that
+  // owns the TARGET row, not whichever grant the membership walk reached
+  // first. Skipping non-matching grants here (rather than validating the
+  // first result afterwards) is what lets such a dispatcher read BOTH
+  // firms' assignments — validating after would make one of the two
+  // permanently unreachable, depending only on membership order.
+  if (expectedProviderId !== undefined && grant.providerId !== expectedProviderId) return null;
+  // The denormalized coordinator column must agree with the Project's own
+  // organization; authorization walks the stored graph and never trusts a
+  // cached id (I4).
+  if (grant.organizationId !== project.organizationId) return null;
+
+  const provider = await ctx.db.get(grant.providerId);
+  if (provider === null) return null;
+  // The Provider row must be the granting coordinator's own directory
+  // entry, not some other tenant's row that happens to be referenced.
+  if (provider.organizationId !== project.organizationId) return null;
+  // An archived Provider is out of service, and out of service means it
+  // reads nothing — archival is the coordinator's off switch.
+  if (provider.status !== 'active') return null;
+  // THE CLAIM CHECK, re-proven every call. It covers both failure shapes at
+  // once, which is why there is no separate `undefined` test: an UNCLAIMED
+  // Provider (no link at all) and a RELINKED one (claimed by a different
+  // firm since the grant was issued) both fail this comparison, so revoking
+  // a claim revokes every grant riding on it without touching a grant row.
+  if (provider.linkedOrganizationId !== providerOrganizationId) return null;
+  return provider;
+}
+
+/**
  * The provider arm, resolved from the CALLER's side.
  *
  * The caller proves a membership in some Organization; that Organization then
@@ -361,36 +499,13 @@ async function resolveProviderPrincipal(
       .collect();
 
     for (const grant of grants) {
-      // Read from the stored row on THIS call. Revocation is effective on the
-      // very next call because there is nothing anywhere that remembers the
-      // previous answer — no token claim, no session, no memoized principal.
-      if (grant.status !== 'active') continue;
-      // A caller who belongs to two granted firms must resolve as the firm that
-      // owns the TARGET row, not whichever grant the membership walk reached
-      // first. Skipping non-matching grants here (rather than validating the
-      // first result afterwards) is what lets such a dispatcher read BOTH
-      // firms' assignments — validating after would make one of the two
-      // permanently unreachable, depending only on membership order.
-      if (expectedProviderId !== undefined && grant.providerId !== expectedProviderId) continue;
-      // The denormalized coordinator column must agree with the Project's own
-      // organization; authorization walks the stored graph and never trusts a
-      // cached id (I4).
-      if (grant.organizationId !== project.organizationId) continue;
-
-      const provider = await ctx.db.get(grant.providerId);
+      const provider = await grantConfersAccess(ctx, {
+        grant,
+        project,
+        providerOrganizationId: membership.organizationId,
+        expectedProviderId,
+      });
       if (provider === null) continue;
-      // The Provider row must be the granting coordinator's own directory
-      // entry, not some other tenant's row that happens to be referenced.
-      if (provider.organizationId !== project.organizationId) continue;
-      // An archived Provider is out of service, and out of service means it
-      // reads nothing — archival is the coordinator's off switch.
-      if (provider.status !== 'active') continue;
-      // THE CLAIM CHECK, re-proven every call. It covers both failure shapes at
-      // once, which is why there is no separate `undefined` test: an UNCLAIMED
-      // Provider (no link at all) and a RELINKED one (claimed by a different
-      // firm since the grant was issued) both fail this comparison, so revoking
-      // a claim revokes every grant riding on it without touching a grant row.
-      if (provider.linkedOrganizationId !== membership.organizationId) continue;
 
       const providerOrganization = await ctx.db.get(membership.organizationId);
       if (providerOrganization === null) continue;

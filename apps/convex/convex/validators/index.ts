@@ -390,6 +390,51 @@ export const assignmentDocValidator = v.object({
 });
 
 /**
+ * The Provider arm's Assignment shape, matching `providerAssignmentView` in
+ * `assignments/model.ts`. DERIVED by subtraction for the same reason as the
+ * revision validator below: one definition, so the two cannot drift.
+ *
+ * WHAT THIS DOES NOT DO, stated plainly because an earlier version of this
+ * comment claimed otherwise and mutation testing disproved it: it does not stop
+ * an un-narrowed row from reaching a Provider. Every column it subtracts is
+ * `v.optional`, and the queries publish `anyArmAssignmentDocValidator` — a union
+ * whose full-document arm therefore accepts a completely un-narrowed row. It
+ * documents the contract and it keeps the two shapes in one place; it enforces
+ * nothing.
+ *
+ * The `Omit<>` return type is not the enforcement either: TypeScript does not
+ * apply excess-property checking to spread-produced properties, so a refactor
+ * writing `{ ...assignment }` inside that whitelist compiles clean and validates
+ * clean, shipping `costCentreId` — frequently the Event's `clientCostCentreId`
+ * copied verbatim (may-not-see #7 and #9) — to a Provider.
+ *
+ * The ONLY enforcement is the absent-key assertions in the tests:
+ * `expectNoForbiddenProviderKeys` in `tests/assignments.test.ts` and its twin in
+ * `tests/providerPortal.test.ts`. Every Provider-facing Assignment read must be
+ * covered by one of them. The revision validator below IS load-bearing, because
+ * two of the three columns it subtracts are required.
+ */
+const {
+  costCentreId: _providerHiddenCostCentreId,
+  notExecutedAmount: _providerHiddenNotExecutedAmount,
+  additionalCharges: _providerHiddenAdditionalCharges,
+  additionalDetail: _providerHiddenAdditionalDetail,
+  ...providerAssignmentFields
+} = assignmentFields;
+
+export const providerAssignmentDocValidator = v.object({
+  _id: v.id('assignments'),
+  _creationTime: v.number(),
+  ...providerAssignmentFields,
+});
+
+/** Either arm's Assignment shape, for the reads both arms may perform. */
+export const anyArmAssignmentDocValidator = v.union(
+  assignmentDocValidator,
+  providerAssignmentDocValidator,
+);
+
+/**
  * A priced snapshot. The commercial columns are never patched after insert;
  * only lifecycle columns move as the negotiation is accepted or declined.
  */
@@ -415,6 +460,35 @@ export const assignmentRevisionDocValidator = v.object({
   _id: v.id('assignmentRevisions'),
   _creationTime: v.number(),
   ...assignmentRevisionFields,
+});
+
+/**
+ * The Provider arm's revision shape: the firm's own commercial record, minus
+ * the three columns that point back into the coordinator's side of it.
+ * `rateCardVersionId` and `rateLineId` name the card and the exact cell a rate
+ * was resolved from, which `docs/provider-access.md` may-not-see #8 forbids;
+ * `acceptedByUserId` names a coordinator member (may-not-see #11). None can be
+ * dereferenced by a Provider, but an id discloses on its own — two Assignments
+ * sharing a `rateLineId` prove they were priced off the same line.
+ *
+ * DERIVED from `assignmentRevisionFields` by subtraction rather than restated,
+ * so the stored row and this contract cannot drift. The safety of inheriting
+ * future columns by default rests on `ProviderRevisionView` in
+ * `assignments/model.ts`: its body is a whitelist typed as an `Omit` of the
+ * stored row, so a new REQUIRED column fails to compile there until someone
+ * decides, and a new OPTIONAL one is simply never populated.
+ */
+const {
+  rateCardVersionId: _providerHiddenRateCardVersionId,
+  rateLineId: _providerHiddenRateLineId,
+  acceptedByUserId: _providerHiddenAcceptedByUserId,
+  ...providerAssignmentRevisionFields
+} = assignmentRevisionFields;
+
+export const providerAssignmentRevisionDocValidator = v.object({
+  _id: v.id('assignmentRevisions'),
+  _creationTime: v.number(),
+  ...providerAssignmentRevisionFields,
 });
 
 /**
@@ -463,6 +537,18 @@ export const providerAccessGrantDocValidator = v.object({
   _id: v.id('providerAccessGrants'),
   _creationTime: v.number(),
   ...providerAccessGrantFields,
+});
+
+/** Provider-owned discovery row; deliberately carries no Project columns. */
+export const providerEngagementFields = {
+  projectId: v.id('projects'),
+  providerId: v.id('providers'),
+  organizationId: v.id('organizations'),
+};
+
+export const providerEngagementDocValidator = v.object({
+  _id: v.id('providerAccessGrants'),
+  ...providerEngagementFields,
 });
 
 /**

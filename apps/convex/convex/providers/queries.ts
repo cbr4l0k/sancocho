@@ -6,9 +6,11 @@ import {
   archivalStatusValidator,
   paginatedResult,
   providerAccessGrantDocValidator,
+  providerEngagementDocValidator,
   providerDocValidator,
   organizationInvitationDocValidator,
 } from '../validators';
+import { listMyProviderEngagements as listMyProviderEngagementsModel } from '../lib/access';
 import { listProjectProviderAccessGrants as listProjectProviderAccessGrantsModel } from './grants';
 import {
   getProvider as getProviderModel,
@@ -57,4 +59,13 @@ export const listProjectProviderAccessGrants = query({
   args: { projectId: v.id('projects'), paginationOpts: paginationOptsValidator },
   returns: paginatedResult(providerAccessGrantDocValidator),
   handler: (ctx, args) => listProjectProviderAccessGrantsModel(ctx, args),
+});
+
+export const listMyProviderEngagements = query({
+  args: {
+    providerOrganizationId: v.id('organizations'),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginatedResult(providerEngagementDocValidator),
+  handler: (ctx, args) => listMyProviderEngagementsModel(ctx, args),
 });

@@ -189,6 +189,23 @@ async function refusal(promise: Promise<unknown>): Promise<{ message: string; da
   throw new Error('Expected the call to be refused, but it resolved');
 }
 
+/**
+ * #87 narrowed the Provider arm's revision reads, so `getAssignmentRevision`
+ * now returns a union. Narrowing by ASSERTION rather than by widening
+ * `commercial()` to accept both shapes is deliberate: a widened helper would
+ * compare `undefined` against `undefined` for the two rate-card columns and
+ * pass, turning the member-side price-immutability checks below into vacuous
+ * ones the day somebody points them at a Provider client.
+ */
+function memberRevision(revision: Doc<'assignmentRevisions'> | Omit<
+  Doc<'assignmentRevisions'>,
+  'rateCardVersionId' | 'rateLineId' | 'acceptedByUserId'
+>): Doc<'assignmentRevisions'> {
+  expect(revision).toHaveProperty('rateCardVersionId');
+  expect(revision).toHaveProperty('rateLineId');
+  return revision as Doc<'assignmentRevisions'>;
+}
+
 function commercial(revision: Doc<'assignmentRevisions'>) {
   return {
     revisionNumber: revision.revisionNumber,
@@ -543,7 +560,7 @@ test('I10: stored lineTotal and all commercial columns survive Card edits and so
   await f.t.run(async (ctx) => ctx.db.patch(f.rateLineId, { unitAmount: 999 }));
   await f.owner.client.mutation(retireRateCardVersion, { rateCardVersionId: f.rateCardVersionId });
   const after = await f.owner.client.query(getAssignmentRevision, { revisionId });
-  expect(commercial(after)).toEqual(commercial(before));
+  expect(commercial(memberRevision(after))).toEqual(commercial(memberRevision(before)));
   expect(after.lineTotal).toBe(37_035);
 });
 
@@ -659,7 +676,9 @@ test('the public mutation surface is exact and repricing never edits prior comme
   const firstId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
   const before = await f.owner.client.query(getAssignmentRevision, { revisionId: firstId });
   await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 4 });
-  expect(commercial(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId }))).toEqual(commercial(before));
+  expect(
+    commercial(memberRevision(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId }))),
+  ).toEqual(commercial(memberRevision(before)));
 });
 
 test('accepted Revisions cannot be re-accepted; superseded and declined Revisions cannot be accepted', async () => {
@@ -718,8 +737,8 @@ test('acceptance stores a bounded timestamp and the accepting actor rather than 
   const revision = await f.owner.client.query(getAssignmentRevision, { revisionId });
   expect(revision.acceptedAt).toBeGreaterThanOrEqual(startedAt);
   expect(revision.acceptedAt).toBeLessThanOrEqual(finishedAt);
-  expect(revision.acceptedByUserId).toBe(acceptingPlanner.userId);
-  expect(revision.acceptedByUserId).not.toBe(f.owner.userId);
+  expect(revision).toMatchObject({ acceptedByUserId: acceptingPlanner.userId });
+  expect(revision).not.toMatchObject({ acceptedByUserId: f.owner.userId });
 });
 
 test('currentRevisionId is present iff one Revision is accepted across acceptance, supersession, and decline', async () => {

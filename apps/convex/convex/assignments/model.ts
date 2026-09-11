@@ -13,6 +13,9 @@ import {
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import { assertMinorUnits } from '../lib/money';
+import {
+  providerServiceProjection,
+} from '../lib/providerProjection';
 import { assertUsableProvider } from '../providers/model';
 import { resolveRateForAssignment } from '../rateCards/model';
 import { assertProjectAcceptsServiceWrites, assertServiceWritable } from '../services/model';
@@ -520,8 +523,8 @@ export async function declineAssignmentRevision(
  * The body is a whitelist and the return type is an `Omit` of the stored row, so
  * a new REQUIRED Assignment column fails to compile here until someone decides
  * whether a Provider may see it, and a new OPTIONAL one is excluded by default.
- * Both outcomes fail closed. #87 owns the wider Service projection; this is only
- * the Assignment row itself.
+ * Both outcomes fail closed. The wider Service projection is composed with this
+ * row only by `getAssignmentDetail` below.
  */
 type ProviderAssignmentView = Omit<
   Doc<'assignments'>,
@@ -552,6 +555,30 @@ function providerAssignmentView(assignment: Doc<'assignments'>): ProviderAssignm
   };
 }
 
+type ProviderRevisionView = Omit<
+  Doc<'assignmentRevisions'>,
+  'rateCardVersionId' | 'rateLineId' | 'acceptedByUserId'
+>;
+
+function providerRevisionView(revision: Doc<'assignmentRevisions'>): ProviderRevisionView {
+  return {
+    _id: revision._id,
+    _creationTime: revision._creationTime,
+    organizationId: revision.organizationId,
+    assignmentId: revision.assignmentId,
+    revisionNumber: revision.revisionNumber,
+    status: revision.status,
+    vehicleClassId: revision.vehicleClassId,
+    modality: revision.modality,
+    quantity: revision.quantity,
+    unitAmount: revision.unitAmount,
+    currency: revision.currency,
+    lineTotal: revision.lineTotal,
+    ...(revision.acceptedAt === undefined ? {} : { acceptedAt: revision.acceptedAt }),
+    ...(revision.declinedReason === undefined ? {} : { declinedReason: revision.declinedReason }),
+  };
+}
+
 export async function getAssignment(
   ctx: QueryCtx,
   assignmentId: Id<'assignments'>,
@@ -563,19 +590,47 @@ export async function getAssignment(
 export async function getAssignmentRevision(
   ctx: QueryCtx,
   revisionId: Id<'assignmentRevisions'>,
-): Promise<Doc<'assignmentRevisions'>> {
-  return (await requireRevisionAccess(ctx, revisionId, 'readAssignment')).revision;
+): Promise<Doc<'assignmentRevisions'> | ProviderRevisionView> {
+  const { revision, principal } = await requireRevisionAccess(ctx, revisionId, 'readAssignment');
+  return principal.kind === 'provider' ? providerRevisionView(revision) : revision;
 }
 
 export async function listAssignmentRevisions(
   ctx: QueryCtx,
   args: { assignmentId: Id<'assignments'>; paginationOpts: PaginationOptions },
-): Promise<PaginationResult<Doc<'assignmentRevisions'>>> {
-  const { assignment } = await requireAssignmentAccess(ctx, args.assignmentId, 'readAssignment');
-  return ctx.db
+): Promise<PaginationResult<Doc<'assignmentRevisions'> | ProviderRevisionView>> {
+  const { assignment, principal } = await requireAssignmentAccess(ctx, args.assignmentId, 'readAssignment');
+  const page = await ctx.db
     .query('assignmentRevisions')
     .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignment._id))
     .paginate(args.paginationOpts);
+  return principal.kind === 'provider'
+    ? { ...page, page: page.page.map(providerRevisionView) }
+    : page;
+}
+
+export async function getAssignmentDetail(
+  ctx: QueryCtx,
+  assignmentId: Id<'assignments'>,
+): Promise<{
+  assignment: Doc<'assignments'> | ProviderAssignmentView;
+  serviceProjection: Awaited<ReturnType<typeof providerServiceProjection>>;
+}> {
+  // TWO capabilities, so two gate calls. The response carries two distinct
+  // things — the Assignment row (`readAssignment`) and the linked Service's
+  // projection (`readLinkedServiceProjection`) — and the closed Provider set is
+  // total today, so either call alone would pass. It will not always be: the
+  // gate's own comment keeps the closed-set check centralized "precisely so
+  // that the day the two diverge — a narrower grant, a new intent providers
+  // must not hold — the refusal is already centralized". On that day a query
+  // that proved only one of the two would hand over the other.
+  const { assignment, principal } = await requireAssignmentAccess(ctx, assignmentId, 'readAssignment');
+  await requireAssignmentAccess(ctx, assignmentId, 'readLinkedServiceProjection');
+  const { service } = await loadAssignmentService(ctx, assignment);
+  return {
+    assignment: principal.kind === 'provider' ? providerAssignmentView(assignment) : assignment,
+    serviceProjection: await providerServiceProjection(ctx, service),
+  };
 }
 
 export async function listServiceAssignments(

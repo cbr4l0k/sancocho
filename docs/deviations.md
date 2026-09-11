@@ -159,6 +159,31 @@ a decision to stop rather than guess.
    and `seed/` writes no invitations. Any deployment that did carry pre-#86 invitation rows would
    need a one-off backfill patching `kind: 'membership'` before the schema push.
 
+8. **A Provider cannot read its own `providers` row (MAY-see #1), so the portal's engagement
+   list is identified by ids alone.** `docs/provider-access.md` assigned that item to #87, but
+   #87's own scope list never carried it and it is not a projection: `requireProviderAccess`
+   resolves a Provider row with no Project in hand, so admitting the provider arm there means
+   answering "does this caller's Organization hold a live grant naming this row", a different
+   question from the one the gate answers. Moved to #88 and recorded in the decision record.
+   Consequence today: `listMyProviderEngagements` returns a `providerId` the Provider cannot
+   dereference, and it cannot read the coordinator's Organization either (the enumerated
+   MAY-see list does not include it), so an engagement row carries no human-readable name.
+   The WORK is still legible — the Assignment detail's Service projection carries
+   `serviceName` — so this degrades grouping, not usability.
+9. **The projection carries the tenant `label` as display text.** Selection is purely
+   semantic, as specified, but each entry also returns the Field Definition's current label.
+   `passenger.count` admits up to 25 definitions per organization, so one Service can hold
+   several fields sharing a projected semantic ("adults" and "children"); keyed by semantic
+   alone they render as anonymous numbers. A projected field's label sits in the same
+   disclosure class as its value, which is already disclosed. `label` is never matched
+   against — only emitted.
+10. **`listMyProviderEngagements` narrows its page twice**, so a page can come back shorter
+    than `numItems` (or empty) while `isDone` is false: the index range pre-narrows on
+    `status`, then `grantConfersAccess` re-proves the other six conditions per row. Resolving
+    before paginating would be an unbounded read. It is also ordered by `projectId` — an
+    opaque id — because no orderable column is disclosable to a Provider; ordering becomes
+    meaningful only if MAY-see #1 (gap 8) lands.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
