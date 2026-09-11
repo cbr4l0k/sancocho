@@ -85,6 +85,8 @@ export const auditActionMessageKey = {
   'assignmentRevision.accepted': 'assignmentRevision_accepted',
   'assignmentRevision.declined': 'assignmentRevision_declined',
   'assignmentRevision.superseded': 'assignmentRevision_superseded',
+  'assignmentRevision.countered': 'assignmentRevision_countered',
+  'assignmentCheckpoint.recorded': 'assignmentCheckpoint_recorded',
   'providerAccessGrant.granted': 'providerAccessGrant_granted',
   'providerAccessGrant.revoked': 'providerAccessGrant_revoked',
   'providerClaim.invited': 'providerClaim_invited',

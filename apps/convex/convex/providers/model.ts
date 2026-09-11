@@ -8,7 +8,9 @@ import {
   requireAuthenticatedUser,
   requireOrganizationMembership,
   requireOrganizationRole,
+  requirePrincipalForProviderRow,
   type OrganizationMembershipAccess,
+  type ProviderRowPrincipal,
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
 import {
@@ -23,7 +25,11 @@ import { providerHasRateCards } from '../rateCards/references';
 import { providerHasAssignments } from './references';
 import { organizationConfigurationRole, roleAtLeast, type Role } from '../lib/roles';
 import { assertSearchTermLength, normalizeSearchTerm, normalizeSearchText } from '../lib/search';
-import type { archivalStatusValidator, providerClaimStateValidator, providerDocValidator } from '../validators';
+import type {
+  archivalStatusValidator,
+  providerClaimStateValidator,
+  providerDocValidator,
+} from '../validators';
 
 type ArchivalStatus = typeof archivalStatusValidator.type;
 type ProviderClaimState = typeof providerClaimStateValidator.type;
@@ -31,6 +37,10 @@ type ProviderListFilters = { status?: ArchivalStatus; search?: string };
 
 /** The published Provider shape: the stored row plus its derived claim state. */
 export type ProviderView = typeof providerDocValidator.type;
+export type ProviderSelfView = Omit<
+  ProviderView,
+  'notes' | 'taxId' | 'searchText' | 'linkedOrganizationId'
+>;
 
 /**
  * The complete set of columns the GENERIC update path may touch.
@@ -137,9 +147,12 @@ export async function createProvider(
   return providerId;
 }
 
-export async function getProvider(ctx: QueryCtx, providerId: Id<'providers'>): Promise<ProviderView> {
-  const { provider } = await requireProviderAccess(ctx, providerId);
-  return toProviderView(provider);
+export async function getProvider(
+  ctx: QueryCtx,
+  providerId: Id<'providers'>,
+): Promise<ProviderView | ProviderSelfView> {
+  const { provider, access } = await requireProviderAccess(ctx, providerId);
+  return access.kind === 'provider' ? toProviderSelfView(provider) : toProviderView(provider);
 }
 
 export async function listProviders(
@@ -592,57 +605,51 @@ export function toProviderView(provider: Doc<'providers'>): ProviderView {
   return { ...provider, claimState: claimStateOf(provider) };
 }
 
+/**
+ * Whitelist for the Provider arm. The return type makes the four forbidden
+ * stored columns explicit, while the body prevents an optional future column
+ * from becoming visible merely because it was added to `providerFields`.
+ */
+function toProviderSelfView(provider: Doc<'providers'>): ProviderSelfView {
+  return {
+    _id: provider._id,
+    _creationTime: provider._creationTime,
+    organizationId: provider.organizationId,
+    name: provider.name,
+    ...(provider.legalName === undefined ? {} : { legalName: provider.legalName }),
+    ...(provider.contactName === undefined ? {} : { contactName: provider.contactName }),
+    ...(provider.contactEmail === undefined ? {} : { contactEmail: provider.contactEmail }),
+    ...(provider.contactPhone === undefined ? {} : { contactPhone: provider.contactPhone }),
+    status: provider.status,
+    claimState: claimStateOf(provider),
+  };
+}
+
 function claimStateOf(provider: Doc<'providers'>): ProviderClaimState {
   return provider.linkedOrganizationId === undefined ? 'unclaimed' : 'claimed';
 }
 
 /**
- * ONE OF THE TWO PROVIDER READ GATES. #71 adds the second principal arm here.
- *
- * Today the access chain has a single principal type — an organization
- * membership — so this proves identity → app user → membership → role, exactly
- * like `requireLocationAccess` and `requireCostCentreAccess`. #71 introduces the
- * `Principal` union and the scoped, non-transitive Provider grant, at which
- * point a Provider Principal must be able to read ITS OWN row (and nothing else
- * in the directory, per docs/provider-access.md "What a Provider MAY see" §1).
- *
- * That second arm belongs in this function and in `requireProviderCatalogueAccess`
- * below — deliberately the only two places any Provider read is authorized, and
- * deliberately adjacent, so #71 is one file rather than forty. No query,
- * mutation, or future domain may inline its own membership check against
- * `providers`: that is what turns a second principal into a rewrite.
- *
- * WARNING for #71: this gate centralizes AUTHORIZATION, not SHAPING, and the
- * two are not the same decision. It hands back the whole `Doc<'providers'>`,
- * and `getProvider` publishes that row verbatim under `providerDocValidator` —
- * `notes` (the coordinator's private commentary about that firm), `taxId`,
- * `searchText` and `linkedOrganizationId` included. That is correct for a
- * member of the owning tenant and WRONG for a Provider Principal, which may see
- * only "the identity the coordinator recorded for it"
- * (docs/provider-access.md §"What a Provider MAY see" 1).
- *
- * So admitting the second arm here is only half the change: #71 must also
- * return a narrower projection on that arm — either by having this gate report
- * WHICH principal it resolved so `getProvider` can shape per arm, or by adding
- * a `providerSelfViewValidator` carrying name and contact only. Adding the arm
- * without the projection silently discloses the coordinator's notes to the firm
- * they are about.
- *
- * Authenticates BEFORE the lookup so foreign and fabricated ids stay
- * indistinguishable (I9).
+ * The single-row Provider read gate. With no role requirement it delegates to
+ * `lib/access.ts`, which resolves either ownership membership or the distinct
+ * live-grant proof for the Provider's own row. Role-bearing callers are write
+ * paths and stay member-only. `getProvider` shapes the returned row by arm;
+ * authorization alone must never publish coordinator-private columns.
  */
 export async function requireProviderAccess(
   ctx: QueryCtx | MutationCtx,
   providerId: Id<'providers'>,
   minimumRole?: Role,
-): Promise<{ provider: Doc<'providers'>; access: OrganizationMembershipAccess }> {
+): Promise<{ provider: Doc<'providers'>; access: ProviderRowPrincipal }> {
+  if (minimumRole === undefined) {
+    const { provider, principal } = await requirePrincipalForProviderRow(ctx, providerId);
+    return { provider, access: principal };
+  }
   const authenticated = await requireAuthenticatedUser(ctx);
   const provider = await ctx.db.get(providerId);
   if (provider === null) return notFoundOrInaccessible();
-  const access = minimumRole === undefined
-    ? await requireOrganizationMembership(ctx, provider.organizationId, authenticated)
-    : await requireOrganizationRole(ctx, provider.organizationId, minimumRole, authenticated);
-  return { provider, access };
+  const access = await requireOrganizationRole(ctx, provider.organizationId, minimumRole, authenticated);
+  return { provider, access: { kind: 'member', ...access } };
 }
 
 /**

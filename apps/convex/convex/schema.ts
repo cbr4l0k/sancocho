@@ -3,6 +3,7 @@ import { v } from 'convex/values';
 
 import {
   archivalStatusValidator,
+  assignmentCheckpointFields,
   assignmentFields,
   assignmentRevisionFields,
   auditEventFields,
@@ -297,6 +298,13 @@ export default defineSchema({
     // A is not in the range read for Project B — which is why there is no
     // redundant column comparison afterwards to drift from it.
     .index('by_providerOrganization_project', ['providerOrganizationId', 'projectId'])
+    // Resolves MAY-see #1 from the Provider row rather than a Project id: one
+    // current membership plus one active grant naming that exact directory row.
+    .index('by_providerOrganization_provider_status', [
+      'providerOrganizationId',
+      'providerId',
+      'status',
+    ])
     // Serves the coordinator's own paginated list of who it has let in (I6).
     // Deliberately keyed by the granting organization AND project so a member
     // can never page another tenant's grants by supplying a foreign project id.
@@ -360,6 +368,12 @@ export default defineSchema({
     // Protected-reference first-hit guards.
     .index('by_org_vehicleClass', ['organizationId', 'vehicleClassId'])
     .index('by_rateCardVersion', ['rateCardVersionId']),
+
+  // Timestamped execution notes. Status remains exclusively on Assignments;
+  // these append-only rows only record milestones within that status machine.
+  assignmentCheckpoints: defineTable(assignmentCheckpointFields)
+    // Every public read is both Assignment-scoped and natively paginated.
+    .index('by_assignment_occurredAt', ['assignmentId', 'occurredAt']),
 
   // The coordinator-owned Vehicle Class catalogue (#65): what is planned and
   // priced. Tenant-authored, never a code-owned enum.

@@ -4,6 +4,7 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import {
   archivalStatusValidator,
+  anyArmProviderDocValidator,
   paginatedResult,
   providerAccessGrantDocValidator,
   providerEngagementDocValidator,
@@ -20,7 +21,7 @@ import {
 
 export const getProvider = query({
   args: { providerId: v.id('providers') },
-  returns: providerDocValidator,
+  returns: anyArmProviderDocValidator,
   handler: (ctx, args) => getProviderModel(ctx, args.providerId),
 });
 

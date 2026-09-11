@@ -4,6 +4,7 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import {
   anyArmAssignmentDocValidator,
+  anyArmAssignmentCheckpointDocValidator,
   assignmentDocValidator,
   assignmentRevisionDocValidator,
   providerAssignmentRevisionDocValidator,
@@ -16,6 +17,7 @@ import {
   getAssignmentDetail as getAssignmentDetailModel,
   getAssignmentRevision as getAssignmentRevisionModel,
   listAssignmentRevisions as listAssignmentRevisionsModel,
+  listAssignmentCheckpoints as listAssignmentCheckpointsModel,
   listProjectAssignments as listProjectAssignmentsModel,
   listServiceAssignments as listServiceAssignmentsModel,
   assignmentsAwaitingDispatch as assignmentsAwaitingDispatchModel,
@@ -37,6 +39,12 @@ export const listAssignmentRevisions = query({
   args: { assignmentId: v.id('assignments'), paginationOpts: paginationOptsValidator },
   returns: paginatedResult(v.union(assignmentRevisionDocValidator, providerAssignmentRevisionDocValidator)),
   handler: (ctx, args) => listAssignmentRevisionsModel(ctx, args),
+});
+
+export const listAssignmentCheckpoints = query({
+  args: { assignmentId: v.id('assignments'), paginationOpts: paginationOptsValidator },
+  returns: paginatedResult(anyArmAssignmentCheckpointDocValidator),
+  handler: (ctx, args) => listAssignmentCheckpointsModel(ctx, args),
 });
 
 export const getAssignmentDetail = query({

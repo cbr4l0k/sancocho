@@ -757,6 +757,8 @@ const esCO = {
       assignmentRevision_accepted: 'Revisión de asignación aceptada',
       assignmentRevision_declined: 'Revisión de asignación rechazada',
       assignmentRevision_superseded: 'Revisión de asignación reemplazada',
+      assignmentRevision_countered: 'Contrapropuesta de asignación creada',
+      assignmentCheckpoint_recorded: 'Punto de control de asignación registrado',
       providerAccessGrant_granted: 'Acceso de proveedor concedido',
       providerAccessGrant_revoked: 'Acceso de proveedor revocado',
       providerClaim_invited: 'Vinculación de proveedor invitada',

@@ -1266,6 +1266,16 @@ test('exactly one helper resolves both principal arms, and no operation inlines 
     'revokeProviderAccessGrant',
   ]);
 
+  // 2b. #88's SECOND resolver — the Provider-row arm, which answers a different
+  //     question (no Project in hand) and so could not reuse the gate directly.
+  //     It gets the same treatment the gate does, because the failure mode found
+  //     in #87 was a second, weaker resolver living at the right address.
+  expect(sourcesMatching(/export async function requirePrincipalForProviderRow/)).toEqual(['lib/access.ts']);
+  expect(sourcesMatching(/by_providerOrganization_provider_status/)).toEqual(['lib/access.ts', 'schema.ts']);
+  // Both resolvers must reach their verdict through the SAME predicate; a
+  // second copy of the seven conditions is the bug this whole block exists for.
+  expect(sourcesMatching(/grantConfersAccess/)).toEqual(['lib/access.ts']);
+
   // 3. The RESOLUTION index has exactly one reader besides its definition.
   expect(sourcesMatching(/by_providerOrganization_project/)).toEqual(['lib/access.ts', 'schema.ts']);
 

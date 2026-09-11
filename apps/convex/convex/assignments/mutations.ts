@@ -1,14 +1,20 @@
 import { v } from 'convex/values';
 
 import { mutation } from '../_generated/server';
-import { executionStatusValidator, rateModalityValidator } from '../validators';
+import {
+  assignmentCheckpointKindValidator,
+  executionStatusValidator,
+  rateModalityValidator,
+} from '../validators';
 import {
   acceptAssignmentRevision as acceptAssignmentRevisionModel,
+  counterAssignmentRevision as counterAssignmentRevisionModel,
   createAssignment as createAssignmentModel,
   createAssignmentRevision as createAssignmentRevisionModel,
   declineAssignmentRevision as declineAssignmentRevisionModel,
   removeAssignment as removeAssignmentModel,
   recordAssignmentAdjustments as recordAssignmentAdjustmentsModel,
+  recordAssignmentCheckpoint as recordAssignmentCheckpointModel,
   transitionAssignmentExecution as transitionAssignmentExecutionModel,
 } from './model';
 
@@ -48,8 +54,19 @@ export const acceptAssignmentRevision = mutation({
   },
 });
 
+/** Card version, rate line and vehicle class are derived from the answered revision. */
+export const counterAssignmentRevision = mutation({
+  args: {
+    revisionId: v.id('assignmentRevisions'),
+    quantity: v.number(),
+    modality: rateModalityValidator,
+  },
+  returns: v.id('assignmentRevisions'),
+  handler: (ctx, args) => counterAssignmentRevisionModel(ctx, args),
+});
+
 export const declineAssignmentRevision = mutation({
-  args: { revisionId: v.id('assignmentRevisions'), reason: v.optional(v.string()) },
+  args: { revisionId: v.id('assignmentRevisions'), reason: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
     await declineAssignmentRevisionModel(ctx, args);
@@ -82,6 +99,17 @@ export const transitionAssignmentExecution = mutation({
     await transitionAssignmentExecutionModel(ctx, args);
     return null;
   },
+});
+
+export const recordAssignmentCheckpoint = mutation({
+  args: {
+    assignmentId: v.id('assignments'),
+    kind: assignmentCheckpointKindValidator,
+    occurredAt: v.number(),
+    note: v.optional(v.string()),
+  },
+  returns: v.id('assignmentCheckpoints'),
+  handler: (ctx, args) => recordAssignmentCheckpointModel(ctx, args),
 });
 
 /** Commercial adjustments remain on the member-only terms gate. */

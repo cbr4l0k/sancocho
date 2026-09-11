@@ -598,7 +598,7 @@ test('cancelled Services and write-refusing Projects reject Assignment creation'
     .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
   await expect(cancelled.owner.client.mutation(acceptAssignmentRevision, { revisionId: cancelledRevisionId }))
     .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
-  await expect(cancelled.owner.client.mutation(declineAssignmentRevision, { revisionId: cancelledRevisionId }))
+  await expect(cancelled.owner.client.mutation(declineAssignmentRevision, { revisionId: cancelledRevisionId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'serviceReadOnly' } });
 
   const frozen = await fixture('assignment-frozen');
@@ -613,7 +613,7 @@ test('cancelled Services and write-refusing Projects reject Assignment creation'
     .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
   await expect(frozen.owner.client.mutation(acceptAssignmentRevision, { revisionId: frozenRevisionId }))
     .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
-  await expect(frozen.owner.client.mutation(declineAssignmentRevision, { revisionId: frozenRevisionId }))
+  await expect(frozen.owner.client.mutation(declineAssignmentRevision, { revisionId: frozenRevisionId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'serviceProjectReadOnly' } });
 });
 
@@ -632,7 +632,7 @@ test('viewer and operator are refused while planner can use every Assignment wri
       .rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(member.client.mutation(acceptAssignmentRevision, { revisionId }))
       .rejects.toMatchObject({ data: { code: inaccessible } });
-    await expect(member.client.mutation(declineAssignmentRevision, { revisionId }))
+    await expect(member.client.mutation(declineAssignmentRevision, { revisionId, reason: 'not mine to decline' }))
       .rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(member.client.mutation(removeAssignment, { assignmentId: f.assignmentId }))
       .rejects.toMatchObject({ data: { code: inaccessible } });
@@ -652,7 +652,10 @@ test('viewer and operator are refused while planner can use every Assignment wri
   });
   await expect(planner.client.mutation(removeAssignment, { assignmentId: removableId })).resolves.toBeNull();
   const declinedId = await planner.client.mutation(createAssignmentRevision, f.revisionArgs);
-  await expect(planner.client.mutation(declineAssignmentRevision, { revisionId: declinedId })).resolves.toBeNull();
+  await expect(planner.client.mutation(declineAssignmentRevision, {
+    revisionId: declinedId,
+    reason: 'Terms no longer fit the plan',
+  })).resolves.toBeNull();
   const acceptedId = await planner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity: 4 });
   await expect(planner.client.mutation(acceptAssignmentRevision, { revisionId: acceptedId })).resolves.toBeNull();
 });
@@ -666,9 +669,11 @@ test('the public mutation surface is exact and repricing never edits prior comme
     'createAssignment',
     'createAssignmentRevision',
     'acceptAssignmentRevision',
+    'counterAssignmentRevision',
     'declineAssignmentRevision',
     'removeAssignment',
     'transitionAssignmentExecution',
+    'recordAssignmentCheckpoint',
     'recordAssignmentAdjustments',
   ]);
 
@@ -756,11 +761,11 @@ test('currentRevisionId is present iff one Revision is accepted across acceptanc
   expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: thirdId });
   expect(await f.owner.client.query(getAssignmentRevision, { revisionId: firstId })).toMatchObject({ status: 'superseded' });
 
-  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: firstId }))
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: firstId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
-  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: secondId }))
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: secondId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
-  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: thirdId }))
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: thirdId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
   expect(await f.owner.client.query(getAssignment, { assignmentId: f.assignmentId })).toMatchObject({ currentRevisionId: thirdId });
   const accepted = await f.owner.client.query(getAssignmentRevision, { revisionId: thirdId });
@@ -779,7 +784,7 @@ test('a corrupted currentRevisionId mirror refuses both acceptance and decline',
   await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { currentRevisionId: draftId }));
   await expect(f.owner.client.mutation(acceptAssignmentRevision, { revisionId: draftId }))
     .rejects.toMatchObject({ data: { code: inaccessible } });
-  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: acceptedId }))
+  await expect(f.owner.client.mutation(declineAssignmentRevision, { revisionId: acceptedId, reason: 'no longer needed' }))
     .rejects.toMatchObject({ data: { code: 'assignmentRevisionNotDeclinable' } });
 });
 
@@ -946,8 +951,8 @@ test('unauthenticated Assignment writes refuse real and fabricated ids identical
       () => f.t.mutation(acceptAssignmentRevision, { revisionId: gone.goneRevisionId }),
     ],
     [
-      () => f.t.mutation(declineAssignmentRevision, { revisionId: realRevisionId }),
-      () => f.t.mutation(declineAssignmentRevision, { revisionId: gone.goneRevisionId }),
+      () => f.t.mutation(declineAssignmentRevision, { revisionId: realRevisionId, reason: 'no' }),
+      () => f.t.mutation(declineAssignmentRevision, { revisionId: gone.goneRevisionId, reason: 'no' }),
     ],
     [
       () => f.t.mutation(removeAssignment, { assignmentId: f.assignmentId }),

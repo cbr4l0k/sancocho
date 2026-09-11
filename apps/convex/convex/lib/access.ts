@@ -309,6 +309,100 @@ export type ProviderPrincipal = AuthenticatedUser & {
 export type Principal = MemberPrincipal | ProviderPrincipal;
 
 /**
+ * Principal shape for a Provider DIRECTORY row, where no Project id is in
+ * hand. This deliberately carries no capability set: it proves only MAY-see
+ * #1, not authority to perform any Project-scoped operation.
+ */
+export type ProviderRowPrincipal =
+  | MemberPrincipal
+  | (AuthenticatedUser & {
+      kind: 'provider';
+      providerId: Id<'providers'>;
+      providerOrganizationId: Id<'organizations'>;
+    });
+
+/**
+ * Resolves access to one Provider directory row.
+ *
+ * The member arm is ordinary ownership. The Provider arm answers the distinct
+ * no-Project question from docs/provider-access.md: does an Organization the
+ * caller belongs to hold a live grant naming this exact Provider row? The
+ * candidate is still passed through `grantConfersAccess`, so claim, archival,
+ * Project ownership and grant status cannot drift from the main Project gate.
+ */
+/** Bounds the MAY-see #1 walk: Projects one coordinator granted one firm. */
+const maxProviderRowGrantsScanned = 256;
+
+export async function requirePrincipalForProviderRow(
+  ctx: UserAccessContext,
+  providerId: Id<'providers'>,
+): Promise<{ provider: Doc<'providers'>; principal: ProviderRowPrincipal }> {
+  const authenticated = await requireAuthenticatedUser(ctx);
+  const provider = await ctx.db.get(providerId);
+  if (provider === null) return notFoundOrInaccessible();
+
+  const owningMembership = await ctx.db
+    .query('organizationMemberships')
+    .withIndex('by_org_user', (q) =>
+      q.eq('organizationId', provider.organizationId).eq('userId', authenticated.user._id),
+    )
+    .unique();
+  if (owningMembership !== null) {
+    const organization = await ctx.db.get(provider.organizationId);
+    if (organization === null) return notFoundOrInaccessible();
+    return {
+      provider,
+      principal: {
+        kind: 'member',
+        ...authenticated,
+        membership: owningMembership,
+        organization,
+      },
+    };
+  }
+
+  const memberships = await ctx.db
+    .query('organizationMemberships')
+    .withIndex('by_user', (q) => q.eq('userId', authenticated.user._id))
+    .collect();
+  for (const membership of memberships) {
+    // Every grant this membership holds on this Provider row, not just the
+    // first: one stale or corrupt grant must not hide a live one behind it.
+    // Bounded by how many Projects one coordinator has granted one firm.
+    const grants = await ctx.db
+      .query('providerAccessGrants')
+      .withIndex('by_providerOrganization_provider_status', (q) =>
+        q
+          .eq('providerOrganizationId', membership.organizationId)
+          .eq('providerId', provider._id)
+          .eq('status', 'active'),
+      )
+      .take(maxProviderRowGrantsScanned);
+    for (const grant of grants) {
+      const project = await ctx.db.get(grant.projectId);
+      if (project === null) continue;
+      const provenProvider = await grantConfersAccess(ctx, {
+        grant,
+        project,
+        providerOrganizationId: membership.organizationId,
+        expectedProviderId: provider._id,
+      });
+      if (provenProvider === null) continue;
+      return {
+        provider: provenProvider,
+        principal: {
+          kind: 'provider',
+          ...authenticated,
+          providerId: provenProvider._id,
+          providerOrganizationId: membership.organizationId,
+        },
+      };
+    }
+  }
+  return notFoundOrInaccessible();
+}
+
+/**
  * THE GATE. The single place either principal arm is resolved (#71).
  *
  * `identity → app user → principal (member | provider grant) → capability →

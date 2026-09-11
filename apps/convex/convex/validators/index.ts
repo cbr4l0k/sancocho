@@ -294,6 +294,33 @@ export const providerDocValidator = v.object({
   claimState: providerClaimStateValidator,
 });
 
+/**
+ * The Provider arm may identify the directory row that represents it, but it
+ * may not receive coordinator-private commentary, tax data, search internals,
+ * or the claim edge. Derived by subtraction so the public union stays tied to
+ * the stored Provider schema.
+ */
+const {
+  notes: _providerSelfHiddenNotes,
+  taxId: _providerSelfHiddenTaxId,
+  searchText: _providerSelfHiddenSearchText,
+  linkedOrganizationId: _providerSelfHiddenLinkedOrganizationId,
+  ...providerSelfFields
+} = providerFields;
+
+export const providerSelfDocValidator = v.object({
+  _id: v.id('providers'),
+  _creationTime: v.number(),
+  ...providerSelfFields,
+  claimState: providerClaimStateValidator,
+});
+
+/** The published get-by-id contract across the member and Provider arms. */
+export const anyArmProviderDocValidator = v.union(
+  providerDocValidator,
+  providerSelfDocValidator,
+);
+
 /** Shared persisted and returned shape for coordinator-owned Rate Cards. */
 export const rateCardFields = {
   organizationId: v.id('organizations'),
@@ -451,10 +478,61 @@ export const assignmentRevisionFields = {
   unitAmount: v.number(),
   currency: currencyValidator,
   lineTotal: v.number(),
+  // Optional is deliberate: rows predating #88 have no author, and because a
+  // Provider had no revision write path then, absence means coordinator-authored
+  // by construction. That preserves the security meaning without a backfill.
+  proposedByUserId: v.optional(v.id('users')),
+  proposedOnBehalfOfProviderId: v.optional(v.id('providers')),
   acceptedAt: v.optional(v.number()),
   acceptedByUserId: v.optional(v.id('users')),
   declinedReason: v.optional(v.string()),
 };
+
+/**
+ * Execution milestones are code-owned and intentionally do not mirror the
+ * Assignment status machine. A checkpoint records where execution got to; it
+ * never transitions or defines status on its own.
+ */
+export const assignmentCheckpointKindValidator = v.union(
+  v.literal('arrivedAtOrigin'),
+  v.literal('departedOrigin'),
+  v.literal('arrivedAtDestination'),
+);
+
+export const assignmentCheckpointFields = {
+  assignmentId: v.id('assignments'),
+  organizationId: v.id('organizations'),
+  kind: assignmentCheckpointKindValidator,
+  occurredAt: v.number(),
+  note: v.optional(v.string()),
+  actorUserId: v.id('users'),
+  onBehalfOfProviderId: v.optional(v.id('providers')),
+};
+
+export const assignmentCheckpointDocValidator = v.object({
+  _id: v.id('assignmentCheckpoints'),
+  _creationTime: v.number(),
+  ...assignmentCheckpointFields,
+});
+
+// A Provider may read execution history but not a coordinator member id
+// (may-not-see #11). Provider attribution remains visible through the Provider
+// id the caller already holds.
+const {
+  actorUserId: _providerHiddenCheckpointActorUserId,
+  ...providerAssignmentCheckpointFields
+} = assignmentCheckpointFields;
+
+export const providerAssignmentCheckpointDocValidator = v.object({
+  _id: v.id('assignmentCheckpoints'),
+  _creationTime: v.number(),
+  ...providerAssignmentCheckpointFields,
+});
+
+export const anyArmAssignmentCheckpointDocValidator = v.union(
+  assignmentCheckpointDocValidator,
+  providerAssignmentCheckpointDocValidator,
+);
 
 export const assignmentRevisionDocValidator = v.object({
   _id: v.id('assignmentRevisions'),
@@ -464,10 +542,11 @@ export const assignmentRevisionDocValidator = v.object({
 
 /**
  * The Provider arm's revision shape: the firm's own commercial record, minus
- * the three columns that point back into the coordinator's side of it.
+ * the four columns that point back into the coordinator's side of it.
  * `rateCardVersionId` and `rateLineId` name the card and the exact cell a rate
  * was resolved from, which `docs/provider-access.md` may-not-see #8 forbids;
- * `acceptedByUserId` names a coordinator member (may-not-see #11). None can be
+ * `acceptedByUserId` and `proposedByUserId` name coordinator members
+ * (may-not-see #11). None can be
  * dereferenced by a Provider, but an id discloses on its own — two Assignments
  * sharing a `rateLineId` prove they were priced off the same line.
  *
@@ -482,6 +561,7 @@ const {
   rateCardVersionId: _providerHiddenRateCardVersionId,
   rateLineId: _providerHiddenRateLineId,
   acceptedByUserId: _providerHiddenAcceptedByUserId,
+  proposedByUserId: _providerHiddenProposedByUserId,
   ...providerAssignmentRevisionFields
 } = assignmentRevisionFields;
 
@@ -895,6 +975,8 @@ export const auditActionValidator = v.union(
   v.literal('assignmentRevision.accepted'),
   v.literal('assignmentRevision.declined'),
   v.literal('assignmentRevision.superseded'),
+  v.literal('assignmentRevision.countered'),
+  v.literal('assignmentCheckpoint.recorded'),
   // The coordinator-side lifecycle of the second principal arm. Both are member
   // operations: a Provider principal can never reach either (issue #71).
   v.literal('providerAccessGrant.granted'),
@@ -947,6 +1029,7 @@ export const auditEntityTypeValidator = v.union(
   v.literal('rateCardVersion'),
   v.literal('assignment'),
   v.literal('assignmentRevision'),
+  v.literal('assignmentCheckpoint'),
   v.literal('providerAccessGrant'),
   v.literal('providerClaimInvitation'),
   v.literal('vehicleClass'),

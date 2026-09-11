@@ -752,6 +752,8 @@ const enUS = {
       assignmentRevision_accepted: 'Assignment revision accepted',
       assignmentRevision_declined: 'Assignment revision declined',
       assignmentRevision_superseded: 'Assignment revision superseded',
+      assignmentRevision_countered: 'Assignment revision countered',
+      assignmentCheckpoint_recorded: 'Assignment checkpoint recorded',
       providerAccessGrant_granted: 'Provider access granted',
       providerAccessGrant_revoked: 'Provider access revoked',
       providerClaim_invited: 'Provider claim invited',

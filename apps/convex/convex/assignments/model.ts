@@ -19,13 +19,14 @@ import {
 import { assertUsableProvider } from '../providers/model';
 import { resolveRateForAssignment } from '../rateCards/model';
 import { assertProjectAcceptsServiceWrites, assertServiceWritable } from '../services/model';
-import type { rateModalityValidator } from '../validators';
+import type { assignmentCheckpointKindValidator, rateModalityValidator } from '../validators';
 import { assertUsableVehicleClass } from '../vehicles/classes';
 import { assertAssignableFleetVehicle } from '../vehicles/fleet';
 import { assignmentNet, lineTotal } from './costing';
 import { executionStatuses, transitionExecution, type ExecutionStatus } from './execution';
 
 type RateModality = typeof rateModalityValidator.type;
+type AssignmentCheckpointKind = typeof assignmentCheckpointKindValidator.type;
 
 /** The enforced ceiling that makes a Service's complete child read bounded. */
 export const maxAssignmentsPerService = 200;
@@ -38,6 +39,19 @@ const maxNotExecutedReasonLength = 1000;
 const maxDispatchPageSize = 200;
 const maxDriverPhoneLength = 64;
 const maxAdditionalDetailLength = 2000;
+const maxCheckpointNoteLength = 2000;
+/**
+ * Ceilings on the two tables an EXTERNAL principal can append to.
+ *
+ * `maxAssignmentsPerService` already establishes the pattern for a coordinator's
+ * own writes; these matter more, because a granted firm writing into the
+ * coordinator's tenant is the one writer the coordinator does not control. They
+ * also make the checkpoint reference guard bounded by construction, and they are
+ * what lets `docs/provider-access.md` keep calling the checkpoint capability
+ * "bounded".
+ */
+const maxRevisionsPerAssignment = 200;
+const maxCheckpointsPerAssignment = 500;
 
 type AssignmentAccess = {
   assignment: Doc<'assignments'>;
@@ -339,6 +353,18 @@ export async function removeAssignment(
   if (revision !== null) {
     return invalidInput('assignmentRemoveBlocked', 'Assignments with negotiation history cannot be removed');
   }
+  // Checkpoints are the SECOND child table (#88) and the guard has to see them
+  // too. `by_assignment_occurredAt` is their only index and every read goes
+  // through `requireAssignmentAccess`, so a checkpoint left behind by a deleted
+  // Assignment is unreadable and undeletable forever. Same generic code as the
+  // revision case, so the refusal discloses nothing about which table held it.
+  const checkpoint = await ctx.db
+    .query('assignmentCheckpoints')
+    .withIndex('by_assignment_occurredAt', (q) => q.eq('assignmentId', assignment._id))
+    .first();
+  if (checkpoint !== null) {
+    return invalidInput('assignmentRemoveBlocked', 'Assignments with negotiation history cannot be removed');
+  }
   await recordAuditEvent(ctx, {
     organizationId: assignment.organizationId,
     ...auditActorFor(principal),
@@ -384,12 +410,9 @@ export async function createAssignmentRevision(
 
   const { service, project } = await loadAssignmentService(ctx, assignment);
   assertServiceWritable(service, project);
-  const latest = await ctx.db
-    .query('assignmentRevisions')
-    .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignment._id))
-    .order('desc')
-    .first();
-  const revisionNumber = (latest?.revisionNumber ?? 0) + 1;
+  await assertRevisionCapacity(ctx, assignment._id);
+  const revisionNumber = await nextAssignmentRevisionNumber(ctx, assignment._id);
+  const author = auditActorFor(principal);
   const revisionId = await ctx.db.insert('assignmentRevisions', {
     organizationId: assignment.organizationId,
     assignmentId: assignment._id,
@@ -403,6 +426,10 @@ export async function createAssignmentRevision(
     unitAmount: rate.unitAmount,
     currency: rate.currency,
     lineTotal: resolvedLineTotal,
+    proposedByUserId: author.actorUserId,
+    ...(author.onBehalfOfProviderId === undefined
+      ? {}
+      : { proposedOnBehalfOfProviderId: author.onBehalfOfProviderId }),
   });
   await recordAuditEvent(ctx, {
     organizationId: assignment.organizationId,
@@ -415,6 +442,82 @@ export async function createAssignmentRevision(
   return revisionId;
 }
 
+
+/**
+ * Appends a Provider-authored alternative without mutating the offer it answers.
+ * Keeping the countered draft open is deliberate: the Provider can still accept
+ * the coordinator's original offer, and concurrent counters can both append
+ * distinct alternatives. A counter never becomes current by itself; only the
+ * existing acceptance transaction can install one.
+ *
+ * `vehicleClassId` is derived from the answered revision because Providers
+ * cannot browse that catalogue and therefore have no class id they may choose.
+ */
+export async function counterAssignmentRevision(
+  ctx: MutationCtx,
+  args: {
+    revisionId: Id<'assignmentRevisions'>;
+    quantity: number;
+    modality: RateModality;
+  },
+): Promise<Id<'assignmentRevisions'>> {
+  const { revision, assignment, principal } = await requireRevisionAccess(
+    ctx,
+    args.revisionId,
+    'respondToTerms',
+  );
+  if (principal.kind !== 'provider') return notFoundOrInaccessible();
+  if (revision.status !== 'draft') {
+    return invalidInput('assignmentRevisionNotDraft', 'Only draft Assignment Revisions can be countered');
+  }
+  assertQuantity(args.quantity);
+  const { service, project } = await loadAssignmentService(ctx, assignment);
+  assertServiceWritable(service, project);
+
+  // The same usability gates the coordinator's proposal path applies. The class
+  // is inherited rather than chosen, but an archived class must not be re-priced
+  // through the back door simply because it was live when first offered.
+  await assertUsableProvider(ctx, assignment.providerId, assignment.organizationId);
+  await assertUsableVehicleClass(ctx, revision.vehicleClassId, assignment.organizationId);
+  // The card and class come from the revision being answered (I4). The caller
+  // cannot name either the coordinator's card or its grid cell.
+  const rate = await resolveRateForAssignment(ctx, {
+    rateCardVersionId: revision.rateCardVersionId,
+    providerId: assignment.providerId,
+    vehicleClassId: revision.vehicleClassId,
+    modality: args.modality,
+  });
+  assertMinorUnits(rate.unitAmount);
+  await assertRevisionCapacity(ctx, assignment._id);
+  const revisionNumber = await nextAssignmentRevisionNumber(ctx, assignment._id);
+  const author = auditActorFor(principal);
+  const counterId = await ctx.db.insert('assignmentRevisions', {
+    organizationId: assignment.organizationId,
+    assignmentId: assignment._id,
+    revisionNumber,
+    status: 'draft',
+    vehicleClassId: revision.vehicleClassId,
+    modality: args.modality,
+    quantity: args.quantity,
+    rateCardVersionId: revision.rateCardVersionId,
+    rateLineId: rate.rateLineId,
+    unitAmount: rate.unitAmount,
+    currency: rate.currency,
+    lineTotal: lineTotal(rate.unitAmount, args.quantity),
+    proposedByUserId: author.actorUserId,
+    proposedOnBehalfOfProviderId: principal.providerId,
+  });
+  await recordAuditEvent(ctx, {
+    organizationId: assignment.organizationId,
+    ...author,
+    action: 'assignmentRevision.countered',
+    entityType: 'assignmentRevision',
+    entityId: counterId,
+    metadata: { assignmentId: assignment._id, versionNumber: revisionNumber },
+  });
+  return counterId;
+}
+
 export async function acceptAssignmentRevision(
   ctx: MutationCtx,
   revisionId: Id<'assignmentRevisions'>,
@@ -422,12 +525,22 @@ export async function acceptAssignmentRevision(
   const { revision, assignment, principal } = await requireRevisionAccess(
     ctx,
     revisionId,
-    'writeAssignmentTerms',
+    'respondToTerms',
   );
   const { service, project } = await loadAssignmentService(ctx, assignment);
   assertServiceWritable(service, project);
   if (revision.status !== 'draft') {
     return invalidInput('assignmentRevisionNotDraft', 'Only draft Assignment Revisions can be accepted');
+  }
+  // Security boundary: a Provider may answer a coordinator-authored offer but
+  // may never ratify terms proposed by a Provider principal (including itself).
+  // Legacy rows without an author predate Provider writes and are therefore
+  // coordinator-authored by construction.
+  if (principal.kind === 'provider' && revision.proposedOnBehalfOfProviderId !== undefined) {
+    return invalidInput(
+      'assignmentRevisionProviderAcceptanceForbidden',
+      'A Provider cannot accept a Provider-authored Assignment Revision',
+    );
   }
 
   // Adjustments were validated against the PREVIOUS agreed amount, so cheaper
@@ -448,6 +561,25 @@ export async function acceptAssignmentRevision(
     )
     .unique();
   assertCurrentRevisionMirror(assignment, accepted);
+  // Several drafts may be open at once, deliberately: a coordinator offering
+  // "two vans, or one coach" is one Assignment with two live alternatives, and
+  // `declineAssignmentRevision` is how either side withdraws one. Retiring older
+  // drafts automatically on each new proposal would have removed that, and two
+  // existing tests depend on it.
+  //
+  // Negotiation only moves FORWARD. Without this, every superseded agreement
+  // leaves its lower-numbered predecessors sitting in `draft` as live re-entry
+  // points: the counterparty could accept an abandoned coordinator offer long
+  // after a corrected one was agreed, walking `currentRevisionId` backwards and
+  // re-pricing the Assignment at a figure the coordinator had already replaced.
+  // No stored amount is mutated, so the letter of I10 survives while its
+  // purpose — the coordinator decides what a movement costs — does not.
+  if (accepted !== null && revision.revisionNumber < accepted.revisionNumber) {
+    return invalidInput(
+      'assignmentRevisionOutdated',
+      'Assignment Revisions older than the current agreement cannot be accepted',
+    );
+  }
   if (accepted !== null) {
     // Commercial columns are immutable. Status is intentionally NOT frozen:
     // accepted -> superseded is the mechanism that installs replacement terms.
@@ -488,7 +620,7 @@ export async function declineAssignmentRevision(
   const { revision, assignment, principal } = await requireRevisionAccess(
     ctx,
     args.revisionId,
-    'writeAssignmentTerms',
+    'respondToTerms',
   );
   const { service, project } = await loadAssignmentService(ctx, assignment);
   assertServiceWritable(service, project);
@@ -498,7 +630,7 @@ export async function declineAssignmentRevision(
   const reason = validateDeclinedReason(args.reason);
   await ctx.db.patch(revision._id, {
     status: 'declined',
-    ...(reason === undefined ? {} : { declinedReason: reason }),
+    declinedReason: reason,
   });
   await recordAuditEvent(ctx, {
     organizationId: assignment.organizationId,
@@ -508,6 +640,86 @@ export async function declineAssignmentRevision(
     entityId: revision._id,
     metadata: { assignmentId: assignment._id, versionNumber: revision.revisionNumber },
   });
+}
+
+/**
+ * Appends a timestamped execution milestone. Checkpoints intentionally do not
+ * transition Assignment status: #69's execution state machine remains the one
+ * source of truth, and this row is only an attributed note on that history.
+ */
+export async function recordAssignmentCheckpoint(
+  ctx: MutationCtx,
+  args: {
+    assignmentId: Id<'assignments'>;
+    kind: AssignmentCheckpointKind;
+    occurredAt: number;
+    note?: string;
+  },
+): Promise<Id<'assignmentCheckpoints'>> {
+  const { assignment, principal } = await requireAssignmentAccess(
+    ctx,
+    args.assignmentId,
+    'writeExecution',
+  );
+  const { project } = await loadAssignmentService(ctx, assignment);
+  // Only the Project freeze applies, exactly as `transitionAssignmentExecution`
+  // decided for terminal transitions: a driver who arrives after the coordinator
+  // closed out the Service still arrived, and refusing the record does not undo
+  // the movement — it only loses it. Checkpoints are observations, never status.
+  assertProjectAcceptsServiceWrites(project);
+  if (!Number.isSafeInteger(args.occurredAt) || args.occurredAt < 0) {
+    return invalidInput(
+      'assignmentCheckpointOccurredAtInvalid',
+      'Checkpoint occurredAt must be a non-negative integer timestamp',
+    );
+  }
+  // `by_assignment_occurredAt` is the only ordering these rows have, so an
+  // unbounded stamp lets one checkpoint sit at the top or bottom of every page
+  // forever. A year either side of now is far wider than any real correction and
+  // still keeps the ordering meaningful.
+  const checkpointWindowMs = 365 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  if (args.occurredAt < now - checkpointWindowMs || args.occurredAt > now + checkpointWindowMs) {
+    return invalidInput(
+      'assignmentCheckpointOccurredAtInvalid',
+      'Checkpoint occurredAt must fall within a year of now',
+    );
+  }
+  const note = validateCheckpointNote(args.note);
+  // The granted firm is an external writer into the coordinator's tenant, and
+  // this is the one table it can append to freely. Bounded before insert, in the
+  // same mutation, so the promise `docs/provider-access.md` makes about
+  // "bounded checkpoints" is enforced rather than described.
+  const existing = await ctx.db
+    .query('assignmentCheckpoints')
+    .withIndex('by_assignment_occurredAt', (q) => q.eq('assignmentId', assignment._id))
+    .take(maxCheckpointsPerAssignment);
+  if (existing.length >= maxCheckpointsPerAssignment) {
+    return invalidInput(
+      'assignmentCheckpointLimitReached',
+      `An Assignment may carry at most ${maxCheckpointsPerAssignment} checkpoints`,
+    );
+  }
+  const actor = auditActorFor(principal);
+  const checkpointId = await ctx.db.insert('assignmentCheckpoints', {
+    assignmentId: assignment._id,
+    organizationId: assignment.organizationId,
+    kind: args.kind,
+    occurredAt: args.occurredAt,
+    ...(note === undefined ? {} : { note }),
+    ...actor,
+  });
+  // Notes and driver phone numbers never enter audit metadata. The checkpoint
+  // id plus code-owned kind is enough to find the attributed source row.
+  await recordAuditEvent(ctx, {
+    organizationId: assignment.organizationId,
+    ...actor,
+    action: 'assignmentCheckpoint.recorded',
+    entityType: 'assignmentCheckpoint',
+    entityId: checkpointId,
+    metadata: { assignmentId: assignment._id, type: args.kind },
+  });
+  return checkpointId;
 }
 
 /**
@@ -557,7 +769,7 @@ function providerAssignmentView(assignment: Doc<'assignments'>): ProviderAssignm
 
 type ProviderRevisionView = Omit<
   Doc<'assignmentRevisions'>,
-  'rateCardVersionId' | 'rateLineId' | 'acceptedByUserId'
+  'rateCardVersionId' | 'rateLineId' | 'acceptedByUserId' | 'proposedByUserId'
 >;
 
 function providerRevisionView(revision: Doc<'assignmentRevisions'>): ProviderRevisionView {
@@ -574,8 +786,30 @@ function providerRevisionView(revision: Doc<'assignmentRevisions'>): ProviderRev
     unitAmount: revision.unitAmount,
     currency: revision.currency,
     lineTotal: revision.lineTotal,
+    ...(revision.proposedOnBehalfOfProviderId === undefined
+      ? {}
+      : { proposedOnBehalfOfProviderId: revision.proposedOnBehalfOfProviderId }),
     ...(revision.acceptedAt === undefined ? {} : { acceptedAt: revision.acceptedAt }),
     ...(revision.declinedReason === undefined ? {} : { declinedReason: revision.declinedReason }),
+  };
+}
+
+type ProviderCheckpointView = Omit<Doc<'assignmentCheckpoints'>, 'actorUserId'>;
+
+function providerCheckpointView(
+  checkpoint: Doc<'assignmentCheckpoints'>,
+): ProviderCheckpointView {
+  return {
+    _id: checkpoint._id,
+    _creationTime: checkpoint._creationTime,
+    assignmentId: checkpoint.assignmentId,
+    organizationId: checkpoint.organizationId,
+    kind: checkpoint.kind,
+    occurredAt: checkpoint.occurredAt,
+    ...(checkpoint.note === undefined ? {} : { note: checkpoint.note }),
+    ...(checkpoint.onBehalfOfProviderId === undefined
+      ? {}
+      : { onBehalfOfProviderId: checkpoint.onBehalfOfProviderId }),
   };
 }
 
@@ -606,6 +840,21 @@ export async function listAssignmentRevisions(
     .paginate(args.paginationOpts);
   return principal.kind === 'provider'
     ? { ...page, page: page.page.map(providerRevisionView) }
+    : page;
+}
+
+export async function listAssignmentCheckpoints(
+  ctx: QueryCtx,
+  args: { assignmentId: Id<'assignments'>; paginationOpts: PaginationOptions },
+): Promise<PaginationResult<Doc<'assignmentCheckpoints'> | ProviderCheckpointView>> {
+  const { assignment, principal } = await requireAssignmentAccess(ctx, args.assignmentId, 'readAssignment');
+  const page = await ctx.db
+    .query('assignmentCheckpoints')
+    .withIndex('by_assignment_occurredAt', (q) => q.eq('assignmentId', assignment._id))
+    .order('desc')
+    .paginate(args.paginationOpts);
+  return principal.kind === 'provider'
+    ? { ...page, page: page.page.map(providerCheckpointView) }
     : page;
 }
 
@@ -888,6 +1137,39 @@ function assertQuantity(quantity: number): void {
   }
 }
 
+/** One numbering implementation shared by coordinator proposals and counters. */
+/**
+ * Refuses once the Assignment's revision history reaches its ceiling. Read
+ * before every insert, in the same mutation, so the bound holds under OCC.
+ */
+async function assertRevisionCapacity(
+  ctx: MutationCtx,
+  assignmentId: Id<'assignments'>,
+): Promise<void> {
+  const existing = await ctx.db
+    .query('assignmentRevisions')
+    .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignmentId))
+    .take(maxRevisionsPerAssignment);
+  if (existing.length >= maxRevisionsPerAssignment) {
+    return invalidInput(
+      'assignmentRevisionLimitReached',
+      `An Assignment may carry at most ${maxRevisionsPerAssignment} revisions`,
+    );
+  }
+}
+
+async function nextAssignmentRevisionNumber(
+  ctx: MutationCtx,
+  assignmentId: Id<'assignments'>,
+): Promise<number> {
+  const latest = await ctx.db
+    .query('assignmentRevisions')
+    .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignmentId))
+    .order('desc')
+    .first();
+  return (latest?.revisionNumber ?? 0) + 1;
+}
+
 function validateNotes(notes: string | undefined): string | undefined {
   if (notes === undefined) return undefined;
   const trimmed = notes.trim();
@@ -897,11 +1179,26 @@ function validateNotes(notes: string | undefined): string | undefined {
   return trimmed;
 }
 
-function validateDeclinedReason(reason: string | undefined): string | undefined {
-  if (reason === undefined) return undefined;
+function validateDeclinedReason(reason: string | undefined): string {
+  if (reason === undefined || reason.trim() === '') {
+    return invalidInput('assignmentDeclinedReasonRequired', 'A declined revision requires a reason');
+  }
   const trimmed = reason.trim();
   if (trimmed.length > maxDeclinedReasonLength) {
     return invalidInput('assignmentDeclinedReasonTooLong', `Declined reason must not exceed ${maxDeclinedReasonLength} characters`);
+  }
+  return trimmed;
+}
+
+
+function validateCheckpointNote(note: string | undefined): string | undefined {
+  if (note === undefined) return undefined;
+  const trimmed = note.trim();
+  if (trimmed.length > maxCheckpointNoteLength) {
+    return invalidInput(
+      'assignmentCheckpointNoteTooLong',
+      `Checkpoint note must not exceed ${maxCheckpointNoteLength} characters`,
+    );
   }
   return trimmed;
 }

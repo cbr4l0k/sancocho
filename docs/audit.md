@@ -43,6 +43,10 @@ per-action map would duplicate what the call sites already state while adding a 
 to edit for every new action. The property that matters (a key not on the list can never reach
 the database) holds either way.
 
+Assignment checkpoints audit only the Assignment id and their code-owned kind. Their optional
+note and all driver phone numbers stay on the protected domain rows and are never copied into
+audit metadata; `auditMetadataKeys` remains the closed runtime allowlist that enforces this.
+
 `changedFields`, `clonedFromVersion`, `fieldCount`, `fieldDefinitionId`, `key`, `name`,
 `position`, `previousRole`, `previousStatus`, `serviceKindVersionId`, `role`, `slug`,
 `sourceServiceId`, `status`, `targetServiceId`, `type`, `versionNumber`.

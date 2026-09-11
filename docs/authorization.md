@@ -186,7 +186,8 @@ Admins do everything else.
 | `projects.createProject`, `updateProject`, `archiveProject` | planner | Archived projects are read-only |
 | `projects.getProject`, `listProjects` | viewer | |
 | `providers.createProvider`, `updateProvider`, `archiveProvider`, `deleteProvider` | admin | Deletion is blocked while a claim or any access grant references the Provider |
-| `providers.getProvider`, `listProviders` | viewer | Provider Principals are refused: the coordinator's directory is not browsable by an outside firm |
+| `providers.getProvider` | viewer | A Provider Principal may read only the row named by one of its live grants; the response omits coordinator-private/internal columns |
+| `providers.listProviders` | viewer | Provider Principals are refused: the coordinator's directory is not browsable by an outside firm |
 | `providers.grantProjectAccessToProvider`, `revokeProviderAccessGrant` | **admin** | Same floor as editing the directory that names the firm. Provider Principals cannot reach either (non-transitivity) |
 | `providers.listProjectProviderAccessGrants` | **admin** | Includes revoked rows; there is no provider-side counterpart, which would disclose which other firms were engaged |
 | `events.createEvent`, `updateEvent`, `changeEventStatus`, `archiveEvent`, `deleteEvent` | planner | Completed projects accept no new Events; archived projects freeze Event writes; Events must be archived and unreferenced before deletion |

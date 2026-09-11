@@ -7,24 +7,19 @@ the `providerAccessGrants` table, the closed capability set and the single gate
 `requirePrincipalForProject(ctx, projectId, intent)` in
 `apps/convex/convex/lib/access.ts`, which is now the only place either arm is resolved.
 **#86 landed the verified claim flow** described below, #67 landed the Assignment layer,
-and **#87 landed the portal read surface and the semantic projection**. Still missing:
-provider writes (#88), and MAY-see #1 below.
+**#87 landed the portal read surface and the semantic projection**, and **#88 landed
+Provider writes plus MAY-see #1**.
 
-The two Provider read gates named for extension, `requireProviderAccess` and
-`requireProviderCatalogueAccess` in `apps/convex/convex/providers/model.ts`, deliberately
-still refuse the provider arm. Admitting a Provider Principal there is only half a change:
-the gate centralizes AUTHORIZATION, not SHAPING, and `getProvider` publishes the whole
-stored row — `notes`, `taxId`, `searchText`, `linkedOrganizationId` — which is correct for
-a member of the owning tenant and wrong for the firm the row is about.
+`requireProviderAccess` now admits the Provider arm only for its own row when an Organization
+the caller belongs to holds a live grant naming it. The resolution lives in `lib/access.ts`
+and reuses `grantConfersAccess`; `getProvider` separately shapes that arm to omit `notes`,
+`taxId`, `searchText`, and `linkedOrganizationId`. `requireProviderCatalogueAccess` remains
+member-only, so the directory is not browsable.
 
-**This moved from #87 to #88.** #87's own scope list never carried it, and the work is not
-a projection but a third resolution path: `requireProviderAccess` resolves a Provider row
-with no Project in hand, so the provider arm there needs "does this caller's Organization
-hold a live grant naming this Provider row", which is a different question from the one
-`requirePrincipalForProject` answers. It belongs beside #88's other provider-side surfaces
-rather than bolted onto the read surface. The portal is usable without it: the Assignment
-detail carries the Service projection, so the WORK is legible; only the engagement list
-is identified by ids alone. See `docs/deviations.md`.
+This moved from #87 to #88 because it is not a projection but a third resolution path:
+`requireProviderAccess` resolves a Provider row with no Project in hand, so its Provider arm
+answers a different question from `requirePrincipalForProject` while sharing the same live-
+grant predicate.
 
 This document records the target so that #82 (the rename), #92 (the Event layer), #71 (the
 principal union and grants), #86 (provider accounts), #87 (the portal) and #88 (provider
@@ -139,6 +134,10 @@ configuration.
    superseded terms for its own supply lines, which is its own commercial record.
 5. The execution state of those Assignments: dispatch status, driver, vehicle, plate, and
    the timestamped `assignmentCheckpoints` it is entitled to write.
+   Checkpoint kinds are the closed set `arrivedAtOrigin`, `departedOrigin`, and
+   `arrivedAtDestination`: the three portable milestones needed for a transport leg without
+   inventing a second workflow. They are attributed timestamped notes only; #69's Assignment
+   execution status machine remains the sole definition of execution state.
 6. The **code-owned semantic projection** of the Service each granted Assignment links to
    — the enumerated operational fields defined in §"Visibility is a code-owned semantic
    projection" below, and no other field of that Service.
@@ -211,6 +210,16 @@ That is the correct side to be wrong on. A missing field is an inconvenience tha
 surfaces immediately and is fixed in one place; an over-shared field is a cross-tenant
 disclosure that surfaces after the festival, if ever. This is the same reasoning as I8:
 structured flexibility, no escape hatches, and no tenant-configurable disclosure rule.
+
+### A declined revision's reason is read by the counterparty
+
+#88 made `declinedReason` mandatory on both arms. MAY-see #4 already gives a Provider the
+declined terms for its own supply lines, and the reason travels with them — so a coordinator
+planner declining a firm's counter is now **required** to author text that firm will read.
+
+That is deliberate: a decline that explains itself is the point of the field. It is recorded
+here so nobody mistakes it for an internal note. Anything the coordinator does not want the
+firm to read does not belong in `declinedReason`.
 
 ## Grants are non-transitive
 
@@ -303,7 +312,7 @@ Sequencing:
 | #67 | `stage:O` | `assignments`, and the thin `requireAssignmentAccess` wrapper over that gate |
 | #86 | `stage:P` | ✅ Provider Organization accounts: invite, verified claim, single-shot link, revocation |
 | #87 | `stage:P` | The portal read surface and the one definition of the semantic projection |
-| #88 | `stage:P` | Provider writes: accept / counter / decline, checkpoints |
+| #88 | `stage:P` | ✅ Provider writes: accept / counter / decline, checkpoints, MAY-see #1 |
 
 #71 lands **both** arms of the union before any provider-facing surface exists. A
 one-armed union is only a rename and does not force call sites to handle the security
