@@ -37,6 +37,7 @@ import type * as lib_authAdapter from "../lib/authAdapter.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_names from "../lib/names.js";
+import type * as lib_providerProjection from "../lib/providerProjection.js";
 import type * as lib_roles from "../lib/roles.js";
 import type * as lib_search from "../lib/search.js";
 import type * as lib_seedGuard from "../lib/seedGuard.js";
@@ -120,6 +121,7 @@ declare const fullApi: ApiFromModules<{
   "lib/errors": typeof lib_errors;
   "lib/money": typeof lib_money;
   "lib/names": typeof lib_names;
+  "lib/providerProjection": typeof lib_providerProjection;
   "lib/roles": typeof lib_roles;
   "lib/search": typeof lib_search;
   "lib/seedGuard": typeof lib_seedGuard;
