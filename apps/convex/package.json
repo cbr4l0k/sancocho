@@ -15,6 +15,10 @@
     "./errors": {
       "types": "./convex/lib/errors.ts",
       "default": "./convex/lib/errors.ts"
+    },
+    "./assignments/execution": {
+      "types": "./convex/assignments/execution.ts",
+      "default": "./convex/assignments/execution.ts"
     }
   },
   "scripts": {

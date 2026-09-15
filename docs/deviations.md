@@ -240,12 +240,6 @@ a decision to stop rather than guess.
     second consumer. Execution and revision status labels remain under `portal.` until a
     coordinator surface consumes them, as recorded in gap 12.
 
-19. **#73's Rate Card list is filtered by Provider, not grouped by Provider.** A Provider's
-    cards can straddle a cursor boundary, so headings over the currently loaded page would make
-    each fragment look like a complete group. The list instead keeps a Provider column and sends
-    the selected Provider id to the indexed paginated query; it never groups an incomplete page
-    in the browser.
-
 17. **#73's Rate Card list shows no Version count, and groups by nothing.** The issue asks for a
     list "grouped by Provider, showing current published Version and Version count". No public
     query publishes a count — `listRateCardVersions` is paginated with no total, so counting per row
@@ -262,6 +256,41 @@ a decision to stop rather than guess.
     exponent would also have changed `parseMoneyInput` and the appearance of the money surfaces
     already shipped in #88 and #90 — a decision worth making on its own evidence rather than as a
     side effect of a console issue, so `docs/rates.md`'s deferral stands unamended.
+
+19. **#74 gives Assignment pricing its own intent at the `planner` floor, widening a recorded
+    `admin`-only decision.** `docs/authorization.md` said public rate reads are organization
+    configuration and admin-gated, and that Assignment authoring uses the domain-internal
+    resolver "only after its Project gate has authorized the enclosing write". The console cannot
+    obey #74's central rule — resolve and display the rate live, never let a user type it —
+    unless the role that authors Assignments can also read one, and `writeAssignmentTerms` floors
+    at `planner`. `assignments.resolveAssignmentRate` therefore reads a single
+    (Provider, Class, modality) cell at `planner`, through a **separately named**
+    `readAssignmentPricing` intent rather than by borrowing the write intent, so the widening is
+    a word in the gate vocabulary instead of a side effect, and so the pricing floor can move
+    later without dragging authoring with it.
+
+    **Accepted consequence, stated rather than mitigated:** `listProviders` and
+    `listVehicleClasses` are viewer-floor and the modality union is closed, so a planner issuing
+    one call per combination can reconstruct the organization's *active published* rate grid.
+    A planner learns each cell anyway by assigning it, and the alternative is pricing blind. The
+    catalogue doors — browsing Cards, Versions, grids, drafts and retired Versions — remain
+    admin-only.
+
+20. **#74 returns pricing outcomes as values, not errors.** `resolveAssignmentRate` answers
+    `resolved`, `ambiguous` or `unpriceable` instead of throwing when no published Card prices a
+    cell. A missing rate is a configuration gap a planner can repair, not a permission event, and
+    a Convex query that throws reaches the console as a render-time error rather than a state the
+    form can hold selections through. Authorization and bad references still exit through the
+    generic refusal, so I9 is unaffected.
+
+21. **A Provider may have several active Rate Cards, and #74 refuses rather than choosing.**
+    `createRateCard` enforces no uniqueness on `(organization, provider)`, so two published Cards
+    can price the same cell at different amounts. Rather than picking one — which would make the
+    console decide a price, the one thing the issue forbids — the lookup returns `ambiguous` with
+    the competing Cards named, and the only remedy offered is retiring a published Version. The
+    `ambiguous` payload deliberately omits `rateLineId` so an ambiguous answer cannot be
+    submitted. Adding the uniqueness constraint was considered and deferred: it is a backend
+    policy change with a migration story, not a console issue's to make.
 
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization

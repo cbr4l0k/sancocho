@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
+import { findRateForAssignment } from '../convex/rateCards/model';
 import schema from '../convex/schema';
 import { modules } from './helpers';
 
@@ -415,6 +416,58 @@ test('resolveRate returns the generic error for an absent Class cell', async () 
     vehicleClassId: absentClassId,
     modality: 'disposition',
   })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('findRateForAssignment rejects a Rate Card whose organization disagrees with its Version', async () => {
+  const f = await publishedFixture('rate-cards-resolve-foreign-version-org');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Version organization',
+    slug: 'rate-cards-resolve-foreign-version-org-other',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.versionId, { organizationId: foreignOrganizationId }));
+
+  await expect(f.t.run((ctx) => findRateForAssignment(ctx, {
+    rateCardVersionId: f.versionId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  }))).resolves.toBeNull();
+});
+
+test('findRateForAssignment rejects a Provider owned by another organization', async () => {
+  const f = await publishedFixture('rate-cards-resolve-foreign-provider-org');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Provider organization',
+    slug: 'rate-cards-resolve-foreign-provider-org-other',
+  });
+  const foreignProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign Provider',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, { providerId: foreignProviderId }));
+
+  await expect(f.t.run((ctx) => findRateForAssignment(ctx, {
+    rateCardVersionId: f.versionId,
+    providerId: foreignProviderId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  }))).resolves.toBeNull();
+});
+
+test('findRateForAssignment rejects a Rate Line owned by another organization', async () => {
+  const f = await publishedFixture('rate-cards-resolve-foreign-line-org');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Rate Line organization',
+    slug: 'rate-cards-resolve-foreign-line-org-other',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateLineId, { organizationId: foreignOrganizationId }));
+
+  await expect(f.t.run((ctx) => findRateForAssignment(ctx, {
+    rateCardVersionId: f.versionId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  }))).resolves.toBeNull();
 });
 
 test('resolveRate returns the generic error for a foreign Class even when a matching line exists', async () => {

@@ -251,8 +251,21 @@ export type Capability =
  * The complete gate vocabulary. Commercial Assignment authoring is member-only
  * until #88 adds Provider response actions, so it is intentionally not part of
  * the Provider grant's closed `Capability` set.
+ *
+ * `readAssignmentPricing` (#74) is the second member-only intent. It exists as
+ * its own word rather than borrowing `writeAssignmentTerms` because it grants
+ * something genuinely different: the ability to READ a published rate before
+ * committing to it. Every other public rate read floors at `admin`, since the
+ * Rate Card catalogue is organization configuration — but the console cannot
+ * obey "resolve and display the Rate live, and never let the user type it"
+ * unless the role that authors Assignments can also see one. Naming the intent
+ * separately is what keeps that widening visible in `docs/authorization.md`
+ * instead of hiding inside a write intent, and it is what lets the floor move
+ * later without dragging authoring with it. Today the two intents resolve
+ * identically; the separation exists so the pricing floor can move later
+ * without dragging the authoring floor with it.
  */
-export type ProjectIntent = Capability | 'writeAssignmentTerms';
+export type ProjectIntent = Capability | 'writeAssignmentTerms' | 'readAssignmentPricing';
 
 /**
  * The closed capability set an active Provider grant confers. Code-owned and
@@ -282,6 +295,9 @@ const providerGrantCapabilities: readonly Capability[] = Object.freeze([
 const memberRoleForCapability: Readonly<Record<ProjectIntent, Role>> = Object.freeze({
   readAssignment: 'viewer',
   writeAssignmentTerms: 'planner',
+  // Deliberately the same floor as authoring, because the two are one action
+  // split across a round trip: a planner who may commit a price may see it.
+  readAssignmentPricing: 'planner',
   readLinkedServiceProjection: 'viewer',
   writeExecution: 'operator',
   respondToTerms: 'planner',
@@ -491,7 +507,7 @@ export async function requirePrincipalForProject(
   // precisely so that the day the two diverge — a narrower grant, a new intent
   // providers must not hold — the refusal is already centralized here and can
   // be pinned at this gate instead of remembered at forty call sites.
-  if (intent === 'writeAssignmentTerms' || !principal.capabilities.has(intent)) {
+  if (intent === 'writeAssignmentTerms' || intent === 'readAssignmentPricing' || !principal.capabilities.has(intent)) {
     return notFoundOrInaccessible();
   }
   // Defence in depth. The resolver above already skips non-matching grants, so

@@ -248,8 +248,14 @@ test('a granted Provider Principal resolves with exactly the four capabilities a
   for (const intent of everyCapability) {
     await expect(resolvePrincipal(f.providerFirm.client, f.projectId, intent)).resolves.toMatchObject({ kind: 'provider' });
   }
-  await expect(resolvePrincipal(f.providerFirm.client, f.projectId, 'writeAssignmentTerms'))
-    .rejects.toMatchObject({ data: { code: inaccessible } });
+  // The two member-only intents are pinned by name. This loop pins their refusal;
+  // the explicit clause is defence-in-depth against a future change that adds
+  // either intent to the closed capability set. No test can currently
+  // distinguish that clause from the capability-set check.
+  for (const memberOnlyIntent of ['writeAssignmentTerms', 'readAssignmentPricing'] as const) {
+    await expect(resolvePrincipal(f.providerFirm.client, f.projectId, memberOnlyIntent), memberOnlyIntent)
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+  }
 
   // The exported set is the same closed set, and it is a copy: mutating what a
   // caller receives cannot narrow the next principal's reach.

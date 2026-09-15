@@ -1,10 +1,12 @@
 import { convexTest } from 'convex-test';
 import type { PaginationResult } from 'convex/server';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import { requireAssignmentAccess } from '../convex/assignments/model';
+import { maxRateCardsPerRateLookup } from '../convex/assignments/rateLookup';
+import * as rateCardModel from '../convex/rateCards/model';
 import { rateCardVersionHasAssignmentRevisions } from '../convex/rateCards/references';
 import schema from '../convex/schema';
 import { modules } from './helpers';
@@ -49,6 +51,8 @@ const getAssignment = api.assignments.queries.getAssignment;
 const getAssignmentRevision = api.assignments.queries.getAssignmentRevision;
 const listAssignmentRevisions = api.assignments.queries.listAssignmentRevisions;
 const listServiceAssignments = api.assignments.queries.listServiceAssignments;
+const listServiceAssignmentRows = api.assignments.queries.listServiceAssignmentRows;
+const resolveAssignmentRate = api.assignments.queries.resolveAssignmentRate;
 const listProjectAssignments = api.assignments.queries.listProjectAssignments;
 const assignmentsAwaitingDispatch = api.assignments.queries.assignmentsAwaitingDispatch;
 
@@ -219,6 +223,544 @@ function commercial(revision: Doc<'assignmentRevisions'>) {
     lineTotal: revision.lineTotal,
   };
 }
+
+test('planner resolves the one Assignment pricing cell without Rate Card catalogue access', async () => {
+  const f = await fixture('assignment-rate-planner');
+  const planner = await provision(f.t, 'assignment-rate-planner-member');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: planner.userId,
+    role: 'planner',
+  });
+
+  await expect(planner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).resolves.toEqual({
+    kind: 'resolved',
+    rateCardId: f.rateCardId,
+    rateCardName: 'assignment-rate-planner Card',
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'COP',
+  });
+});
+
+test('Assignment rate lookup reports every ambiguous card without exposing submit-ready Rate Line ids', async () => {
+  const f = await fixture('assignment-rate-ambiguous');
+  const secondCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    name: 'Second published card',
+  });
+  const secondVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId: secondCardId,
+    currency: 'USD',
+  });
+  await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId: secondVersionId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    unitAmount: 54_321,
+  });
+  await f.owner.client.mutation(publishRateCardVersion, { rateCardVersionId: secondVersionId });
+
+  const result = await f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  });
+  expect(result.kind).toBe('ambiguous');
+  if (result.kind !== 'ambiguous') throw new Error('Expected an ambiguous pricing result');
+  expect(result.candidates).toEqual([
+    {
+      rateCardId: f.rateCardId,
+      rateCardName: 'assignment-rate-ambiguous Card',
+      rateCardVersionId: f.rateCardVersionId,
+      unitAmount: 12_345,
+      currency: 'COP',
+    },
+    {
+      rateCardId: secondCardId,
+      rateCardName: 'Second published card',
+      rateCardVersionId: secondVersionId,
+      unitAmount: 54_321,
+      currency: 'USD',
+    },
+  ]);
+  for (const candidate of result.candidates) expect(candidate).not.toHaveProperty('rateLineId');
+});
+
+test('Assignment rate lookup returns noRateLine as an ordinary unpriceable result', async () => {
+  const f = await fixture('assignment-rate-missing');
+  const unpricedClassId = await f.owner.client.mutation(createVehicleClass, {
+    organizationId: f.organizationId,
+    key: 'unpricedClass',
+    name: 'Unpriced Class',
+  });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: unpricedClassId,
+    modality: 'transfer',
+  })).resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+});
+
+test('Assignment rate lookup excludes archived Rate Cards from missing and ambiguous results', async () => {
+  const f = await fixture('assignment-rate-archived-card');
+  const finder = vi.spyOn(rateCardModel, 'findRateForAssignment');
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, { status: 'archived' }));
+  const args = {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+  await expect(f.owner.client.query(resolveAssignmentRate, args))
+    .resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+  expect(finder).not.toHaveBeenCalled();
+
+  const activeCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    name: 'Active replacement card',
+  });
+  const activeVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId: activeCardId,
+    currency: 'USD',
+  });
+  const activeLineId = await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId: activeVersionId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    unitAmount: 54_321,
+  });
+  await f.owner.client.mutation(publishRateCardVersion, { rateCardVersionId: activeVersionId });
+
+  await expect(f.owner.client.query(resolveAssignmentRate, args)).resolves.toEqual({
+    kind: 'resolved',
+    rateCardId: activeCardId,
+    rateCardName: 'Active replacement card',
+    rateCardVersionId: activeVersionId,
+    rateLineId: activeLineId,
+    unitAmount: 54_321,
+    currency: 'USD',
+  });
+  expect(finder).toHaveBeenCalledTimes(1);
+  finder.mockRestore();
+});
+
+test('Assignment rate lookup refuses to resolve from a partial read above the Rate Card cap', async () => {
+  const f = await fixture('assignment-rate-card-limit');
+  await f.t.run(async (ctx) => {
+    for (let cardNumber = 2; cardNumber <= 101; cardNumber += 1) {
+      await ctx.db.insert('rateCards', {
+        organizationId: f.organizationId,
+        providerId: f.providerId,
+        name: `Unpublished card ${cardNumber}`,
+        status: 'active',
+      });
+    }
+  });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).resolves.toEqual({ kind: 'unpriceable', reason: 'rateCardLimitExceeded' });
+});
+
+test('Assignment rate lookup resolves a published cell at exactly the Rate Card cap', async () => {
+  const f = await fixture('assignment-rate-card-boundary');
+  await f.t.run(async (ctx) => {
+    for (let cardNumber = 2; cardNumber <= maxRateCardsPerRateLookup; cardNumber += 1) {
+      await ctx.db.insert('rateCards', {
+        organizationId: f.organizationId,
+        providerId: f.providerId,
+        name: `Unpublished card ${cardNumber}`,
+        status: 'active',
+      });
+    }
+  });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).resolves.toEqual({
+    kind: 'resolved',
+    rateCardId: f.rateCardId,
+    rateCardName: 'assignment-rate-card-boundary Card',
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'COP',
+  });
+});
+
+test('Assignment rate lookup refuses Provider principals, non-members, and every member below planner', async () => {
+  const f = await fixture('assignment-rate-access');
+  const provider = await grantFixtureProvider(f, 'assignment-rate-provider', 'Rate Provider Firm');
+  const outsider = await provision(f.t, 'assignment-rate-outsider');
+  const viewer = await provision(f.t, 'assignment-rate-viewer');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: viewer.userId,
+    role: 'viewer',
+  });
+  // `operator` is the role directly beneath the floor, so it is the one that
+  // catches an accidental drop from planner. Testing only `viewer` would leave
+  // a one-rung slip — the likeliest mistake — completely unguarded.
+  const operator = await provision(f.t, 'assignment-rate-operator');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: operator.userId,
+    role: 'operator',
+  });
+  const args = {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+  const refused: readonly { name: string; client: typeof provider.client }[] = [
+    { name: 'granted Provider principal', client: provider.client },
+    { name: 'non-member', client: outsider.client },
+    { name: 'viewer member', client: viewer.client },
+    { name: 'operator member', client: operator.client },
+  ];
+  for (const { name, client } of refused) {
+    await expect(client.query(resolveAssignmentRate, args), name)
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+});
+
+test('Assignment rate lookup refuses archived Provider and Vehicle Class references', async () => {
+  const archivedProvider = await fixture('assignment-rate-archived-provider');
+  await archivedProvider.owner.client.mutation(archiveProvider, { providerId: archivedProvider.providerId });
+  await expect(archivedProvider.owner.client.query(resolveAssignmentRate, {
+    serviceId: archivedProvider.serviceId,
+    providerId: archivedProvider.providerId,
+    vehicleClassId: archivedProvider.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  const archivedClass = await fixture('assignment-rate-archived-class');
+  await archivedClass.owner.client.mutation(archiveVehicleClass, { vehicleClassId: archivedClass.vehicleClassId });
+  await expect(archivedClass.owner.client.query(resolveAssignmentRate, {
+    serviceId: archivedClass.serviceId,
+    providerId: archivedClass.providerId,
+    vehicleClassId: archivedClass.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('Service Assignment rows are member-only for Provider principals and non-members', async () => {
+  const f = await fixture('assignment-rows-access');
+  const provider = await grantFixtureProvider(f, 'assignment-rows-provider', 'Rows Provider Firm');
+  const outsider = await provision(f.t, 'assignment-rows-outsider');
+  for (const client of [provider.client, outsider.client]) {
+    await expect(client.query(listServiceAssignmentRows, { serviceId: f.serviceId }))
+      .rejects.toMatchObject({ data: { code: inaccessible } });
+  }
+});
+
+test('Service Assignment rows resolve for members at the viewer role floor', async () => {
+  const f = await fixture('assignment-rows-viewer-floor');
+  const viewer = await provision(f.t, 'assignment-rows-viewer');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: viewer.userId,
+    role: 'viewer',
+  });
+
+  await expect(
+    viewer.client.query(listServiceAssignmentRows, { serviceId: f.serviceId }),
+    'viewer member',
+  ).resolves.toMatchObject([{ assignment: { _id: f.assignmentId } }]);
+});
+
+test('Service Assignment rows reject a current pointer to a different Assignment revision', async () => {
+  const f = await fixture('assignment-rows-current-assignment');
+  const otherAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 20,
+  });
+  const otherRevisionId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    assignmentId: otherAssignmentId,
+  });
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: otherRevisionId });
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { currentRevisionId: otherRevisionId }));
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows.find((row) => row.assignment._id === f.assignmentId)?.currentRevision).toBeNull();
+});
+
+test('Service Assignment rows reject a current pointer to a foreign-organization revision', async () => {
+  const f = await fixture('assignment-rows-current-org');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign revision organization',
+    slug: 'assignment-rows-current-org-foreign',
+  });
+  const foreignRevisionId = await f.t.run((ctx) => ctx.db.insert('assignmentRevisions', {
+    organizationId: foreignOrganizationId,
+    assignmentId: f.assignmentId,
+    revisionNumber: 99,
+    status: 'accepted',
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    quantity: 1,
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'COP',
+    lineTotal: 12_345,
+  }));
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { currentRevisionId: foreignRevisionId }));
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows[0]?.currentRevision).toBeNull();
+  expect(rows[0]?.latestRevision).toBeNull();
+});
+
+test('Service Assignment rows refuse a row whose organization disagrees with its Service', async () => {
+  const f = await fixture('assignment-rows-foreign-assignment');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Assignment organization',
+    slug: 'assignment-rows-foreign-assignment-org',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { organizationId: foreignOrganizationId }));
+  await expect(f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId }))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('Service Assignment rows refuse a row whose Project disagrees with its Service', async () => {
+  const f = await fixture('assignment-rows-foreign-assignment-project');
+  const other = await insertService(f.t, f.organizationId, 'Foreign Assignment project');
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { projectId: other.projectId }));
+  await expect(f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId }))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('Service Assignment rows reject a current pointer to a non-accepted revision', async () => {
+  const f = await fixture('assignment-rows-current-status');
+  const draftRevisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { currentRevisionId: draftRevisionId }));
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows[0]?.currentRevision).toBeNull();
+});
+
+test('Service Assignment rows degrade foreign Provider, Vehicle Class, and Cost Centre joins to null', async () => {
+  const f = await fixture('assignment-rows-foreign-joins');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign joins organization',
+    slug: 'assignment-rows-foreign-joins-org',
+  });
+  const foreignProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign Provider',
+  });
+  const foreignVehicleClassId = await f.owner.client.mutation(createVehicleClass, {
+    organizationId: foreignOrganizationId,
+    key: 'foreignClass',
+    name: 'Foreign Class',
+  });
+  const foreignCostCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: foreignOrganizationId,
+    key: 'foreignCost',
+    name: 'Foreign Cost Centre',
+  });
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.assignmentId, {
+      providerId: foreignProviderId,
+      costCentreId: foreignCostCentreId,
+    });
+    await ctx.db.insert('assignmentRevisions', {
+      organizationId: f.organizationId,
+      assignmentId: f.assignmentId,
+      revisionNumber: 1,
+      status: 'draft',
+      vehicleClassId: foreignVehicleClassId,
+      modality: 'disposition',
+      quantity: 1,
+      rateCardVersionId: f.rateCardVersionId,
+      rateLineId: f.rateLineId,
+      unitAmount: 12_345,
+      currency: 'COP',
+      lineTotal: 12_345,
+    });
+  });
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows[0]).toMatchObject({ provider: null, vehicleClass: null, costCentre: null });
+});
+
+test('Service Assignment rows distinguish the accepted current Revision from a newer draft', async () => {
+  const f = await fixture('assignment-rows-revisions');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'operations',
+    name: 'Operations Cost Centre',
+  });
+  const acceptedRevisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId: acceptedRevisionId });
+  const newerVehicleClassId = await f.owner.client.mutation(createVehicleClass, {
+    organizationId: f.organizationId,
+    key: 'newerClass',
+    name: 'Newer Draft Class',
+  });
+  const newerRateCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    name: 'Newer Draft Card',
+  });
+  const newerVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId: newerRateCardId,
+    currency: 'COP',
+  });
+  const newerRateLineId = await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId: newerVersionId,
+    vehicleClassId: newerVehicleClassId,
+    modality: 'disposition',
+    unitAmount: 22_000,
+  });
+  await f.owner.client.mutation(publishRateCardVersion, { rateCardVersionId: newerVersionId });
+  const draftRevisionId = await f.owner.client.mutation(createAssignmentRevision, {
+    ...f.revisionArgs,
+    vehicleClassId: newerVehicleClassId,
+    quantity: 4,
+    rateCardVersionId: newerVersionId,
+    rateLineId: newerRateLineId,
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { costCentreId }));
+  const earlierAssignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    position: 5,
+  });
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows.map((row) => row.assignment._id)).toEqual([earlierAssignmentId, f.assignmentId]);
+  const pricedRow = rows[1];
+  expect(pricedRow?.currentRevision).toMatchObject({ _id: acceptedRevisionId, revisionNumber: 1, status: 'accepted' });
+  expect(pricedRow?.latestRevision).toMatchObject({ _id: draftRevisionId, revisionNumber: 2, status: 'draft' });
+  expect(pricedRow?.provider).toEqual({
+    _id: f.providerId,
+    name: 'assignment-rows-revisions Provider',
+    status: 'active',
+  });
+  expect(pricedRow?.vehicleClass).toEqual({
+    _id: f.vehicleClassId,
+    name: 'assignment-rows-revisions Class',
+    status: 'active',
+  });
+  expect(pricedRow?.costCentre).toEqual({
+    _id: costCentreId,
+    key: 'operations',
+    name: 'Operations Cost Centre',
+    status: 'active',
+  });
+});
+
+test('Service Assignment rows degrade missing catalogue documents to null', async () => {
+  const f = await fixture('assignment-rows-missing-joins');
+  const costCentreId = await f.owner.client.mutation(createCostCentre, {
+    organizationId: f.organizationId,
+    key: 'removed',
+    name: 'Removed Cost Centre',
+  });
+  const revisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
+  await f.owner.client.mutation(acceptAssignmentRevision, { revisionId });
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.assignmentId, { costCentreId });
+    await ctx.db.delete(f.providerId);
+    await ctx.db.delete(f.vehicleClassId);
+    await ctx.db.delete(costCentreId);
+  });
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows[0]).toMatchObject({ provider: null, vehicleClass: null, costCentre: null });
+});
+
+test('new Assignment queries refuse when the Service and Project organizations disagree', async () => {
+  const f = await fixture('assignment-query-project-mismatch');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Project organization',
+    slug: 'assignment-query-project-mismatch-org',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.projectId, { organizationId: foreignOrganizationId }));
+  await expect(f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId }))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('Assignment rate lookup refuses foreign Provider and Vehicle Class references', async () => {
+  const f = await fixture('assignment-rate-foreign-references');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign Rate Lookup organization',
+    slug: 'assignment-rate-foreign-references-org',
+  });
+  const foreignProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign Rate Provider',
+  });
+  const foreignVehicleClassId = await f.owner.client.mutation(createVehicleClass, {
+    organizationId: foreignOrganizationId,
+    key: 'foreignRateClass',
+    name: 'Foreign Rate Class',
+  });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: foreignProviderId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(f.owner.client.query(resolveAssignmentRate, {
+    serviceId: f.serviceId,
+    providerId: f.providerId,
+    vehicleClassId: foreignVehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('Service Assignment row reads stop at the declared per-Service bound', async () => {
+  const f = await fixture('assignment-rows-bound');
+  await f.t.run(async (ctx) => {
+    for (let rowNumber = 0; rowNumber < 200; rowNumber += 1) {
+      await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId: f.serviceId,
+        projectId: f.projectId,
+        providerId: f.providerId,
+        position: 1_000 + rowNumber,
+        executionStatus: 'unassigned',
+      });
+    }
+  });
+  const rows = await f.owner.client.query(listServiceAssignmentRows, { serviceId: f.serviceId });
+  expect(rows).toHaveLength(200);
+  expect(rows[0]?.assignment.position).toBe(10);
+  expect(rows[199]?.assignment.position).toBe(1_198);
+});
+
+test('Assignment revision history first page starts with the highest revision across multiple pages', async () => {
+  const f = await fixture('assignment-revisions-descending');
+  for (let quantity = 1; quantity <= 11; quantity += 1) {
+    await f.owner.client.mutation(createAssignmentRevision, { ...f.revisionArgs, quantity });
+  }
+  const page = await f.owner.client.query(listAssignmentRevisions, {
+    assignmentId: f.assignmentId,
+    paginationOpts: firstPage,
+  });
+  expect(page.isDone).toBe(false);
+  expect(page.page[0]?.revisionNumber).toBe(11);
+});
 
 test('creation derives tenant and Project from the Service, trims notes, and prices an immutable snapshot', async () => {
   const f = await fixture('assignment-create');
@@ -573,7 +1115,7 @@ test('I7: concurrent Revision creation assigns distinct, gapless server numbers'
   ]);
   expect(new Set(ids)).toHaveLength(3);
   const rows = await f.owner.client.query(listAssignmentRevisions, { assignmentId: f.assignmentId, paginationOpts: firstPage });
-  expect(rows.page.map((row) => row.revisionNumber)).toEqual([1, 2, 3]);
+  expect(rows.page.map((row) => row.revisionNumber)).toEqual([3, 2, 1]);
 });
 
 test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -819,14 +1361,13 @@ test('Service and Project lists preserve position, scope multiple rows, paginate
     assignmentId: f.assignmentId,
     paginationOpts: { numItems: 1, cursor: revisions1.continueCursor },
   });
-  expect([...revisions1.page, ...revisions2.page].map((row) => row._id)).toEqual([revision1, revision2]);
+  expect([...revisions1.page, ...revisions2.page].map((row) => row._id)).toEqual([revision2, revision1]);
 
   const sources = import.meta.glob('../convex/assignments/model.ts', { query: '?raw', import: 'default', eager: true });
   const source = Object.values(sources)[0] ?? '';
   for (const index of ['by_service_position', 'by_project_provider_position', 'by_project_position', 'by_assignment_revision', 'by_assignment_status']) {
     expect(source).toContain(`withIndex('${index}'`);
   }
-  expect(source).toContain('.take(maxAssignmentsPerService)');
 });
 
 test('Provider access is Assignment-scoped: own reads work, other Providers and other Assignments do not', async () => {
@@ -893,7 +1434,7 @@ test('requireAssignmentAccess delegates live grant policy and revocation takes e
     .rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
-test('unauthenticated Assignment writes refuse real and fabricated ids identically before lookup', async () => {
+test('unauthenticated Assignment reads and writes refuse real and fabricated ids identically before lookup', async () => {
   const f = await fixture('assignment-unauthenticated');
   const realRevisionId = await f.owner.client.mutation(createAssignmentRevision, f.revisionArgs);
   const gone = await f.t.run(async (ctx) => {
@@ -938,6 +1479,34 @@ test('unauthenticated Assignment writes refuse real and fabricated ids identical
   });
 
   const pairs = [
+    [
+      () => f.t.query(resolveAssignmentRate, {
+        serviceId: f.serviceId,
+        providerId: f.providerId,
+        vehicleClassId: f.vehicleClassId,
+        modality: 'disposition',
+      }),
+      () => f.t.query(resolveAssignmentRate, {
+        serviceId: gone.goneServiceId,
+        providerId: f.providerId,
+        vehicleClassId: f.vehicleClassId,
+        modality: 'disposition',
+      }),
+    ],
+    [
+      () => f.t.query(listServiceAssignmentRows, { serviceId: f.serviceId }),
+      () => f.t.query(listServiceAssignmentRows, { serviceId: gone.goneServiceId }),
+    ],
+    // `listServiceAssignments` predates #74 and was never in this list. Deleting
+    // its `requireAuthenticatedUser` survived the whole suite, exactly as the two
+    // #74 queries did, so the same anonymous oracle was already shipped here: a
+    // real Service id answered `unauthenticated` while a fabricated one answered
+    // `notFoundOrInaccessible`. Every public door that reads a caller-supplied id
+    // belongs in this list, not only the ones a current issue happens to touch.
+    [
+      () => f.t.query(listServiceAssignments, { serviceId: f.serviceId }),
+      () => f.t.query(listServiceAssignments, { serviceId: gone.goneServiceId }),
+    ],
     [
       () => f.t.mutation(createAssignment, { serviceId: f.serviceId, providerId: f.providerId, position: 20 }),
       () => f.t.mutation(createAssignment, { serviceId: gone.goneServiceId, providerId: f.providerId, position: 20 }),

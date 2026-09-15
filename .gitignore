@@ -18,3 +18,8 @@ apps/web/out/
 
 # Agent worktrees created by Claude Code.
 .claude/worktrees/
+
+# Task briefs, agent reports and run logs handed to delegated coding agents.
+# Working material for one issue, not a record of the decision — what mattered
+# ends up in the issue comment, docs/deviations.md, or a comment in the code.
+.briefs/

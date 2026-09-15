@@ -370,16 +370,38 @@ export async function resolveRateForAssignment(
     modality: RateModality;
   },
 ): Promise<{ rateLineId: Id<'rateLines'>; unitAmount: number; currency: Currency }> {
+  const found = await findRateForAssignment(ctx, args);
+  if (found === null) return notFoundOrInaccessible();
+  return found;
+}
+
+/**
+ * Finds the immutable pricing cell after the enclosing operation has already
+ * authorized its caller. Both shapes exist deliberately: authorization
+ * failures must remain indistinguishable from absence at a public boundary
+ * (I9), while inside an already-authorized operation a missing pricing cell is
+ * an ordinary answer. The finder and throwing wrapper therefore serve two
+ * callers without duplicating the definition of a priceable cell.
+ */
+export async function findRateForAssignment(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  args: {
+    rateCardVersionId: Id<'rateCardVersions'>;
+    providerId: Id<'providers'>;
+    vehicleClassId: Id<'vehicleClasses'>;
+    modality: RateModality;
+  },
+): Promise<{ rateLineId: Id<'rateLines'>; unitAmount: number; currency: Currency } | null> {
   const version = await ctx.db.get(args.rateCardVersionId);
-  if (version === null) return notFoundOrInaccessible();
+  if (version === null) return null;
   const rateCard = await ctx.db.get(version.rateCardId);
-  if (rateCard === null || rateCard.organizationId !== version.organizationId) return notFoundOrInaccessible();
+  if (rateCard === null || rateCard.organizationId !== version.organizationId) return null;
   if (
     version.status !== 'published' ||
     rateCard.status !== 'active' ||
     rateCard.currentPublishedVersionId !== version._id ||
     rateCard.providerId !== args.providerId
-  ) return notFoundOrInaccessible();
+  ) return null;
 
   const [provider, vehicleClass] = await Promise.all([
     ctx.db.get(args.providerId),
@@ -390,7 +412,7 @@ export async function resolveRateForAssignment(
     provider.organizationId !== rateCard.organizationId ||
     vehicleClass === null ||
     vehicleClass.organizationId !== rateCard.organizationId
-  ) return notFoundOrInaccessible();
+  ) return null;
 
   const rateLine = await ctx.db
     .query('rateLines')
@@ -401,7 +423,7 @@ export async function resolveRateForAssignment(
         .eq('modality', args.modality),
     )
     .unique();
-  if (rateLine === null || rateLine.organizationId !== rateCard.organizationId) return notFoundOrInaccessible();
+  if (rateLine === null || rateLine.organizationId !== rateCard.organizationId) return null;
   return { rateLineId: rateLine._id, unitAmount: rateLine.unitAmount, currency: version.currency };
 }
 

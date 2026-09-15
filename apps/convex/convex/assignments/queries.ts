@@ -7,6 +7,8 @@ import {
   anyArmAssignmentCheckpointDocValidator,
   assignmentDocValidator,
   assignmentRevisionDocValidator,
+  archivalStatusValidator,
+  rateModalityValidator,
   providerAssignmentRevisionDocValidator,
   executionStatusValidator,
   paginatedResult,
@@ -20,8 +22,13 @@ import {
   listAssignmentCheckpoints as listAssignmentCheckpointsModel,
   listProjectAssignments as listProjectAssignmentsModel,
   listServiceAssignments as listServiceAssignmentsModel,
+  listServiceAssignmentRows as listServiceAssignmentRowsModel,
   assignmentsAwaitingDispatch as assignmentsAwaitingDispatchModel,
 } from './model';
+import {
+  assignmentRateLookupResultValidator,
+  resolveAssignmentRate as resolveAssignmentRateModel,
+} from './rateLookup';
 
 export const getAssignment = query({
   args: { assignmentId: v.id('assignments') },
@@ -64,6 +71,43 @@ export const listServiceAssignments = query({
   args: { serviceId: v.id('services') },
   returns: v.array(anyArmAssignmentDocValidator),
   handler: (ctx, args) => listServiceAssignmentsModel(ctx, args.serviceId),
+});
+
+export const resolveAssignmentRate = query({
+  args: {
+    serviceId: v.id('services'),
+    providerId: v.id('providers'),
+    vehicleClassId: v.id('vehicleClasses'),
+    modality: rateModalityValidator,
+  },
+  returns: assignmentRateLookupResultValidator,
+  handler: (ctx, args) => resolveAssignmentRateModel(ctx, args),
+});
+
+export const listServiceAssignmentRows = query({
+  args: { serviceId: v.id('services') },
+  returns: v.array(v.object({
+    assignment: assignmentDocValidator,
+    currentRevision: v.union(assignmentRevisionDocValidator, v.null()),
+    latestRevision: v.union(assignmentRevisionDocValidator, v.null()),
+    provider: v.union(v.object({
+      _id: v.id('providers'),
+      name: v.string(),
+      status: archivalStatusValidator,
+    }), v.null()),
+    vehicleClass: v.union(v.object({
+      _id: v.id('vehicleClasses'),
+      name: v.string(),
+      status: archivalStatusValidator,
+    }), v.null()),
+    costCentre: v.union(v.object({
+      _id: v.id('costCentres'),
+      key: v.string(),
+      name: v.string(),
+      status: archivalStatusValidator,
+    }), v.null()),
+  })),
+  handler: (ctx, args) => listServiceAssignmentRowsModel(ctx, args.serviceId),
 });
 
 export const listProjectAssignments = query({

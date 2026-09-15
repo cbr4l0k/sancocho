@@ -837,6 +837,8 @@ export async function listAssignmentRevisions(
   const page = await ctx.db
     .query('assignmentRevisions')
     .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignment._id))
+    // Every reader needs the live negotiation first; ascending order buried it behind the Assignment's whole history.
+    .order('desc')
     .paginate(args.paginationOpts);
   return principal.kind === 'provider'
     ? { ...page, page: page.page.map(providerRevisionView) }
@@ -906,6 +908,118 @@ export async function listServiceAssignments(
         .filter((assignment) => principal.accessibleProviderIds.has(assignment.providerId))
         .map(providerAssignmentView)
     : assignments;
+}
+
+export type ServiceAssignmentRow = {
+  assignment: Doc<'assignments'>;
+  currentRevision: Doc<'assignmentRevisions'> | null;
+  latestRevision: Doc<'assignmentRevisions'> | null;
+  provider: Pick<Doc<'providers'>, '_id' | 'name' | 'status'> | null;
+  vehicleClass: Pick<Doc<'vehicleClasses'>, '_id' | 'name' | 'status'> | null;
+  costCentre: Pick<Doc<'costCentres'>, '_id' | 'key' | 'name' | 'status'> | null;
+};
+
+/**
+ * Member-only Assignment-panel projection. Provider principals are refused
+ * because this joins Cost Centre data (provider may-not-see #7), coordinator
+ * catalogue names, and every firm's rows on the Service (may-not-see #3).
+ * Missing or foreign joined rows degrade to null, matching Event detail reads.
+ */
+export async function listServiceAssignmentRows(
+  ctx: QueryCtx,
+  serviceId: Id<'services'>,
+): Promise<ServiceAssignmentRow[]> {
+  await requireAuthenticatedUser(ctx);
+  const service = await ctx.db.get(serviceId);
+  if (service === null) return notFoundOrInaccessible();
+  const principal = await requirePrincipalForProject(ctx, service.projectId, 'readAssignment');
+  if (principal.kind === 'provider') {
+    // The generic refusal preserves I9 while preventing provider enumeration of
+    // other firms and coordinator-only catalogue/Cost Centre context.
+    return notFoundOrInaccessible();
+  }
+  const project = await ctx.db.get(service.projectId);
+  if (project === null || project.organizationId !== service.organizationId) {
+    return notFoundOrInaccessible();
+  }
+
+  const assignments = await ctx.db
+    .query('assignments')
+    .withIndex('by_service_position', (q) => q.eq('serviceId', service._id))
+    .take(maxAssignmentsPerService);
+  const providers = new Map<Id<'providers'>, Doc<'providers'> | null>();
+  const vehicleClasses = new Map<Id<'vehicleClasses'>, Doc<'vehicleClasses'> | null>();
+  const costCentres = new Map<Id<'costCentres'>, Doc<'costCentres'> | null>();
+  const rows: ServiceAssignmentRow[] = [];
+
+  for (const assignment of assignments) {
+    // The index key finds children, but these duplicated ownership columns are
+    // not authority. Re-derive them from the already-proven Service before a
+    // full Assignment document or any of its joins can cross the boundary.
+    if (
+      assignment.organizationId !== service.organizationId ||
+      assignment.projectId !== service.projectId
+    ) return notFoundOrInaccessible();
+    const pointedRevision = assignment.currentRevisionId === undefined
+      ? null
+      : await ctx.db.get(assignment.currentRevisionId);
+    const currentRevision = pointedRevision !== null &&
+        pointedRevision.assignmentId === assignment._id &&
+        pointedRevision.organizationId === assignment.organizationId &&
+        pointedRevision.status === 'accepted'
+      ? pointedRevision
+      : null;
+    const latestRevisionRow = await ctx.db
+      .query('assignmentRevisions')
+      .withIndex('by_assignment_revision', (q) => q.eq('assignmentId', assignment._id))
+      .order('desc')
+      .first();
+    // Only the tenant column is re-derived. `assignmentId` is not re-checked
+    // because the index range above already pinned it, so a comparison against
+    // it could never fail — and a guard no test can exercise reads as
+    // protection while providing none.
+    const latestRevision = latestRevisionRow !== null &&
+        latestRevisionRow.organizationId === assignment.organizationId
+      ? latestRevisionRow
+      : null;
+
+    if (!providers.has(assignment.providerId)) {
+      providers.set(assignment.providerId, await ctx.db.get(assignment.providerId));
+    }
+    const providerRow = providers.get(assignment.providerId) ?? null;
+
+    const vehicleClassId = (currentRevision ?? latestRevision)?.vehicleClassId;
+    if (vehicleClassId !== undefined && !vehicleClasses.has(vehicleClassId)) {
+      vehicleClasses.set(vehicleClassId, await ctx.db.get(vehicleClassId));
+    }
+    const vehicleClassRow = vehicleClassId === undefined
+      ? null
+      : vehicleClasses.get(vehicleClassId) ?? null;
+
+    const costCentreId = assignment.costCentreId;
+    if (costCentreId !== undefined && !costCentres.has(costCentreId)) {
+      costCentres.set(costCentreId, await ctx.db.get(costCentreId));
+    }
+    const costCentreRow = costCentreId === undefined
+      ? null
+      : costCentres.get(costCentreId) ?? null;
+
+    rows.push({
+      assignment,
+      currentRevision,
+      latestRevision,
+      provider: providerRow === null || providerRow.organizationId !== assignment.organizationId
+        ? null
+        : { _id: providerRow._id, name: providerRow.name, status: providerRow.status },
+      vehicleClass: vehicleClassRow === null || vehicleClassRow.organizationId !== assignment.organizationId
+        ? null
+        : { _id: vehicleClassRow._id, name: vehicleClassRow.name, status: vehicleClassRow.status },
+      costCentre: costCentreRow === null || costCentreRow.organizationId !== assignment.organizationId
+        ? null
+        : { _id: costCentreRow._id, key: costCentreRow.key, name: costCentreRow.name, status: costCentreRow.status },
+    });
+  }
+  return rows;
 }
 
 export async function listProjectAssignments(
