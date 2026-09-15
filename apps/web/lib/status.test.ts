@@ -9,6 +9,7 @@ import {
   eventStatusTokens,
   executionStatusTokens,
   projectStatusTokens,
+  rateCardVersionStatusTokens,
   providerClaimStateTokens,
   serviceKindStatusTokens,
   serviceKindVersionStatusTokens,
@@ -33,6 +34,7 @@ const tables: Readonly<Record<string, Readonly<Record<string, StatusToken>>>> = 
   eventStatusTokens,
   serviceKindStatusTokens,
   serviceKindVersionStatusTokens,
+  rateCardVersionStatusTokens,
   serviceStatusTokens,
   archivalStatusTokens,
   providerClaimStateTokens,
@@ -126,6 +128,7 @@ test('statusToken dispatches each kind to its own table', () => {
   expect(statusToken({ kind: 'event', status: 'draft' })).toBe(eventStatusTokens.draft);
   expect(statusToken({ kind: 'serviceKind', status: 'draft' })).toBe(serviceKindStatusTokens.draft);
   expect(statusToken({ kind: 'serviceKindVersion', status: 'draft' })).toBe(serviceKindVersionStatusTokens.draft);
+  expect(statusToken({ kind: 'rateCardVersion', status: 'draft' })).toBe(rateCardVersionStatusTokens.draft);
   expect(statusToken({ kind: 'service', status: 'draft' })).toBe(serviceStatusTokens.draft);
   expect(statusToken({ kind: 'assignmentRevision', status: 'draft' })).toBe(assignmentRevisionStatusTokens.draft);
   expect(statusToken({ kind: 'archival', status: 'active' })).toBe(archivalStatusTokens.active);

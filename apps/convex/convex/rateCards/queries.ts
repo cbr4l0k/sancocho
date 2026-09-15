@@ -12,6 +12,7 @@ import {
 } from '../validators';
 import {
   getRateCard as getRateCardModel,
+  getRateCardDetail as getRateCardDetailModel,
   getRateCardVersion as getRateCardVersionModel,
   listRateCardVersions as listRateCardVersionsModel,
   listRateCards as listRateCardsModel,
@@ -24,10 +25,27 @@ export const getRateCard = query({
   handler: (ctx, args) => getRateCardModel(ctx, args.rateCardId),
 });
 
+export const getRateCardDetail = query({
+  args: { rateCardId: v.id('rateCards') },
+  returns: v.object({
+    rateCard: rateCardDocValidator,
+    draftVersion: v.union(rateCardVersionDocValidator, v.null()),
+    publishedVersion: v.union(rateCardVersionDocValidator, v.null()),
+  }),
+  handler: (ctx, args) => getRateCardDetailModel(ctx, args.rateCardId),
+});
+
 export const listRateCards = query({
-  args: { organizationId: v.id('organizations'), paginationOpts: paginationOptsValidator },
+  args: {
+    organizationId: v.id('organizations'),
+    paginationOpts: paginationOptsValidator,
+    providerId: v.optional(v.id('providers')),
+  },
   returns: paginatedResult(rateCardDocValidator),
-  handler: (ctx, args) => listRateCardsModel(ctx, args.organizationId, args.paginationOpts),
+  handler: (ctx, args) =>
+    listRateCardsModel(ctx, args.organizationId, args.paginationOpts, {
+      ...(args.providerId === undefined ? {} : { providerId: args.providerId }),
+    }),
 });
 
 export const listRateCardVersions = query({

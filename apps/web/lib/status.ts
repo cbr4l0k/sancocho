@@ -4,6 +4,7 @@ import type {
   executionStatusValidator,
   eventStatusValidator,
   providerClaimStateValidator,
+  rateCardVersionStatusValidator,
   serviceStatusValidator,
   projectStatusValidator,
   serviceKindStatusValidator,
@@ -57,6 +58,7 @@ export type ArchivalStatus = typeof archivalStatusValidator.type;
 export type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
 export type ExecutionStatus = typeof executionStatusValidator.type;
 export type ProviderClaimState = typeof providerClaimStateValidator.type;
+export type RateCardVersionStatus = typeof rateCardVersionStatusValidator.type;
 
 /**
  * The catalogue paths for the localized labels. Spelling them out as a union
@@ -68,6 +70,7 @@ export type StatusLabelKey =
   | `events.statuses.${EventStatus}`
   | `serviceKinds.statuses.${ServiceKindStatus}`
   | `serviceKinds.versionStatuses.${ServiceKindVersionStatus}`
+  | `rateCards.versionStatuses.${RateCardVersionStatus}`
   | `services.statuses.${ServiceStatus}`
   | `portal.executionStatuses.${ExecutionStatus}`
   | `portal.revisionStatuses.${AssignmentRevisionStatus}`
@@ -106,6 +109,12 @@ export const serviceKindVersionStatusTokens = {
   published: { tone: 'go', shape: 'dot', labelKey: 'serviceKinds.versionStatuses.published' },
   retired: { tone: 'shelf', shape: 'square', labelKey: 'serviceKinds.versionStatuses.retired' },
 } as const satisfies Record<ServiceKindVersionStatus, StatusToken>;
+
+export const rateCardVersionStatusTokens = {
+  draft: { tone: 'mute', shape: 'ring', labelKey: 'rateCards.versionStatuses.draft' },
+  published: { tone: 'go', shape: 'dot', labelKey: 'rateCards.versionStatuses.published' },
+  retired: { tone: 'shelf', shape: 'square', labelKey: 'rateCards.versionStatuses.retired' },
+} as const satisfies Record<RateCardVersionStatus, StatusToken>;
 
 /** Backend `Service`; the interface calls it a Service. */
 export const serviceStatusTokens = {
@@ -151,6 +160,7 @@ export type StatusKind =
   | 'event'
   | 'serviceKind'
   | 'serviceKindVersion'
+  | 'rateCardVersion'
   | 'service'
   | 'archival'
   | 'providerClaim'
@@ -167,6 +177,7 @@ export type StatusSelection =
   | { kind: 'event'; status: EventStatus }
   | { kind: 'serviceKind'; status: ServiceKindStatus }
   | { kind: 'serviceKindVersion'; status: ServiceKindVersionStatus }
+  | { kind: 'rateCardVersion'; status: RateCardVersionStatus }
   | { kind: 'service'; status: ServiceStatus }
   | { kind: 'execution'; status: ExecutionStatus }
   | { kind: 'assignmentRevision'; status: AssignmentRevisionStatus }
@@ -183,6 +194,8 @@ export function statusToken(selection: StatusSelection): StatusToken {
       return serviceKindStatusTokens[selection.status];
     case 'serviceKindVersion':
       return serviceKindVersionStatusTokens[selection.status];
+    case 'rateCardVersion':
+      return rateCardVersionStatusTokens[selection.status];
     case 'service':
       return serviceStatusTokens[selection.status];
     case 'execution':
@@ -210,6 +223,7 @@ export const projectStatuses = ['draft', 'active', 'completed', 'archived'] as c
 export const eventStatuses = ['draft', 'active', 'completed', 'archived'] as const;
 export const serviceKindStatuses = ['draft', 'active', 'archived'] as const;
 export const serviceKindVersionStatuses = ['draft', 'published', 'retired'] as const;
+export const rateCardVersionStatuses = ['draft', 'published', 'retired'] as const;
 export const serviceStatuses = ['draft', 'planned', 'confirmed', 'active', 'completed', 'cancelled'] as const;
 export const archivalStatuses = ['active', 'archived'] as const;
 export const providerClaimStates = ['unclaimed', 'claimed'] as const;
@@ -230,6 +244,10 @@ const _serviceKindVersionStatusesInSync: CoversExactly<
   (typeof serviceKindVersionStatuses)[number],
   ServiceKindVersionStatus
 > = true;
+const _rateCardVersionStatusesInSync: CoversExactly<
+  (typeof rateCardVersionStatuses)[number],
+  RateCardVersionStatus
+> = true;
 const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], ServiceStatus> = true;
 const _archivalStatusesInSync: CoversExactly<(typeof archivalStatuses)[number], ArchivalStatus> = true;
 const _providerClaimStatesInSync: CoversExactly<(typeof providerClaimStates)[number], ProviderClaimState> = true;
@@ -243,6 +261,7 @@ void _projectStatusesInSync;
 void _eventStatusesInSync;
 void _serviceKindStatusesInSync;
 void _serviceKindVersionStatusesInSync;
+void _rateCardVersionStatusesInSync;
 void _serviceStatusesInSync;
 void _archivalStatusesInSync;
 void _providerClaimStatesInSync;

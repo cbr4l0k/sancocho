@@ -10,6 +10,8 @@ export type FleetFilter<ProviderId extends string, VehicleClassId extends string
   vehicleClassId: VehicleClassId | '';
 };
 
+export type RateCardFilter<ProviderId extends string> = { providerId: ProviderId | '' };
+
 function optionalSearch(search: string): { search?: string } {
   const normalized = search.trim();
   return normalized === '' ? {} : { search: normalized };
@@ -56,6 +58,18 @@ export function fleetCatalogueArgs<
   };
 }
 
+/** Rate Card Provider constraints remain query arguments so filtering happens before pagination. */
+export function rateCardCatalogueArgs<OrganizationId extends string, ProviderId extends string>(
+  organizationId: OrganizationId | undefined,
+  filter: RateCardFilter<ProviderId>,
+) {
+  if (organizationId === undefined) return 'skip';
+  return {
+    organizationId,
+    ...(filter.providerId === '' ? {} : { providerId: filter.providerId }),
+  };
+}
+
 /**
  * Query arguments for a picker. `'skip'` until there is an organization, and
  * always `status: 'active'` — an archived Provider or Class is still a real row
@@ -69,4 +83,13 @@ export function pickerArgs<OrganizationId extends string>(
 ) {
   if (organizationId === undefined) return 'skip';
   return { organizationId, status: 'active' as const, ...optionalSearch(search) };
+}
+
+/** A catalogue filter may select archived Providers that existing records still reference. */
+export function providerFilterPickerArgs<OrganizationId extends string>(
+  organizationId: OrganizationId | undefined,
+  search: string,
+) {
+  if (organizationId === undefined) return 'skip';
+  return { organizationId, ...optionalSearch(search) };
 }

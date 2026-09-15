@@ -270,12 +270,49 @@ export async function getRateCard(
   return rateCard;
 }
 
+export async function getRateCardDetail(
+  ctx: QueryCtx,
+  rateCardId: Id<'rateCards'>,
+): Promise<{
+  rateCard: Doc<'rateCards'>;
+  draftVersion: Doc<'rateCardVersions'> | null;
+  publishedVersion: Doc<'rateCardVersions'> | null;
+}> {
+  const { rateCard } = await requireRateCardAccess(ctx, rateCardId);
+  const draftVersion = await ctx.db
+    .query('rateCardVersions')
+    .withIndex('by_card_status', (q) => q.eq('rateCardId', rateCardId).eq('status', 'draft'))
+    .unique();
+  const pointedPublishedVersion = rateCard.currentPublishedVersionId === undefined
+    ? null
+    : await ctx.db.get(rateCard.currentPublishedVersionId);
+  const publishedVersion = pointedPublishedVersion !== null &&
+      pointedPublishedVersion.rateCardId === rateCard._id &&
+      pointedPublishedVersion.organizationId === rateCard.organizationId &&
+      pointedPublishedVersion.status === 'published'
+    ? pointedPublishedVersion
+    : null;
+  return { rateCard, draftVersion, publishedVersion };
+}
+
 export async function listRateCards(
   ctx: QueryCtx,
   organizationId: Id<'organizations'>,
   paginationOpts: PaginationOptions,
+  filter: { providerId?: Id<'providers'> },
 ): Promise<PaginationResult<Doc<'rateCards'>>> {
   await requireOrganizationRole(ctx, organizationId, organizationConfigurationRole);
+  // Filtering a fetched page would make matches beyond its cursor invisible and
+  // present an incomplete tenant catalogue as complete, violating I6.
+  if (filter.providerId !== undefined) {
+    const providerId = filter.providerId;
+    return ctx.db
+      .query('rateCards')
+      .withIndex('by_org_provider', (q) =>
+        q.eq('organizationId', organizationId).eq('providerId', providerId),
+      )
+      .paginate(paginationOpts);
+  }
   return ctx.db.query('rateCards').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts);
 }
 
@@ -288,6 +325,7 @@ export async function listRateCardVersions(
   return ctx.db
     .query('rateCardVersions')
     .withIndex('by_card_version', (q) => q.eq('rateCardId', rateCardId))
+    .order('desc')
     .paginate(paginationOpts);
 }
 

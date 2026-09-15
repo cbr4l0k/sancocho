@@ -144,7 +144,7 @@ function RevisionRow({ revision }: { revision: Revision }) {
     <TableCell align="end" mono>{formatNumber(locale, revision.quantity)}</TableCell>
     <TableCell align="end" mono>{rootT('common.moneyValue', { ...formatMoneyParts(locale, revision.unitAmount), currency: revision.currency })}</TableCell>
     <TableCell align="end" mono>{rootT('common.moneyValue', { ...formatMoneyParts(locale, revision.lineTotal), currency: revision.currency })}</TableCell>
-    <TableCell>{t(`modalities.${revision.modality}`)}</TableCell>
+    <TableCell>{rootT(`common.modalities.${revision.modality}`)}</TableCell>
     <TableCell mono>{formatDateTime(locale, revision._creationTime)}</TableCell>
     <TableCell>{revision.declinedReason ?? (revision.acceptedAt === undefined ? t('notSet') : t('acceptedAt', { value: formatDateTime(locale, revision.acceptedAt) }))}</TableCell>
   </TableRow>;

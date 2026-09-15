@@ -190,6 +190,14 @@ Admins do everything else.
 | `providers.listProviders` | viewer | Provider Principals are refused: the coordinator's directory is not browsable by an outside firm |
 | `providers.grantProjectAccessToProvider`, `revokeProviderAccessGrant` | **admin** | Same floor as editing the directory that names the firm. Provider Principals cannot reach either (non-transitivity) |
 | `providers.listProjectProviderAccessGrants` | **admin** | Includes revoked rows; there is no provider-side counterpart, which would disclose which other firms were engaged |
+| `vehicles.createVehicleClass`, `updateVehicleClass`, `archiveVehicleClass`, `deleteVehicleClass` | admin | Keys are immutable after creation; deletion requires archival and is blocked while a Rate Line or Fleet Vehicle references the Class |
+| `vehicles.getVehicleClass`, `listVehicleClasses` | viewer | Member arm only; Provider Principals cannot browse the coordinator's Class catalogue |
+| `vehicles.createFleetVehicle`, `updateFleetVehicle`, `archiveFleetVehicle`, `deleteFleetVehicle` | admin | Provider and Class ownership is re-derived; deletion requires archival and is blocked while an Assignment execution references the vehicle |
+| `vehicles.getFleetVehicle`, `listFleetVehicles` | viewer | Member arm only; Provider Principals cannot browse the coordinator's fleet catalogue |
+| `rateCards.createRateCard`, `updateRateCardMetadata`, `archiveRateCard` | admin | Archiving retires the current published Version; archived Cards are read-only |
+| `rateCards.createInitialDraftVersion`, `clonePublishedVersionToDraft`, `updateRateCardVersion`, `publishRateCardVersion`, `retireRateCardVersion` | admin | Version numbers are server-assigned; published and retired Versions are immutable (I2/I7) |
+| `rateCards.addRateLine`, `updateRateLine`, `removeRateLine` | admin | Draft Versions only; referenced Class ownership is re-derived and the grid has a bounded child ceiling |
+| `rateCards.getRateCard`, `listRateCards`, `listRateCardVersions`, `getRateCardVersion`, `resolveRate` | admin | Public rate reads are organization configuration. Assignment authoring uses the domain-internal resolver only after its Project gate has authorized the enclosing write |
 | `events.createEvent`, `updateEvent`, `changeEventStatus`, `archiveEvent`, `deleteEvent` | planner | Completed projects accept no new Events; archived projects freeze Event writes; Events must be archived and unreferenced before deletion |
 | `events.getEvent`, `listProjectEvents` | viewer | |
 | `events.getEventDetail` | viewer | The header join. A venue, client Cost Centre or accountable person that is missing, or that belongs to another tenant, degrades to `null` rather than refusing the Event or disclosing the foreign row (I9). The accountable person also degrades to `null` once their membership is removed, so a name stops leaving a tenant the person has left |

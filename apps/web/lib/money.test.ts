@@ -69,3 +69,12 @@ test('a money pair missing either half reads as unset rather than half a number'
   expect(moneyDisplay('en-US', undefined, 'USD')).toEqual({ kind: 'unset' });
   expect(moneyDisplay('en-US', 0, 'USD')).toEqual({ kind: 'money', amount: '0.00', currency: 'USD' });
 });
+
+test('COP and USD both use the fixed two-decimal exponent with locale-specific separators', () => {
+  const minorUnits = 123_456;
+  expect(moneyDisplay('en-US', minorUnits, 'COP')).toEqual({ kind: 'money', currency: 'COP', amount: '1,234.56' });
+  expect(moneyDisplay('en-US', minorUnits, 'USD')).toEqual({ kind: 'money', currency: 'USD', amount: '1,234.56' });
+  expect(formatMoneyParts('es-CO', minorUnits).amount).toBe('1.234,56');
+  expect(formatMoneyParts('en-US', minorUnits).amount).toBe('1,234.56');
+  expect(moneyDisplay('en-US', 81_000_000, 'COP')).toEqual({ kind: 'money', currency: 'COP', amount: '810,000.00' });
+});

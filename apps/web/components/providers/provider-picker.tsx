@@ -11,7 +11,7 @@ import { useCurrentOrganization } from '@/components/organizations/current-organ
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusChip } from '@/components/ui/status-chip';
-import { pickerArgs } from '@/lib/catalogue-filters';
+import { pickerArgs, providerFilterPickerArgs } from '@/lib/catalogue-filters';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 
 type ProviderId = FunctionArgs<typeof api.providers.queries.getProvider>['providerId'];
@@ -21,10 +21,12 @@ export function ProviderPicker({
   value,
   onChange,
   disabled = false,
+  includeArchived = false,
 }: {
   value: ProviderId | undefined;
   onChange: (providerId: ProviderId) => void;
   disabled?: boolean | undefined;
+  includeArchived?: boolean | undefined;
 }) {
   const t = useTranslations();
   const { currentOrganization } = useCurrentOrganization();
@@ -33,7 +35,9 @@ export function ProviderPicker({
   const organizationId = currentOrganization?.organization._id;
   const providers = usePaginatedQuery(
     api.providers.queries.listProviders,
-    pickerArgs(organizationId, debouncedSearch),
+    includeArchived
+      ? providerFilterPickerArgs(organizationId, debouncedSearch)
+      : pickerArgs(organizationId, debouncedSearch),
     { initialNumItems: 50 },
   );
   const selected = useQuery(api.providers.queries.getProvider, value === undefined ? 'skip' : { providerId: value });

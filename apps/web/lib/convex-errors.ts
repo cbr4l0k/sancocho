@@ -28,6 +28,15 @@ export type ConvexErrorMessageKey =
   | 'errors.fleetVehicleYearInvalid'
   | 'errors.fleetVehicleNotesTooLong'
   | 'errors.fleetVehicleArchived'
+  | 'errors.rateCardArchived'
+  | 'errors.rateCardPublishedVersionRequired'
+  | 'errors.rateCardVersionNotDraft'
+  | 'errors.rateCardVersionNotPublished'
+  | 'errors.rateCardVersionEmpty'
+  | 'errors.rateCardProviderUnavailable'
+  | 'errors.rateLineVehicleClassUnavailable'
+  | 'errors.rateLineDuplicateCell'
+  | 'errors.rateLineLimitExceeded'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
@@ -200,17 +209,15 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   // No provider console surface yet (#87); keep grant failures opaque.
   providerGrantRequiresClaim: 'errors.generic',
   providerGrantSelfReference: 'errors.generic',
-  // #73 owns the Rate Card console surface; keep this backend vocabulary
-  // generic until there is a screen whose inputs can render specific guidance.
-  rateCardArchived: 'errors.generic',
-  rateCardPublishedVersionRequired: 'errors.generic',
-  rateCardVersionNotDraft: 'errors.generic',
-  rateCardVersionNotPublished: 'errors.generic',
-  rateCardVersionEmpty: 'errors.generic',
-  rateCardProviderUnavailable: 'errors.generic',
-  rateLineVehicleClassUnavailable: 'errors.generic',
-  rateLineDuplicateCell: 'errors.generic',
-  rateLineLimitExceeded: 'errors.generic',
+  rateCardArchived: 'errors.rateCardArchived',
+  rateCardPublishedVersionRequired: 'errors.rateCardPublishedVersionRequired',
+  rateCardVersionNotDraft: 'errors.rateCardVersionNotDraft',
+  rateCardVersionNotPublished: 'errors.rateCardVersionNotPublished',
+  rateCardVersionEmpty: 'errors.rateCardVersionEmpty',
+  rateCardProviderUnavailable: 'errors.rateCardProviderUnavailable',
+  rateLineVehicleClassUnavailable: 'errors.rateLineVehicleClassUnavailable',
+  rateLineDuplicateCell: 'errors.rateLineDuplicateCell',
+  rateLineLimitExceeded: 'errors.rateLineLimitExceeded',
   // #74 owns the Assignment console; keep backend lifecycle details opaque here.
   assignmentPositionInvalid: 'errors.generic',
   assignmentNotesTooLong: 'errors.generic',

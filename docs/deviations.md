@@ -228,6 +228,41 @@ a decision to stop rather than guess.
     different address on a row with an out-of-view pending invitation would have succeeded and left
     two live claim offers on one Provider, whichever mailbox accepted first taking the row.
 
+17. **#73 knowingly does not satisfy its requested currency-specific decimal test.** The
+    requested `COP` display without decimals would require a per-currency exponent table, while
+    [`rates.md`](rates.md) deliberately defines one fixed exponent of 2 and #90's shared money
+    helpers implement that decision. The Rate Card grid therefore uses those helpers unchanged:
+    COP 810,000 renders as `COP 810.000,00` in `es-CO` and `COP 810,000.00` in `en-US`, while USD
+    also renders with two decimals. No currency exponent is chosen or duplicated in the console.
+
+18. **Gap 10's modality half is closed by #73.** The code-owned modality labels moved from
+    `portal.modalities` to `common.modalities` when the coordinator Rate Card grid became their
+    second consumer. Execution and revision status labels remain under `portal.` until a
+    coordinator surface consumes them, as recorded in gap 12.
+
+19. **#73's Rate Card list is filtered by Provider, not grouped by Provider.** A Provider's
+    cards can straddle a cursor boundary, so headings over the currently loaded page would make
+    each fragment look like a complete group. The list instead keeps a Provider column and sends
+    the selected Provider id to the indexed paginated query; it never groups an incomplete page
+    in the browser.
+
+17. **#73's Rate Card list shows no Version count, and groups by nothing.** The issue asks for a
+    list "grouped by Provider, showing current published Version and Version count". No public
+    query publishes a count — `listRateCardVersions` is paginated with no total, so counting per row
+    means paging every card's history on a list screen — and grouping a cursor-paginated result
+    produces incomplete groups, because one Provider's cards can straddle a page boundary and each
+    half then looks complete. The list carries a Provider column and an index-served Provider
+    filter instead, and the published Version *number* is shown on the detail screen, where one
+    bounded read supplies it.
+
+18. **#73's required COP test is knowingly not satisfied.** It asks for "COP with no displayed
+    decimals, USD with two decimals", which is a per-currency exponent. `docs/rates.md` states
+    there is deliberately no such table, and #90 shipped `apps/web/lib/money.ts` with a fixed
+    exponent of 2 citing it. COP therefore renders as `COP 810,000.00`. Introducing a display-only
+    exponent would also have changed `parseMoneyInput` and the appearance of the money surfaces
+    already shipped in #88 and #90 — a decision worth making on its own evidence rather than as a
+    side effect of a console issue, so `docs/rates.md`'s deferral stands unamended.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

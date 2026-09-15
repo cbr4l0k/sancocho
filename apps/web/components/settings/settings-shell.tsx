@@ -37,6 +37,9 @@ const sections = [
   { to: '/settings/providers', labelKey: 'settings.sections.providers', adminOnly: false },
   // Vehicle Class and Fleet Vehicle reads are open to members; the surface gates writes itself.
   { to: '/settings/fleet', labelKey: 'settings.sections.fleet', adminOnly: false },
+  // Every public Rate Card read and resolution path uses `organizationConfigurationRole`,
+  // which `lib/roles.ts` defines as admin; this section mirrors that real backend floor.
+  { to: '/settings/rate-cards', labelKey: 'settings.sections.rateCards', adminOnly: true },
 ] as const;
 
 export function SettingsShell({ children }: { children: ReactNode }) {

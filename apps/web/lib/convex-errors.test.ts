@@ -40,7 +40,7 @@ test('the number of codes left with no specific copy is pinned, so one more is a
   // version of this test filtered the codes by what the mapping already said
   // and then asserted the result was empty, which it always was.
   const generic = errorCodes.filter((code) => present(code) === 'errors.generic');
-  expect(generic).toHaveLength(63);
+  expect(generic).toHaveLength(54);
   expect(errorCodes).toHaveLength(168);
 });
 
@@ -51,10 +51,10 @@ test('the mapping is a real table, not a constant', () => {
   // impossible — a constant collapses this to 1.
   const distinct = new Set(errorCodes.map((code) => present(code)));
   expect(distinct.size).toBeGreaterThan(50);
-  expect(distinct.size).toBe(77);
+  expect(distinct.size).toBe(86);
 });
 
-test('each Provider and Fleet code carries its own copy, not a neighbour\'s', () => {
+test('each Provider, Fleet, and Rate Card code carries its own copy, not a neighbour\'s', () => {
   // A swapped pair still type-checks and still renders a real translated string;
   // only the words are wrong. Archiving a Class with vehicles attached read
   // "License plate is invalid" under one injected mutation.
@@ -74,6 +74,15 @@ test('each Provider and Fleet code carries its own copy, not a neighbour\'s', ()
     fleetVehicleYearInvalid: 'errors.fleetVehicleYearInvalid',
     fleetVehicleNotesTooLong: 'errors.fleetVehicleNotesTooLong',
     fleetVehicleArchived: 'errors.fleetVehicleArchived',
+    rateCardArchived: 'errors.rateCardArchived',
+    rateCardPublishedVersionRequired: 'errors.rateCardPublishedVersionRequired',
+    rateCardVersionNotDraft: 'errors.rateCardVersionNotDraft',
+    rateCardVersionNotPublished: 'errors.rateCardVersionNotPublished',
+    rateCardVersionEmpty: 'errors.rateCardVersionEmpty',
+    rateCardProviderUnavailable: 'errors.rateCardProviderUnavailable',
+    rateLineVehicleClassUnavailable: 'errors.rateLineVehicleClassUnavailable',
+    rateLineDuplicateCell: 'errors.rateLineDuplicateCell',
+    rateLineLimitExceeded: 'errors.rateLineLimitExceeded',
   };
   for (const [code, key] of Object.entries(pinned)) {
     expect(`${code} -> ${present(code)}`).toBe(`${code} -> ${key}`);

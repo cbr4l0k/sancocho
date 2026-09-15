@@ -12,6 +12,7 @@ import type {
   serviceKindVersionStatusValidator,
   relationshipTypeValidator,
   rateModalityValidator,
+  rateCardVersionStatusValidator,
   roleValidator,
 } from '@priamo/convex/validators';
 import type { SemanticCapability } from '@priamo/convex/validators';
@@ -32,6 +33,7 @@ type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
 type ExecutionStatus = typeof executionStatusValidator.type;
 type ProviderClaimState = typeof providerClaimStateValidator.type;
 type RateModality = typeof rateModalityValidator.type;
+type RateCardVersionStatus = typeof rateCardVersionStatusValidator.type;
 type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
 type RelationshipType = typeof relationshipTypeValidator.type;
@@ -418,7 +420,6 @@ export type MessageSchema = {
     acceptedAt: string;
     executionStatuses: Record<ExecutionStatus, string>;
     revisionStatuses: Record<AssignmentRevisionStatus, string>;
-    modalities: Record<RateModality, string>;
   };
   locations: {
     title: string;
@@ -542,6 +543,57 @@ export type MessageSchema = {
     notSet: string;
     selectedArchived: string;
   };
+  rateCards: {
+    listTitle: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    save: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    archivedNotice: string;
+    name: string;
+    provider: string;
+    providerFilter: string;
+    providerStillLoading: string;
+    status: string;
+    currentPublished: string;
+    publishedState: string;
+    nonePublished: string;
+    loadingVersion: string;
+    emptyTitle: string;
+    emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
+    versionsTitle: string;
+    noVersions: string;
+    immutableNotice: string;
+    current: string;
+    locked: string;
+    currency: string;
+    createDraft: string;
+    clonePublished: string;
+    publishDraft: string;
+    retirePublished: string;
+    retireTitle: string;
+    retireWarning: string;
+    retireConfirm: string;
+    gridTitle: string;
+    gridDescription: string;
+    vehicleClass: string;
+    archivedClassRatesOnlyClear: string;
+    clearRate: string;
+    emptyCell: string;
+    cellAmount: string;
+    currencyChangeWarning: string;
+    confirmCurrencyChange: string;
+    publishBlocks: Record<'providerLoading' | 'providerArchived' | 'empty' | 'archivedClass' | 'invalidGrid', string>;
+    gridWarnings: Record<'rateGridUnknownVehicleClass' | 'rateGridUnknownModality' | 'rateGridDuplicateCell', string>;
+    versionStatuses: Record<RateCardVersionStatus, string>;
+    moneyProblems: Record<'invalid' | 'negative' | 'tooManyDecimalPlaces' | 'outOfRange', string>;
+  };
   relationships: {
     title: string;
     link: string;
@@ -609,6 +661,7 @@ export type MessageSchema = {
       serviceKinds: string;
       providers: string;
       fleet: string;
+      rateCards: string;
     };
     adminOnlyTitle: string;
     adminOnlyBody: string;
@@ -621,6 +674,7 @@ export type MessageSchema = {
      * reading its vocabulary out of the Provider portal's namespace.
      */
     moneyValue: string;
+    modalities: Record<RateModality, string>;
     language: string;
     languageDescription: string;
     spanish: string;
@@ -713,6 +767,15 @@ export type MessageSchema = {
     locationDeleteBlocked: string;
     locationAddressTooLong: string;
     locationCoordinatesInvalid: string;
+    rateCardArchived: string;
+    rateCardPublishedVersionRequired: string;
+    rateCardVersionNotDraft: string;
+    rateCardVersionNotPublished: string;
+    rateCardVersionEmpty: string;
+    rateCardProviderUnavailable: string;
+    rateLineVehicleClassUnavailable: string;
+    rateLineDuplicateCell: string;
+    rateLineLimitExceeded: string;
     auditInvalid: string;
   };
   nav: {

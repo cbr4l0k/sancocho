@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test';
 
-import { catalogueArgs, fleetCatalogueArgs, pickerArgs } from './catalogue-filters';
+import {
+  catalogueArgs,
+  fleetCatalogueArgs,
+  pickerArgs,
+  providerFilterPickerArgs,
+  rateCardCatalogueArgs,
+} from './catalogue-filters';
 
 test('query arguments carry no pagination state, so paging cannot be confused with filtering', () => {
   // This is the real content of "filters survive pagination". `usePaginatedQuery`
@@ -35,6 +41,15 @@ test('catalogue and fleet arguments are skipped entirely until an organization i
   expect(
     fleetCatalogueArgs(undefined, { search: 'x', status: 'active', providerId: 'p1', vehicleClassId: 'c1' }),
   ).toBe('skip');
+  expect(rateCardCatalogueArgs(undefined, { providerId: '' })).toBe('skip');
+});
+
+test('Rate Card Provider filter travels as a query argument and is omitted when clear', () => {
+  expect(rateCardCatalogueArgs('org-1', { providerId: 'provider-1' })).toEqual({
+    organizationId: 'org-1',
+    providerId: 'provider-1',
+  });
+  expect(rateCardCatalogueArgs('org-1', { providerId: '' })).toEqual({ organizationId: 'org-1' });
 });
 
 test('changing any filter changes the arguments, which is what resets the cursor', () => {
@@ -77,4 +92,10 @@ test('pickers skip without organization context and request only active rows onc
   expect(pickerArgs(undefined, 'norte')).toBe('skip');
   expect(pickerArgs('org-1', 'norte')).toEqual({ organizationId: 'org-1', status: 'active', search: 'norte' });
   expect(pickerArgs('org-1', '')).toEqual({ organizationId: 'org-1', status: 'active' });
+});
+
+test('the Rate Card filter picker includes archived Providers', () => {
+  expect(providerFilterPickerArgs(undefined, '')).toBe('skip');
+  expect(providerFilterPickerArgs('org-1', ' norte ')).toEqual({ organizationId: 'org-1', search: 'norte' });
+  expect(providerFilterPickerArgs('org-1', '')).toEqual({ organizationId: 'org-1' });
 });

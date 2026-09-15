@@ -26,6 +26,7 @@ const removeRateLine = api.rateCards.mutations.removeRateLine;
 const publishRateCardVersion = api.rateCards.mutations.publishRateCardVersion;
 const retireRateCardVersion = api.rateCards.mutations.retireRateCardVersion;
 const getRateCard = api.rateCards.queries.getRateCard;
+const getRateCardDetail = api.rateCards.queries.getRateCardDetail;
 const listRateCards = api.rateCards.queries.listRateCards;
 const listRateCardVersions = api.rateCards.queries.listRateCardVersions;
 const getRateCardVersion = api.rateCards.queries.getRateCardVersion;
@@ -121,10 +122,116 @@ test('I7: version numbers are server-assigned, gapless, and cannot be submitted 
 
   const versions = await owner.client.query(listRateCardVersions, { rateCardId, paginationOpts: firstPage });
   expect(versions.page.map((version) => [version._id, version.versionNumber, version.status])).toEqual([
-    [v1, 1, 'retired'],
-    [v2, 2, 'published'],
     [v3, 3, 'draft'],
+    [v2, 2, 'published'],
+    [v1, 1, 'retired'],
   ]);
+});
+
+test('Rate Card detail finds a draft beyond the first history page', async () => {
+  const { t, owner, organizationId, rateCardId } = await fixture('rate-cards-detail-late-draft');
+  const draftVersionId = await t.run(async (ctx) => {
+    for (let versionNumber = 1; versionNumber <= 30; versionNumber += 1) {
+      await ctx.db.insert('rateCardVersions', {
+        organizationId,
+        rateCardId,
+        versionNumber,
+        currency: 'COP',
+        status: 'retired',
+      });
+    }
+    return ctx.db.insert('rateCardVersions', {
+      organizationId,
+      rateCardId,
+      versionNumber: 31,
+      currency: 'COP',
+      status: 'draft',
+    });
+  });
+
+  const firstHistoryPage = await owner.client.query(listRateCardVersions, {
+    rateCardId,
+    paginationOpts: { numItems: 25, cursor: null },
+  });
+  expect(firstHistoryPage.page).toHaveLength(25);
+  const detail = await owner.client.query(getRateCardDetail, { rateCardId });
+  expect(detail.draftVersion?._id).toBe(draftVersionId);
+});
+
+test('Rate Card detail returns the published Version, which is what the clone and retire actions need', async () => {
+  // Without this, the whole resolution can be replaced by the constant `null`
+  // and stay green — and `null` removes clone-published and retire from the
+  // console entirely, replacing them with the create-first-draft picker.
+  const { owner, rateCardId, versionId } = await publishedFixture('rate-cards-detail-published');
+  const detail = await owner.client.query(getRateCardDetail, { rateCardId });
+  expect(detail.publishedVersion?._id).toBe(versionId);
+  expect(detail.publishedVersion?.status).toBe('published');
+  expect(detail.publishedVersion?.versionNumber).toBe(1);
+});
+
+test('Rate Card detail returns null for a card whose Versions exist but none is published', async () => {
+  // An earlier version of this test used a card with NO versions at all, so the
+  // `currentPublishedVersionId === undefined` short-circuit fired and none of
+  // the pointer's validity checks were ever reached.
+  const { owner, rateCardId } = await fixture('rate-cards-detail-unpublished');
+  const draftId = await owner.client.mutation(createInitialDraftVersion, { rateCardId, currency: 'COP' });
+  const detail = await owner.client.query(getRateCardDetail, { rateCardId });
+  expect(detail.draftVersion?._id).toBe(draftId);
+  expect(detail.publishedVersion).toBeNull();
+});
+
+test('Rate Card detail refuses a current-published pointer that no longer resolves to a live published Version', async () => {
+  const { t, owner, rateCardId, versionId } = await publishedFixture('rate-cards-detail-dangling');
+  await t.run((ctx) => ctx.db.delete(versionId));
+  expect((await owner.client.query(getRateCardDetail, { rateCardId })).publishedVersion).toBeNull();
+});
+
+test('Rate Card detail re-derives the published Version through the graph instead of trusting the pointer', async () => {
+  // These three guards are I4: the stored pointer is a cache, and authorization
+  // and identity walk the entity graph. None is reachable through a public
+  // write today, which is exactly why each needs its own assertion — they were
+  // written deliberately and nothing was checking them.
+  const f = await publishedFixture('rate-cards-detail-pointer');
+  const otherCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    name: 'Another card',
+  });
+  const otherVersionId = await f.owner.client.mutation(createInitialDraftVersion, { rateCardId: otherCardId, currency: 'COP' });
+
+  // Pointing at a version belonging to a DIFFERENT card.
+  await f.t.run((ctx) => ctx.db.patch(f.rateCardId, { currentPublishedVersionId: otherVersionId }));
+  expect((await f.owner.client.query(getRateCardDetail, { rateCardId: f.rateCardId })).publishedVersion).toBeNull();
+
+  // Pointing at a version of this card that is NOT published.
+  const draftOfThisCard = await f.t.run(async (ctx) =>
+    ctx.db.insert('rateCardVersions', {
+      organizationId: f.organizationId,
+      rateCardId: f.rateCardId,
+      versionNumber: 98,
+      currency: 'COP',
+      status: 'draft',
+    }),
+  );
+  await f.t.run((ctx) => ctx.db.patch(f.rateCardId, { currentPublishedVersionId: draftOfThisCard }));
+  expect((await f.owner.client.query(getRateCardDetail, { rateCardId: f.rateCardId })).publishedVersion).toBeNull();
+
+  // Pointing at a version stamped with a foreign organization.
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Elsewhere',
+    slug: 'rate-cards-detail-pointer-foreign',
+  });
+  const foreignStamped = await f.t.run(async (ctx) =>
+    ctx.db.insert('rateCardVersions', {
+      organizationId: foreignOrganizationId,
+      rateCardId: f.rateCardId,
+      versionNumber: 97,
+      currency: 'COP',
+      status: 'published',
+    }),
+  );
+  await f.t.run((ctx) => ctx.db.patch(f.rateCardId, { currentPublishedVersionId: foreignStamped }));
+  expect((await f.owner.client.query(getRateCardDetail, { rateCardId: f.rateCardId })).publishedVersion).toBeNull();
 });
 
 test('concurrent initial drafts produce one success and one conflict, leaving one number 1 draft', async () => {
@@ -457,8 +564,79 @@ test('Card and Version lists are tenant/card scoped and return a correct continu
   const secondVersions = await f.owner.client.query(listRateCardVersions, { rateCardId: f.rateCardId, paginationOpts: { numItems: 2, cursor: firstVersions.continueCursor } });
   expect(secondVersions.page).toHaveLength(1);
   expect(secondVersions.isDone).toBe(true);
-  expect([...firstVersions.page, ...secondVersions.page].map((version) => version._id)).toEqual([v1, v2, v3]);
+  expect([...firstVersions.page, ...secondVersions.page].map((version) => version._id)).toEqual([v3, v2, v1]);
   expect([...firstVersions.page, ...secondVersions.page].every((version) => version.rateCardId === f.rateCardId)).toBe(true);
+});
+
+test('Card list Provider filter returns only matching cards and a foreign Provider selects an empty page', async () => {
+  const f = await fixture('rate-cards-provider-filter');
+  const otherProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: f.organizationId,
+    name: 'Other Provider',
+  });
+  const otherCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: otherProviderId,
+    name: 'Other terms',
+  });
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Foreign',
+    slug: 'rate-cards-provider-filter-foreign',
+  });
+  const foreignProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: foreignOrganizationId,
+    name: 'Foreign Provider',
+  });
+
+  const matching = await f.owner.client.query(listRateCards, {
+    organizationId: f.organizationId,
+    providerId: otherProviderId,
+    paginationOpts: firstPage,
+  });
+  expect(matching.page.map((card) => card._id)).toEqual([otherCardId]);
+  expect(matching.page.every((card) => card.providerId === otherProviderId)).toBe(true);
+
+  // A page's worth of cards belonging to somebody else, and only THEN the card
+  // we filter for, so the match sits beyond the first page.
+  //
+  // Ordering is the whole point. With a handful of cards the two possible
+  // implementations are indistinguishable: narrowing through the index and
+  // filtering an already-fetched page return the same rows. Here they do not.
+  // Filtering after `.paginate()` returns an EMPTY first page with `isDone`
+  // false, because all ten rows it fetched belong to another provider — the I6
+  // failure this query's own comment warns about, seen from the console as
+  // "this provider has no rate cards".
+  for (let index = 0; index < 12; index += 1) {
+    await f.owner.client.mutation(createRateCard, {
+      organizationId: f.organizationId,
+      providerId: otherProviderId,
+      name: `Bulk ${index}`,
+    });
+  }
+  const lateProviderId = await f.owner.client.mutation(createProvider, {
+    organizationId: f.organizationId,
+    name: 'Late Provider',
+  });
+  const lateCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: lateProviderId,
+    name: 'Late terms',
+  });
+  const beyondFirstPage = await f.owner.client.query(listRateCards, {
+    organizationId: f.organizationId,
+    providerId: lateProviderId,
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(beyondFirstPage.page.map((card) => card._id)).toEqual([lateCardId]);
+  expect(beyondFirstPage.isDone).toBe(true);
+
+  const foreign = await f.owner.client.query(listRateCards, {
+    organizationId: f.organizationId,
+    providerId: foreignProviderId,
+    paginationOpts: firstPage,
+  });
+  expect(foreign.page).toEqual([]);
+  expect(foreign.isDone).toBe(true);
 });
 
 test('Card and Version lifecycle audit rows have the right actor/entity and contain no commercial grid', async () => {
@@ -507,28 +685,55 @@ type SurfaceIds = {
   rateLineId: Id<'rateLines'>;
 };
 
+/**
+ * Every public function in the domain, by its exported name.
+ *
+ * The name on each entry is not decoration: it feeds the compile-time
+ * exhaustiveness check below, which is the only thing standing between this
+ * suite and a new public door shipping untested. A hand-counted list had
+ * exactly that failure — `getRateCardDetail` was added, the list stayed at
+ * sixteen entries, and removing its authorization gate let an outsider read a
+ * whole Rate Card with the suite green. `Object.keys` cannot help here: the
+ * generated `api` is a proxy and enumerates to nothing at runtime, so the
+ * check has to be a type-level one.
+ */
 function everyRateCardSurface(client: Client | SchemaTest, ids: SurfaceIds, providerId: Id<'providers'>, vehicleClassId: Id<'vehicleClasses'>) {
   return [
-    () => client.mutation(createRateCard, { organizationId: ids.organizationId, providerId, name: 'Blocked' }),
-    () => client.mutation(updateRateCardMetadata, { rateCardId: ids.rateCardId, name: 'Blocked' }),
-    () => client.mutation(archiveRateCard, { rateCardId: ids.rateCardId }),
-    () => client.mutation(createInitialDraftVersion, { rateCardId: ids.rateCardId, currency: 'COP' }),
-    () => client.mutation(clonePublishedVersionToDraft, { rateCardId: ids.rateCardId }),
-    () => client.mutation(updateRateCardVersion, { rateCardVersionId: ids.versionId, currency: 'USD' }),
-    () => client.mutation(addRateLine, { rateCardVersionId: ids.versionId, vehicleClassId, modality: 'fixed', unitAmount: 1 }),
-    () => client.mutation(updateRateLine, { rateLineId: ids.rateLineId, unitAmount: 1 }),
-    () => client.mutation(removeRateLine, { rateLineId: ids.rateLineId }),
-    () => client.mutation(publishRateCardVersion, { rateCardVersionId: ids.versionId }),
-    () => client.mutation(retireRateCardVersion, { rateCardVersionId: ids.versionId }),
-    () => client.query(getRateCard, { rateCardId: ids.rateCardId }),
-    () => client.query(listRateCards, { organizationId: ids.organizationId, paginationOpts: firstPage }),
-    () => client.query(listRateCardVersions, { rateCardId: ids.rateCardId, paginationOpts: firstPage }),
-    () => client.query(getRateCardVersion, { rateCardVersionId: ids.versionId }),
-    () => client.query(resolveRate, { rateCardVersionId: ids.versionId, providerId, vehicleClassId, modality: 'disposition' }),
-  ];
+    { name: 'createRateCard', run: () => client.mutation(createRateCard, { organizationId: ids.organizationId, providerId, name: 'Blocked' }) },
+    { name: 'updateRateCardMetadata', run: () => client.mutation(updateRateCardMetadata, { rateCardId: ids.rateCardId, name: 'Blocked' }) },
+    { name: 'archiveRateCard', run: () => client.mutation(archiveRateCard, { rateCardId: ids.rateCardId }) },
+    { name: 'createInitialDraftVersion', run: () => client.mutation(createInitialDraftVersion, { rateCardId: ids.rateCardId, currency: 'COP' }) },
+    { name: 'clonePublishedVersionToDraft', run: () => client.mutation(clonePublishedVersionToDraft, { rateCardId: ids.rateCardId }) },
+    { name: 'updateRateCardVersion', run: () => client.mutation(updateRateCardVersion, { rateCardVersionId: ids.versionId, currency: 'USD' }) },
+    { name: 'addRateLine', run: () => client.mutation(addRateLine, { rateCardVersionId: ids.versionId, vehicleClassId, modality: 'fixed', unitAmount: 1 }) },
+    { name: 'updateRateLine', run: () => client.mutation(updateRateLine, { rateLineId: ids.rateLineId, unitAmount: 1 }) },
+    { name: 'removeRateLine', run: () => client.mutation(removeRateLine, { rateLineId: ids.rateLineId }) },
+    { name: 'publishRateCardVersion', run: () => client.mutation(publishRateCardVersion, { rateCardVersionId: ids.versionId }) },
+    { name: 'retireRateCardVersion', run: () => client.mutation(retireRateCardVersion, { rateCardVersionId: ids.versionId }) },
+    { name: 'getRateCard', run: () => client.query(getRateCard, { rateCardId: ids.rateCardId }) },
+    { name: 'getRateCardDetail', run: () => client.query(getRateCardDetail, { rateCardId: ids.rateCardId }) },
+    { name: 'listRateCards', run: () => client.query(listRateCards, { organizationId: ids.organizationId, paginationOpts: firstPage }) },
+    { name: 'listRateCardVersions', run: () => client.query(listRateCardVersions, { rateCardId: ids.rateCardId, paginationOpts: firstPage }) },
+    { name: 'getRateCardVersion', run: () => client.query(getRateCardVersion, { rateCardVersionId: ids.versionId }) },
+    { name: 'resolveRate', run: () => client.query(resolveRate, { rateCardVersionId: ids.versionId, providerId, vehicleClassId, modality: 'disposition' }) },
+  ] as const;
 }
 
-test('all 16 public functions are opaque to unauthenticated, fabricated-id, outsider, and below-role callers', async () => {
+/**
+ * Adding a public query or mutation to `rateCards` without adding it above is a
+ * `tsc` failure here, not a silently narrower test.
+ */
+type PublicRateCardFunction = keyof typeof api.rateCards.queries | keyof typeof api.rateCards.mutations;
+type CoveredRateCardFunction = ReturnType<typeof everyRateCardSurface>[number]['name'];
+const _everyPublicRateCardFunctionIsExercised: Exclude<
+  PublicRateCardFunction,
+  CoveredRateCardFunction
+> extends never
+  ? true
+  : never = true;
+void _everyPublicRateCardFunctionIsExercised;
+
+test('every public rate card function is opaque to unauthenticated, fabricated-id, outsider, and below-role callers', async () => {
   const f = await fixture('rate-cards-opacity');
   const versionId = await f.owner.client.mutation(createInitialDraftVersion, { rateCardId: f.rateCardId, currency: 'COP' });
   const rateLineId = await addLine(f.owner.client, versionId, f.vehicleClassId);
@@ -548,20 +753,22 @@ test('all 16 public functions are opaque to unauthenticated, fabricated-id, outs
   const planner = await provision(f.t, 'rate-cards-opacity-planner');
   await f.owner.client.mutation(addMember, { organizationId: f.organizationId, userId: planner.userId, role: 'planner' });
 
-  for (const call of everyRateCardSurface(f.t, real, f.providerId, f.vehicleClassId)) {
-    await expect(call()).rejects.toMatchObject({ data: { code: unauthenticated } });
+  for (const { name, run } of everyRateCardSurface(f.t, real, f.providerId, f.vehicleClassId)) {
+    // The name rides along so a failure says which door opened, rather than
+    // which index of an anonymous array did.
+    await expect(run(), name).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
   for (const caller of [outsider.client, planner.client]) {
-    for (const call of everyRateCardSurface(caller, real, f.providerId, f.vehicleClassId)) {
-      await expect(call()).rejects.toMatchObject({ data: { code: inaccessible } });
+    for (const { name, run } of everyRateCardSurface(caller, real, f.providerId, f.vehicleClassId)) {
+      await expect(run(), name).rejects.toMatchObject({ data: { code: inaccessible } });
     }
   }
-  for (const call of everyRateCardSurface(f.owner.client, missing, f.providerId, f.vehicleClassId)) {
-    await expect(call()).rejects.toMatchObject({ data: { code: inaccessible } });
+  for (const { name, run } of everyRateCardSurface(f.owner.client, missing, f.providerId, f.vehicleClassId)) {
+    await expect(run(), name).rejects.toMatchObject({ data: { code: inaccessible } });
   }
 });
 
-test("a granted Provider Principal reaches none of the 16 Card reads or writes, including its own Provider's Card", async () => {
+test("a granted Provider Principal reaches no Card read or write, including its own Provider's Card", async () => {
   const f = await publishedFixture('rate-cards-provider-principal');
   const projectId = await f.owner.client.mutation(createProject, { organizationId: f.organizationId, name: 'Festival Cordillera' });
   const providerFirm = await provision(f.t, 'rate-cards-provider-firm');
@@ -573,8 +780,8 @@ test("a granted Provider Principal reaches none of the 16 Card reads or writes, 
   await f.owner.client.mutation(grantProjectAccessToProvider, { projectId, providerId: f.providerId });
 
   const ids = { organizationId: f.organizationId, rateCardId: f.rateCardId, versionId: f.versionId, rateLineId: f.rateLineId };
-  for (const call of everyRateCardSurface(providerFirm.client, ids, f.providerId, f.vehicleClassId)) {
-    await expect(call()).rejects.toMatchObject({ data: { code: inaccessible } });
+  for (const { name, run } of everyRateCardSurface(providerFirm.client, ids, f.providerId, f.vehicleClassId)) {
+    await expect(run(), name).rejects.toMatchObject({ data: { code: inaccessible } });
   }
   await f.t.run(async (ctx) => {
     const grant = await ctx.db
