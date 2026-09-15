@@ -192,6 +192,8 @@ Admins do everything else.
 | `providers.listProjectProviderAccessGrants` | **admin** | Includes revoked rows; there is no provider-side counterpart, which would disclose which other firms were engaged |
 | `events.createEvent`, `updateEvent`, `changeEventStatus`, `archiveEvent`, `deleteEvent` | planner | Completed projects accept no new Events; archived projects freeze Event writes; Events must be archived and unreferenced before deletion |
 | `events.getEvent`, `listProjectEvents` | viewer | |
+| `events.getEventDetail` | viewer | The header join. A venue, client Cost Centre or accountable person that is missing, or that belongs to another tenant, degrades to `null` rather than refusing the Event or disclosing the foreign row (I9). The accountable person also degrades to `null` once their membership is removed, so a name stops leaving a tenant the person has left |
+| `events.listOrganizationEvents` | viewer | `projectId`, when given, is cross-checked against `organizationId`. Each page's rows are re-derived through their stored Project rather than trusted from the denormalized `events.organizationId` the index selected on (I4) |
 | `fields.createFieldDefinition`, `updateFieldDefinition`, `archiveFieldDefinition`, `deleteFieldDefinition` | planner | Built-in definitions are not editable through any public door |
 | `fields.listFieldDefinitions` | viewer | |
 | `fields.listBuiltinFieldDefinitions` | authenticated app user | The catalogue is deployment-wide, not tenant data |

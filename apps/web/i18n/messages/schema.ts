@@ -2,6 +2,7 @@ import type {
   archivalStatusValidator,
   assignmentRevisionStatusValidator,
   executionStatusValidator,
+  eventStatusValidator,
   serviceStatusValidator,
   fieldDataTypeValidator,
   locationTypeValidator,
@@ -21,6 +22,7 @@ export type TranslationShape<Value> = Value extends string
     : never;
 
 type ProjectStatus = typeof projectStatusValidator.type;
+type EventStatus = typeof eventStatusValidator.type;
 type ServiceKindStatus = typeof serviceKindStatusValidator.type;
 type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
 type ServiceStatus = typeof serviceStatusValidator.type;
@@ -122,6 +124,60 @@ export type MessageSchema = {
     servicesPlaceholder: string;
     servicesLink: string;
     statuses: Record<ProjectStatus, string>;
+  };
+  events: {
+    title: string;
+    listTitle: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    cancel: string;
+    name: string;
+    project: string;
+    projectFilter: string;
+    allProjects: string;
+    status: string;
+    statusFilter: string;
+    allStatuses: string;
+    startsAt: string;
+    endsAt: string;
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+    window: string;
+    venue: string;
+    costCentre: string;
+    budget: string;
+    budgetAmount: string;
+    budgetCurrency: string;
+    accountable: string;
+    notSet: string;
+    emptyTitle: string;
+    emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
+    clearFilters: string;
+    servicesTitle: string;
+    servicesEmptyTitle: string;
+    servicesEmptyBody: string;
+    statusActions: string;
+    advanceTo: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    archivedNotice: string;
+    permissionNotice: string;
+    invalidName: string;
+    invalidWindow: string;
+    outsideProjectWindow: string;
+    invalidBudget: string;
+    budgetIncomplete: string;
+    selectPlaceholder: string;
+    statuses: Record<EventStatus, string>;
   };
   fields: {
     title: string;
@@ -358,7 +414,6 @@ export type MessageSchema = {
     recordedAt: string;
     revisionDetail: string;
     acceptedAt: string;
-    moneyValue: string;
     executionStatuses: Record<ExecutionStatus, string>;
     revisionStatuses: Record<AssignmentRevisionStatus, string>;
     modalities: Record<RateModality, string>;
@@ -471,6 +526,13 @@ export type MessageSchema = {
     adminOnlyBody: string;
   };
   common: {
+    /**
+     * Money is rendered identically on both frames, so its pattern lives here
+     * rather than under `portal`. It was portal-only until the Events budget
+     * header needed it, at which point a coordinator screen would have been
+     * reading its vocabulary out of the Provider portal's namespace.
+     */
+    moneyValue: string;
     language: string;
     languageDescription: string;
     spanish: string;
@@ -506,6 +568,16 @@ export type MessageSchema = {
     projectDatesInvalid: string;
     eventArchiveRequired: string;
     eventDeleteRequiresArchive: string;
+    eventDatesInvalid: string;
+    eventBeforeProjectWindow: string;
+    eventAfterProjectWindow: string;
+    eventProjectUnavailable: string;
+    eventProjectReadOnly: string;
+    eventArchived: string;
+    eventStatusTransitionInvalid: string;
+    eventVenueLocationTypeInvalid: string;
+    eventBudgetIncomplete: string;
+    moneyAmountInvalid: string;
     relationshipSelfReference: string;
     fieldKeyInvalid: string;
     fieldKeyTaken: string;
@@ -545,6 +617,7 @@ export type MessageSchema = {
   nav: {
     chat: string;
     projects: string;
+    events: string;
     services: string;
     serviceKinds: string;
     locations: string;

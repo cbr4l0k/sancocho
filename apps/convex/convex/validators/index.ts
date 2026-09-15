@@ -26,6 +26,13 @@ export const roleValidator = v.union(
   v.literal('viewer'),
 );
 
+/** Public user projection shared by every roster and joined display read. */
+export const displayUserValidator = v.object({
+  _id: v.id('users'),
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+});
+
 /** Code-owned currency vocabulary for every persisted money value. */
 export const currencyValidator = v.union(
   v.literal('COP'),

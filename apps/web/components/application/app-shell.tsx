@@ -233,6 +233,7 @@ function ShellFrame({ children }: ApplicationShellProps) {
   const nav = [
     { to: '/chat', label: t('nav.chat') },
     { to: '/projects', label: t('nav.projects') },
+    { to: '/events', label: t('nav.events') },
     { to: '/services', label: t('nav.services') },
     { to: '/settings', label: t('nav.settings') },
   ];

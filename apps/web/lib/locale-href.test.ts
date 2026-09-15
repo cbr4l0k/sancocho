@@ -24,6 +24,12 @@ test('normalizes paths without a leading slash', () => {
 
 test('preserves query strings', () => {
   expect(localeHref('es-CO', '/services/new?projectId=x')).toBe('/es/services/new?projectId=x');
+  expect(localeHref('es-CO', '/events/new?projectId=x')).toBe('/es/events/new?projectId=x');
+});
+
+test('retains locale segments for Event and Service detail links', () => {
+  expect(localeHref('es-CO', '/events/event-id')).toBe('/es/events/event-id');
+  expect(localeHref('en-US', '/services/service-id')).toBe('/en/services/service-id');
 });
 
 test('preserves fragments', () => {

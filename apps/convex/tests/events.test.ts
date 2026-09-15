@@ -15,7 +15,9 @@ const updateProject = api.projects.mutations.updateProject;
 const archiveProject = api.projects.mutations.archiveProject;
 const createEvent = api.events.mutations.createEvent;
 const getEvent = api.events.queries.getEvent;
+const getEventDetail = api.events.queries.getEventDetail;
 const listProjectEvents = api.events.queries.listProjectEvents;
+const listOrganizationEvents = api.events.queries.listOrganizationEvents;
 const changeEventStatus = api.events.mutations.changeEventStatus;
 const updateEvent = api.events.mutations.updateEvent;
 const archiveEvent = api.events.mutations.archiveEvent;
@@ -90,6 +92,158 @@ test('Event creation derives organization ownership and listProjectEvents is an 
     paginationOpts: { numItems: 1, cursor: first.continueCursor },
   });
   expect(second.page.map((row: Doc<'events'>) => row._id)).toEqual([later]);
+});
+
+test('listOrganizationEvents is tenant-scoped and narrows by indexed status and Project before pagination', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-org-list');
+  const secondProjectId = await owner.mutation(createProject, { organizationId, name: 'Second project' });
+  const draft = await owner.mutation(createEvent, { projectId, name: 'Draft', startsAt: 200 });
+  const active = await owner.mutation(createEvent, { projectId, name: 'Active', startsAt: 300 });
+  await owner.mutation(changeEventStatus, { eventId: active, status: 'active' });
+  const otherProjectDraft = await owner.mutation(createEvent, { projectId: secondProjectId, name: 'Other draft', startsAt: 400 });
+
+  const all = await owner.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage });
+  expect(all.page.map((event) => event._id)).toEqual([draft, active, otherProjectDraft]);
+  const firstDraftPage = await owner.query(listOrganizationEvents, {
+    organizationId,
+    status: 'draft',
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  expect(firstDraftPage.page).toHaveLength(1);
+  expect(firstDraftPage.page.every((event) => event.status === 'draft')).toBe(true);
+  const remainingDrafts = await owner.query(listOrganizationEvents, {
+    organizationId,
+    status: 'draft',
+    paginationOpts: { numItems: 10, cursor: firstDraftPage.continueCursor },
+  });
+  expect([...firstDraftPage.page, ...remainingDrafts.page].map((event) => event._id)).toEqual([draft, otherProjectDraft]);
+  expect(remainingDrafts.page.every((event) => event.status === 'draft')).toBe(true);
+  const projectOnly = await owner.query(listOrganizationEvents, {
+    organizationId,
+    projectId,
+    paginationOpts: firstPage,
+  });
+  expect(projectOnly.page.map((event) => event._id)).toEqual([draft, active]);
+
+  // Both filters together is its own index branch, and it is the default path
+  // once a planner touches both selects. Tested separately because the two
+  // filters passing alone proves nothing about the branch that serves the pair:
+  // an earlier version narrowed by Project and silently dropped the status.
+  const secondProjectDraft = await owner.mutation(createEvent, { projectId, name: 'Second draft', startsAt: 500 });
+  const projectAndStatus = await owner.query(listOrganizationEvents, {
+    organizationId,
+    projectId,
+    status: 'draft',
+    paginationOpts: firstPage,
+  });
+  expect(projectAndStatus.page.map((event) => event._id)).toEqual([draft, secondProjectDraft]);
+  // A page boundary proves the narrowing happened BEFORE the cursor. Filtering
+  // after pagination would return a short page here and lose the second draft.
+  const firstOfPair = await owner.query(listOrganizationEvents, {
+    organizationId,
+    projectId,
+    status: 'draft',
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  expect(firstOfPair.page.map((event) => event._id)).toEqual([draft]);
+  const restOfPair = await owner.query(listOrganizationEvents, {
+    organizationId,
+    projectId,
+    status: 'draft',
+    paginationOpts: { numItems: 10, cursor: firstOfPair.continueCursor },
+  });
+  expect(restOfPair.page.map((event) => event._id)).toEqual([secondProjectDraft]);
+  expect(restOfPair.page.every((event) => event.status === 'draft')).toBe(true);
+
+  const foreign = await provision(t, 'events-org-list-foreign');
+  const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Foreign list', slug: 'events-org-list-foreign' });
+  await owner.mutation(addMember, { organizationId: foreignOrganizationId, userId: foreign.userId, role: 'owner' });
+  const foreignProjectId = await foreign.client.mutation(createProject, { organizationId: foreignOrganizationId, name: 'Foreign project' });
+  await foreign.client.mutation(createEvent, { projectId: foreignProjectId, name: 'Foreign event', startsAt: 100 });
+  const foreignPage = await foreign.client.query(listOrganizationEvents, {
+    organizationId: foreignOrganizationId,
+    paginationOpts: firstPage,
+  });
+  expect(foreignPage.page).toHaveLength(1);
+  expect(foreignPage.page.every((event) => event.organizationId === foreignOrganizationId)).toBe(true);
+  await expect(owner.query(listOrganizationEvents, {
+    organizationId,
+    projectId: foreignProjectId,
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listOrganizationEvents refuses a page whose stored Project contradicts the indexed organizationId', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-org-list-divergence');
+  const eventId = await owner.mutation(createEvent, { projectId, name: 'Honest', startsAt: 200 });
+  await expect(owner.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage })).resolves.toMatchObject({
+    page: [{ _id: eventId }],
+  });
+
+  // No public door can produce this: `createEvent` derives the column from a
+  // proven Project and `updateEvent` cannot name it. A bad migration or seed
+  // can, which is the whole reason the list re-derives the tenant through the
+  // stored graph instead of trusting the column its index selected on (I4).
+  const foreign = await provision(t, 'events-divergence-foreign');
+  const foreignOrganizationId = await foreign.client.mutation(createOrganization, {
+    name: 'Divergent',
+    slug: 'events-divergence-foreign',
+  });
+  const foreignProjectId = await foreign.client.mutation(createProject, {
+    organizationId: foreignOrganizationId,
+    name: 'Divergent project',
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(eventId, { projectId: foreignProjectId });
+  });
+
+  // The whole page is refused, not silently shortened: a divergence is a corrupt
+  // database, and a quietly dropped row would hide it from the tenant it belongs to.
+  await expect(
+    owner.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('getEventDetail joins safe header projections and nulls absent, dangling, foreign, and former-member arms', async () => {
+  const { t, client: owner, organizationId, projectId } = await fixture('events-detail');
+  const absentId = await owner.mutation(createEvent, { projectId, name: 'Absent context', startsAt: 200 });
+  await expect(owner.query(getEventDetail, { eventId: absentId })).resolves.toMatchObject({
+    venue: null,
+    clientCostCentre: null,
+    accountable: null,
+  });
+
+  const venueId = await owner.mutation(createLocation, { organizationId, name: 'Hall', type: 'venue' });
+  const costCentreId = await owner.mutation(createCostCentre, { organizationId, key: 'client', name: 'Client' });
+  const member = await provision(t, 'events-detail-member');
+  const membershipId = await owner.mutation(addMember, { organizationId, userId: member.userId, role: 'planner' });
+  const eventId = await owner.mutation(createEvent, {
+    projectId,
+    name: 'Joined context',
+    startsAt: 300,
+    venueLocationId: venueId,
+    clientCostCentreId: costCentreId,
+    accountableUserId: member.userId,
+  });
+  await expect(owner.query(getEventDetail, { eventId })).resolves.toMatchObject({
+    venue: { _id: venueId, name: 'Hall', type: 'venue' },
+    clientCostCentre: { _id: costCentreId, key: 'client', name: 'Client', status: 'active' },
+    accountable: { _id: member.userId },
+  });
+  await owner.mutation(removeMember, { membershipId });
+  await expect(owner.query(getEventDetail, { eventId })).resolves.toMatchObject({ accountable: null });
+
+  await t.run(async (ctx) => {
+    await ctx.db.delete(venueId);
+    await ctx.db.delete(costCentreId);
+  });
+  await expect(owner.query(getEventDetail, { eventId })).resolves.toMatchObject({ venue: null, clientCostCentre: null });
+
+  const foreignOrganizationId = await owner.mutation(createOrganization, { name: 'Foreign detail', slug: 'events-detail-foreign' });
+  const foreignVenueId = await owner.mutation(createLocation, { organizationId: foreignOrganizationId, name: 'Foreign hall', type: 'venue' });
+  const foreignCostCentreId = await owner.mutation(createCostCentre, { organizationId: foreignOrganizationId, key: 'foreign', name: 'Foreign client' });
+  await t.run((ctx) => ctx.db.patch(eventId, { venueLocationId: foreignVenueId, clientCostCentreId: foreignCostCentreId }));
+  await expect(owner.query(getEventDetail, { eventId })).resolves.toMatchObject({ venue: null, clientCostCentre: null });
 });
 
 test('Event creation and editing require the shared planner authoring role', async () => {
@@ -176,6 +330,7 @@ test('every public Event function is opaque to unauthenticated, fabricated, fore
 
   for (const id of [eventId, missingEventId]) {
     await expect(t.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
+    await expect(t.query(getEventDetail, { eventId: id })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(t.query(listEventServices, { eventId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(t.mutation(updateEvent, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(t.mutation(changeEventStatus, { eventId: id, status: 'active' })).rejects.toMatchObject({ data: { code: unauthenticated } });
@@ -187,9 +342,11 @@ test('every public Event function is opaque to unauthenticated, fabricated, fore
     await expect(t.query(listProjectEvents, { projectId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
     await expect(t.mutation(createEvent, { projectId: id, name: 'Nope', startsAt: 200 })).rejects.toMatchObject({ data: { code: unauthenticated } });
   }
+  await expect(t.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: unauthenticated } });
 
   for (const id of [missingEventId]) {
     await expect(owner.query(getEvent, { eventId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(owner.query(getEventDetail, { eventId: id })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(owner.query(listEventServices, { eventId: id, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(owner.mutation(updateEvent, { eventId: id, name: 'Nope' })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(owner.mutation(changeEventStatus, { eventId: id, status: 'active' })).rejects.toMatchObject({ data: { code: inaccessible } });
@@ -205,7 +362,11 @@ test('every public Event function is opaque to unauthenticated, fabricated, fore
   await owner.mutation(addMember, { organizationId: foreignOrganizationId, userId: foreignMember.userId, role: 'owner' });
   for (const caller of [outsider.client, foreignMember.client]) {
     await expect(caller.query(getEvent, { eventId })).rejects.toMatchObject({ data: { code: inaccessible } });
+    // The header projection is the read that joins a venue, a cost centre and a
+    // person, so an ungated version of it discloses far more than `getEvent`.
+    await expect(caller.query(getEventDetail, { eventId })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(caller.query(listProjectEvents, { projectId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
+    await expect(caller.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(caller.query(listEventServices, { eventId, paginationOpts: firstPage })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(caller.mutation(createEvent, { projectId, name: 'Nope', startsAt: 200 })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(caller.mutation(updateEvent, { eventId, name: 'Nope' })).rejects.toMatchObject({ data: { code: inaccessible } });
@@ -213,6 +374,35 @@ test('every public Event function is opaque to unauthenticated, fabricated, fore
     await expect(caller.mutation(archiveEvent, { eventId })).rejects.toMatchObject({ data: { code: inaccessible } });
     await expect(caller.mutation(deleteEvent, { eventId: archivedEventId })).rejects.toMatchObject({ data: { code: inaccessible } });
   }
+
+  // Knowing a Project id from another tenant grants nothing, and the two ids are
+  // checked against EACH OTHER rather than only against the caller. `both` is an
+  // owner of the fixture organization AND of a second one, so membership cannot
+  // be what refuses the mismatched pair — the positive controls below prove each
+  // id is reachable on its own, which is what makes the pairing the thing tested.
+  await expect(
+    outsider.client.query(listOrganizationEvents, { organizationId, paginationOpts: firstPage }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+  const both = await provision(t, 'events-two-orgs');
+  const secondOrganizationId = await both.client.mutation(createOrganization, { name: 'Second', slug: 'events-second' });
+  await owner.mutation(addMember, { organizationId, userId: both.userId, role: 'planner' });
+  const secondProjectId = await both.client.mutation(createProject, {
+    organizationId: secondOrganizationId,
+    name: 'Second org project',
+  });
+  await expect(
+    both.client.query(listOrganizationEvents, { organizationId, projectId: secondProjectId, paginationOpts: firstPage }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(
+    both.client.query(listOrganizationEvents, { organizationId, projectId, paginationOpts: firstPage }),
+  ).resolves.toBeDefined();
+  await expect(
+    both.client.query(listOrganizationEvents, {
+      organizationId: secondOrganizationId,
+      projectId: secondProjectId,
+      paginationOpts: firstPage,
+    }),
+  ).resolves.toBeDefined();
 
   const viewer = await provision(t, 'events-access-viewer');
   const operator = await provision(t, 'events-access-operator');

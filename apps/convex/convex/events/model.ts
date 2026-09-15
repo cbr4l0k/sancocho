@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { recordAuditEvent } from '../audit/model';
 import {
   assertCurrentMember,
+  findCurrentMember,
   requireAuthenticatedUser,
   requireOrganizationMembership,
   requireOrganizationRole,
@@ -17,7 +18,12 @@ import { validateEntityName } from '../lib/names';
 import type { Role } from '../lib/roles';
 import { assertUsableLocation } from '../locations/model';
 import { assertProjectAcceptsChildWrites, assertProjectAcceptsNewChildren, requireProjectAccess } from '../projects/model';
-import { isFiniteNumber, type currencyValidator, type eventStatusValidator } from '../validators';
+import {
+  isFiniteNumber,
+  type currencyValidator,
+  type displayUserValidator,
+  type eventStatusValidator,
+} from '../validators';
 
 export type EventStatus = typeof eventStatusValidator.type;
 type Currency = typeof currencyValidator.type;
@@ -135,6 +141,134 @@ export async function createEvent(
 export async function getEvent(ctx: QueryCtx, eventId: Id<'events'>): Promise<Doc<'events'>> {
   const { event } = await requireEventAccess(ctx, eventId);
   return event;
+}
+
+export type EventDetail = {
+  event: Doc<'events'>;
+  project: Pick<Doc<'projects'>, '_id' | 'name' | 'status'>;
+  venue: Pick<Doc<'locations'>, '_id' | 'name' | 'type'> | null;
+  /**
+   * `key` keeps the column's own name. An earlier draft published it as `code`,
+   * which would have given one stored value two names — the database, the Cost
+   * Centre surface and this header would each have called it something else,
+   * and the next reader would have had to discover they were the same thing.
+   */
+  clientCostCentre: Pick<Doc<'costCentres'>, '_id' | 'key' | 'name' | 'status'> | null;
+  /** Derived from the shared validator so the roster and this header cannot drift. */
+  accountable: typeof displayUserValidator.type | null;
+};
+
+/** The Event header projection, gated by the existing Event access policy. */
+export async function getEventDetail(ctx: QueryCtx, eventId: Id<'events'>): Promise<EventDetail> {
+  const { event, project } = await requireEventAccess(ctx, eventId);
+  const venueRow = event.venueLocationId === undefined ? null : await ctx.db.get(event.venueLocationId);
+  const costCentreRow = event.clientCostCentreId === undefined ? null : await ctx.db.get(event.clientCostCentreId);
+  const accountableRow = event.accountableUserId === undefined ? null : await ctx.db.get(event.accountableUserId);
+  const accountableMembership = accountableRow === null
+    ? null
+    : await findCurrentMember(ctx, accountableRow._id, event.organizationId);
+
+  return {
+    event,
+    project: { _id: project._id, name: project.name, status: project.status },
+    // References are write-proven, but old/corrupt rows must remain safe to
+    // read: a missing or foreign joined row becomes null instead of disclosing
+    // another tenant or making the whole Event unavailable (I9).
+    venue: venueRow === null || venueRow.organizationId !== event.organizationId
+      ? null
+      : { _id: venueRow._id, name: venueRow.name, type: venueRow.type },
+    clientCostCentre: costCentreRow === null || costCentreRow.organizationId !== event.organizationId
+      ? null
+      : { _id: costCentreRow._id, key: costCentreRow.key, name: costCentreRow.name, status: costCentreRow.status },
+    // A stored accountable id is historical context, but its display identity
+    // stops crossing the tenant boundary as soon as membership is removed.
+    accountable: accountableRow === null || accountableMembership === null
+      ? null
+      : {
+          _id: accountableRow._id,
+          ...(accountableRow.name === undefined ? {} : { name: accountableRow.name }),
+          ...(accountableRow.email === undefined ? {} : { email: accountableRow.email }),
+        },
+  };
+}
+
+/** Organization-wide Event list with every narrowing applied by an index. */
+export async function listOrganizationEvents(
+  ctx: QueryCtx,
+  args: {
+    organizationId: Id<'organizations'>;
+    projectId?: Id<'projects'>;
+    status?: EventStatus;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<Doc<'events'>>> {
+  const authenticated = await requireAuthenticatedUser(ctx);
+  await requireOrganizationMembership(ctx, args.organizationId, authenticated);
+  if (args.projectId !== undefined) {
+    const { project } = await requireProjectAccess(ctx, args.projectId);
+    // The membership proves the organization while this proves the filtered
+    // Project; both are needed so neither tenant id can reach the other (I1).
+    if (project.organizationId !== args.organizationId) return notFoundOrInaccessible();
+  }
+  const page = await paginateEvents(ctx, args);
+  return { ...page, page: await assertPageBelongsToOrganization(ctx, page.page) };
+}
+
+/**
+ * Re-derives each row's tenant through the stored graph instead of trusting the
+ * column the index selected on.
+ *
+ * `events.organizationId` is a denormalized copy of `projects.organizationId`.
+ * Every write path derives it from a proven Project and `EventUpdate` cannot
+ * name the column, so the two cannot diverge today — but "today" is the whole
+ * weight this would be carrying, and a bad migration or seed is all it takes.
+ * `listOrganizationServices` re-derives for exactly this reason (I4: the
+ * denormalized column is an index cache; authorization walks the stored graph),
+ * and the single-Event doors here already re-prove the same pair in
+ * `requireEventAccess`. This was the one Events read that skipped it.
+ *
+ * The project read is memoized because a page is usually a handful of Projects,
+ * so the guard costs distinct-parents reads, not one per row.
+ */
+async function assertPageBelongsToOrganization(
+  ctx: QueryCtx,
+  rows: readonly Doc<'events'>[],
+): Promise<Doc<'events'>[]> {
+  const projects = new Map<Id<'projects'>, Doc<'projects'> | null>();
+  for (const row of rows) {
+    if (!projects.has(row.projectId)) projects.set(row.projectId, await ctx.db.get(row.projectId));
+    const project = projects.get(row.projectId) ?? null;
+    // The whole page is refused rather than the offending row silently dropped:
+    // a divergence here is a corrupt database, not a permission outcome, and a
+    // quietly shortened page would hide it.
+    if (project === null || project.organizationId !== row.organizationId) return notFoundOrInaccessible();
+  }
+  return [...rows];
+}
+
+function paginateEvents(
+  ctx: QueryCtx,
+  args: {
+    organizationId: Id<'organizations'>;
+    projectId?: Id<'projects'>;
+    status?: EventStatus;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<Doc<'events'>>> {
+  const { organizationId, projectId, status, paginationOpts } = args;
+  const events = ctx.db.query('events');
+  if (projectId !== undefined) {
+    return status === undefined
+      ? events.withIndex('by_project_startsAt', (q) => q.eq('projectId', projectId)).paginate(paginationOpts)
+      : events
+          .withIndex('by_project_status_startsAt', (q) => q.eq('projectId', projectId).eq('status', status))
+          .paginate(paginationOpts);
+  }
+  return status === undefined
+    ? events.withIndex('by_org_startsAt', (q) => q.eq('organizationId', organizationId)).paginate(paginationOpts)
+    : events
+        .withIndex('by_org_status_startsAt', (q) => q.eq('organizationId', organizationId).eq('status', status))
+        .paginate(paginationOpts);
 }
 
 export async function listProjectEvents(

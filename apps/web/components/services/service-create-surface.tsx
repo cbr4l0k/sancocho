@@ -244,7 +244,14 @@ export function ServiceCreateSurface({ initialProjectId }: { initialProjectId?: 
                   ))}
                 </FieldControl>
                 {events.status === 'Exhausted' && selectedProject !== undefined && events.results.length === 0 ? (
-                  <p className="text-xs text-ink-3">{t('services.noEventsHint')}</p>
+                  <p className="text-xs text-ink-3">
+                    <LocaleLink
+                      className="underline decoration-line-strong underline-offset-4 hover:decoration-accent"
+                      to={`/events/new?projectId=${encodeURIComponent(selectedProject._id)}`}
+                    >
+                      {t('services.noEventsHint')}
+                    </LocaleLink>
+                  </p>
                 ) : null}
                 {events.status === 'CanLoadMore' ? (
                   <Button type="button" variant="link" size="sm" onClick={() => events.loadMore(100)}>

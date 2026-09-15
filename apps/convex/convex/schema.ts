@@ -94,6 +94,18 @@ export default defineSchema({
 
   events: defineTable(eventFields)
     .index('by_project_startsAt', ['projectId', 'startsAt'])
+    // Serves the organization-wide Events console in start-time order. Without
+    // this index the surface would have to filter a paginated project stream in
+    // the client, which would return incomplete pages and violate I6.
+    .index('by_org_startsAt', ['organizationId', 'startsAt'])
+    // Serves the Events console's organization-and-status narrowing before
+    // pagination; filtering status from an already-paginated page is an I6
+    // violation because matching rows can sit beyond the cursor.
+    .index('by_org_status_startsAt', ['organizationId', 'status', 'startsAt'])
+    // Serves the same indexed status narrowing when the Events console is also
+    // scoped to a proven Project. Client-side filtering would again make each
+    // paginated page incomplete and violate I6.
+    .index('by_project_status_startsAt', ['projectId', 'status', 'startsAt'])
     // Both reverse-reference indexes below exist for exactly one reason each: a
     // first-hit "is this row still referenced by an Event?" read taken before
     // the referenced row is removed or re-typed. Without them the same guard

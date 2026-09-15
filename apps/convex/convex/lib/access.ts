@@ -190,14 +190,35 @@ export async function assertCurrentMember(
   userId: Id<'users'>,
   organizationId: Id<'organizations'>,
 ): Promise<Doc<'organizationMemberships'>> {
-  const membership = await ctx.db
-    .query('organizationMemberships')
-    .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', userId))
-    .unique();
+  const membership = await findCurrentMember(ctx, userId, organizationId);
   if (membership === null) {
     return notFoundOrInaccessible();
   }
   return membership;
+}
+
+/**
+ * The same membership question, answered with `null` instead of a refusal.
+ *
+ * It exists because a read that merely *displays* a member — an Event header
+ * naming its accountable person — must degrade to "nobody" when that person has
+ * left, not refuse the whole record. Before this, `events/model.ts` wrote its
+ * own copy of the indexed lookup to get that shape, which made a second place
+ * that decides what "is a member of this organization" means. There is now one
+ * query, and `assertCurrentMember` is the throwing wrapper around it.
+ *
+ * Like its wrapper it proves nothing about the CALLER: authorization must
+ * already be established before either is reached.
+ */
+export async function findCurrentMember(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  userId: Id<'users'>,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'organizationMemberships'> | null> {
+  return ctx.db
+    .query('organizationMemberships')
+    .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', userId))
+    .unique();
 }
 
 // ---------------------------------------------------------------------------

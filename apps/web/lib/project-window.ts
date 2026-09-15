@@ -2,20 +2,21 @@ import { timestampToParts } from '@/lib/timestamps';
 
 /**
  * The client half of the project-window rule enforced by
- * `services/model.ts` `validateServiceWithinProjectWindow`.
+ * the Service and Event `validate*WithinProjectWindow` backend rules.
  *
- * A project declares the span its services live inside — a festival runs the
- * 15th to the 19th — and a service outside it is almost always a typo, not a
- * plan. This is an AFFORDANCE, never authorization: it exists so the form can
+ * A project declares the span its Events and Services live inside — a festival
+ * runs the 15th to the 19th — and a child outside it is almost always a typo,
+ * not a plan. This is an AFFORDANCE, never authorization: it exists so the form can
  * bound its date pickers and name the problem before a round trip. The backend
  * remains the only thing that decides, and it rejects the same cases with
- * `serviceBeforeProjectWindow` / `serviceAfterProjectWindow`.
+ * `serviceBeforeProjectWindow` / `serviceAfterProjectWindow` or
+ * `eventBeforeProjectWindow` / `eventAfterProjectWindow`.
  *
  * Both ends are optional, and a project with no dates constrains nothing.
  */
 export type ProjectWindow = { startsAt?: number | undefined; endsAt?: number | undefined };
 
-/** Which end of the window a service's dates fall outside of, if either. */
+/** Which end of the window a Service or Event falls outside of, if either. */
 export function projectWindowProblem(
   window: ProjectWindow,
   startsAt: number,

@@ -2,6 +2,7 @@ import type {
   archivalStatusValidator,
   assignmentRevisionStatusValidator,
   executionStatusValidator,
+  eventStatusValidator,
   serviceStatusValidator,
   projectStatusValidator,
   serviceKindStatusValidator,
@@ -47,6 +48,7 @@ export type StatusShape =
 export type StatusTone = 'mute' | 'hold' | 'go' | 'live' | 'done' | 'stop' | 'shelf';
 
 export type ProjectStatus = typeof projectStatusValidator.type;
+export type EventStatus = typeof eventStatusValidator.type;
 export type ServiceKindStatus = typeof serviceKindStatusValidator.type;
 export type ServiceKindVersionStatus = typeof serviceKindVersionStatusValidator.type;
 export type ServiceStatus = typeof serviceStatusValidator.type;
@@ -61,6 +63,7 @@ export type ExecutionStatus = typeof executionStatusValidator.type;
  */
 export type StatusLabelKey =
   | `projects.statuses.${ProjectStatus}`
+  | `events.statuses.${EventStatus}`
   | `serviceKinds.statuses.${ServiceKindStatus}`
   | `serviceKinds.versionStatuses.${ServiceKindVersionStatus}`
   | `services.statuses.${ServiceStatus}`
@@ -81,6 +84,13 @@ export const projectStatusTokens = {
   completed: { tone: 'done', shape: 'square', labelKey: 'projects.statuses.completed' },
   archived: { tone: 'shelf', shape: 'square', labelKey: 'projects.statuses.archived' },
 } as const satisfies Record<ProjectStatus, StatusToken>;
+
+export const eventStatusTokens = {
+  draft: { tone: 'mute', shape: 'ring', labelKey: 'events.statuses.draft' },
+  active: { tone: 'go', shape: 'dot', labelKey: 'events.statuses.active' },
+  completed: { tone: 'done', shape: 'square', labelKey: 'events.statuses.completed' },
+  archived: { tone: 'shelf', shape: 'square', labelKey: 'events.statuses.archived' },
+} as const satisfies Record<EventStatus, StatusToken>;
 
 export const serviceKindStatusTokens = {
   draft: { tone: 'mute', shape: 'ring', labelKey: 'serviceKinds.statuses.draft' },
@@ -129,6 +139,7 @@ export const assignmentRevisionStatusTokens = {
 /** The set a chip belongs to. Chosen at the call site, never inferred. */
 export type StatusKind =
   | 'project'
+  | 'event'
   | 'serviceKind'
   | 'serviceKindVersion'
   | 'service'
@@ -143,6 +154,7 @@ export type StatusKind =
  */
 export type StatusSelection =
   | { kind: 'project'; status: ProjectStatus }
+  | { kind: 'event'; status: EventStatus }
   | { kind: 'serviceKind'; status: ServiceKindStatus }
   | { kind: 'serviceKindVersion'; status: ServiceKindVersionStatus }
   | { kind: 'service'; status: ServiceStatus }
@@ -154,6 +166,8 @@ export function statusToken(selection: StatusSelection): StatusToken {
   switch (selection.kind) {
     case 'project':
       return projectStatusTokens[selection.status];
+    case 'event':
+      return eventStatusTokens[selection.status];
     case 'serviceKind':
       return serviceKindStatusTokens[selection.status];
     case 'serviceKindVersion':
@@ -180,6 +194,7 @@ export function statusToken(selection: StatusSelection): StatusToken {
 type CoversExactly<Listed extends Union, Union> = [Union] extends [Listed] ? true : never;
 
 export const projectStatuses = ['draft', 'active', 'completed', 'archived'] as const;
+export const eventStatuses = ['draft', 'active', 'completed', 'archived'] as const;
 export const serviceKindStatuses = ['draft', 'active', 'archived'] as const;
 export const serviceKindVersionStatuses = ['draft', 'published', 'retired'] as const;
 export const serviceStatuses = ['draft', 'planned', 'confirmed', 'active', 'completed', 'cancelled'] as const;
@@ -188,6 +203,7 @@ export const executionStatuses = ['unassigned', 'assigned', 'confirmed', 'dispat
 export const assignmentRevisionStatuses = ['draft', 'accepted', 'superseded', 'declined'] as const;
 
 const _projectStatusesInSync: CoversExactly<(typeof projectStatuses)[number], ProjectStatus> = true;
+const _eventStatusesInSync: CoversExactly<(typeof eventStatuses)[number], EventStatus> = true;
 const _serviceKindStatusesInSync: CoversExactly<(typeof serviceKindStatuses)[number], ServiceKindStatus> = true;
 const _serviceKindVersionStatusesInSync: CoversExactly<(typeof serviceKindVersionStatuses)[number], ServiceKindVersionStatus> = true;
 const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], ServiceStatus> = true;
@@ -199,6 +215,7 @@ const _assignmentRevisionStatusesInSync: CoversExactly<
 > = true;
 
 void _projectStatusesInSync;
+void _eventStatusesInSync;
 void _serviceKindStatusesInSync;
 void _serviceKindVersionStatusesInSync;
 void _serviceStatusesInSync;

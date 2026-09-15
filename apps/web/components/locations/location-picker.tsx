@@ -34,11 +34,13 @@ export function LocationPicker({
   value,
   onChange,
   disabled = false,
+  fixedType,
 }: {
   organizationId: OrganizationId;
   value: LocationId | undefined;
   onChange: (locationId: LocationId) => void;
   disabled?: boolean;
+  fixedType?: LocationType | undefined;
 }) {
   const t = useTranslations();
   const [search, setSearch] = useState('');
@@ -50,7 +52,7 @@ export function LocationPicker({
       organizationId,
       status: 'active',
       ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
-      ...(type === '' ? {} : { type }),
+      ...(fixedType === undefined ? (type === '' ? {} : { type }) : { type: fixedType }),
     },
     { initialNumItems: 50 },
   );
@@ -58,11 +60,11 @@ export function LocationPicker({
   const options = buildLocationOptions({ loaded: locations.results, selected });
   const archivedSelected = options.find((option) => option.isArchived);
   const activeOptions = options.filter((option) => !option.isArchived);
-  const hasActiveFilters = search.trim() !== '' || type !== '';
+  const hasActiveFilters = search.trim() !== '' || (fixedType === undefined && type !== '');
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className={fixedType === undefined ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'grid grid-cols-1 gap-3'}>
         <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
           {t('locations.search')}
           <input
@@ -72,25 +74,30 @@ export function LocationPicker({
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
-          {t('locations.typeFilter')}
-          <select
-            className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
-            value={type}
-            disabled={disabled}
-            onChange={(event) => {
-              const candidate = locationTypes.find((item) => item === event.target.value);
-              setType(candidate ?? '');
-            }}
-          >
-            <option value="">{t('locations.allTypes')}</option>
-            {locationTypes.map((item) => (
-              <option key={item} value={item}>
-                {t(`locations.types.${item}`)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* The type filter is hidden — not disabled — when the caller fixes the
+            type, because `fixedType` overrides `type` in the query above. Left
+            visible it would be a control that moves and changes nothing. */}
+        {fixedType !== undefined ? null : (
+          <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+            {t('locations.typeFilter')}
+            <select
+              className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+              value={type}
+              disabled={disabled}
+              onChange={(event) => {
+                const candidate = locationTypes.find((item) => item === event.target.value);
+                setType(candidate ?? '');
+              }}
+            >
+              <option value="">{t('locations.allTypes')}</option>
+              {locationTypes.map((item) => (
+                <option key={item} value={item}>
+                  {t(`locations.types.${item}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {archivedSelected === undefined ? null : (
         <div className="flex flex-wrap items-center gap-2 rounded-input border border-line bg-ground-2 px-3 py-2">

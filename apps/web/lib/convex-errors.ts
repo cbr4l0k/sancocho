@@ -21,6 +21,16 @@ export type ConvexErrorMessageKey =
   | 'errors.projectDatesInvalid'
   | 'errors.eventArchiveRequired'
   | 'errors.eventDeleteRequiresArchive'
+  | 'errors.eventDatesInvalid'
+  | 'errors.eventBeforeProjectWindow'
+  | 'errors.eventAfterProjectWindow'
+  | 'errors.eventProjectUnavailable'
+  | 'errors.eventProjectReadOnly'
+  | 'errors.eventArchived'
+  | 'errors.eventStatusTransitionInvalid'
+  | 'errors.eventVenueLocationTypeInvalid'
+  | 'errors.eventBudgetIncomplete'
+  | 'errors.moneyAmountInvalid'
   | 'errors.relationshipSelfReference'
   | 'errors.fieldKeyInvalid'
   | 'errors.fieldKeyTaken'
@@ -81,27 +91,25 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   projectStartInvalid: 'errors.projectDatesInvalid',
   projectEndInvalid: 'errors.projectDatesInvalid',
   projectDateRangeInvalid: 'errors.projectDatesInvalid',
-  eventStartInvalid: 'errors.generic',
-  eventEndInvalid: 'errors.generic',
-  eventDateRangeInvalid: 'errors.generic',
-  eventBeforeProjectWindow: 'errors.generic',
-  eventAfterProjectWindow: 'errors.generic',
-  eventProjectUnavailable: 'errors.generic',
-  eventProjectReadOnly: 'errors.generic',
-  eventArchived: 'errors.generic',
+  eventStartInvalid: 'errors.eventDatesInvalid',
+  eventEndInvalid: 'errors.eventDatesInvalid',
+  eventDateRangeInvalid: 'errors.eventDatesInvalid',
+  eventBeforeProjectWindow: 'errors.eventBeforeProjectWindow',
+  eventAfterProjectWindow: 'errors.eventAfterProjectWindow',
+  eventProjectUnavailable: 'errors.eventProjectUnavailable',
+  eventProjectReadOnly: 'errors.eventProjectReadOnly',
+  eventArchived: 'errors.eventArchived',
   eventArchiveRequired: 'errors.eventArchiveRequired',
   eventDeleteRequiresArchive: 'errors.eventDeleteRequiresArchive',
-  eventTerminal: 'errors.generic',
-  eventStatusTransitionInvalid: 'errors.generic',
+  eventTerminal: 'errors.eventStatusTransitionInvalid',
+  eventStatusTransitionInvalid: 'errors.eventStatusTransitionInvalid',
   eventDeleteBlocked: 'errors.generic',
-  eventVenueLocationTypeInvalid: 'errors.generic',
-  eventBudgetIncomplete: 'errors.generic',
-  // No console surface inputs money yet (#85 budget, #73 rate cards). These are
-  // arithmetic/validation guards; promote to specific messages when a money input exists.
-  moneyAmountNotFinite: 'errors.generic',
-  moneyAmountNotInteger: 'errors.generic',
-  moneyAmountNegative: 'errors.generic',
-  moneyAmountOutOfRange: 'errors.generic',
+  eventVenueLocationTypeInvalid: 'errors.eventVenueLocationTypeInvalid',
+  eventBudgetIncomplete: 'errors.eventBudgetIncomplete',
+  moneyAmountNotFinite: 'errors.moneyAmountInvalid',
+  moneyAmountNotInteger: 'errors.moneyAmountInvalid',
+  moneyAmountNegative: 'errors.moneyAmountInvalid',
+  moneyAmountOutOfRange: 'errors.moneyAmountInvalid',
   moneyQuantityInvalid: 'errors.generic',
   moneyArithmeticOverflow: 'errors.generic',
   relationshipSelfReference: 'errors.relationshipSelfReference',

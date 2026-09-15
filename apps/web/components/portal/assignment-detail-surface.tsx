@@ -17,6 +17,7 @@ import {
   TableRow, TableRowHeaderCell, TableSkeletonRows,
 } from '@/components/ui/table';
 import { formatDateTime, formatNumber } from '@/i18n/formats';
+import { formatMoneyParts } from '@/lib/money';
 import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { formatProjectionValue, prepareProjectionGroups } from '@/lib/portal-projection';
@@ -135,13 +136,14 @@ function Readout({ term, value, mono = false }: { term: string; value: string; m
 
 function RevisionRow({ revision }: { revision: Revision }) {
   const t = useTranslations('portal');
+  const rootT = useTranslations();
   const locale = useCanonicalLocale();
   return <TableRow>
     <TableRowHeaderCell>{t('revisionLabel', { number: revision.revisionNumber })}</TableRowHeaderCell>
     <TableCell><StatusChip kind="assignmentRevision" status={revision.status} /></TableCell>
     <TableCell align="end" mono>{formatNumber(locale, revision.quantity)}</TableCell>
-    <TableCell align="end" mono>{t('moneyValue', { amount: formatNumber(locale, revision.unitAmount / 100), currency: revision.currency })}</TableCell>
-    <TableCell align="end" mono>{t('moneyValue', { amount: formatNumber(locale, revision.lineTotal / 100), currency: revision.currency })}</TableCell>
+    <TableCell align="end" mono>{rootT('common.moneyValue', { ...formatMoneyParts(locale, revision.unitAmount), currency: revision.currency })}</TableCell>
+    <TableCell align="end" mono>{rootT('common.moneyValue', { ...formatMoneyParts(locale, revision.lineTotal), currency: revision.currency })}</TableCell>
     <TableCell>{t(`modalities.${revision.modality}`)}</TableCell>
     <TableCell mono>{formatDateTime(locale, revision._creationTime)}</TableCell>
     <TableCell>{revision.declinedReason ?? (revision.acceptedAt === undefined ? t('notSet') : t('acceptedAt', { value: formatDateTime(locale, revision.acceptedAt) }))}</TableCell>

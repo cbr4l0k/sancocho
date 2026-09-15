@@ -181,6 +181,30 @@ a decision to stop rather than guess.
     shared, in `lib/status.ts`, and are `satisfies Record<Status, StatusToken>` — so a new
     backend status is a `tsc` failure either way.
 
+11. **#90 added backend functions inside a console issue.** `stage:Q` is the console stage, but
+    the Events surface it specifies was not expressible against the shipped API: `events` carried
+    no organization index and no organization-scoped query, so an org-wide list with status and
+    Project filters could only have been assembled by fanning out per Project and filtering in the
+    browser — the I6 violation the issue's own bullet forbids. And the header it specifies names an
+    accountable person, while no public query turned an `Id<'users'>` into a display name.
+    `listOrganizationEvents`, `getEventDetail` and three indexes were added, each mirroring the
+    shape `services` already uses.
+
+12. **Gap 10 is closed, in the direction it left open.** `moneyValue` moved from the `portal.`
+    i18n group to `common.`, because the Events budget made a coordinator screen read its
+    vocabulary out of the Provider portal's namespace. The execution and revision *status* labels
+    named in gap 10 stay under `portal.` until a stage:Q screen actually renders one.
+
+13. **`subtotalsByCurrency` was written, tested, and then removed.** #90's required-tests list
+    names "cross-currency grouping boundaries", and the natural reading is a function that groups
+    money by currency. Its only plausible consumer was the budget rollup surface in #76, which is
+    closed as descoped — so it shipped with a test and no call site, and mutation testing showed
+    its accompanying "no blended total exists" assertion was a denylist of two function names that
+    a real blended total under any third name walked straight past. The boundary is structural
+    instead: `moneyDisplay` accepts one amount and returns that amount's own currency with it, both
+    budget call sites go through it, and no function in `lib/money.ts` accepts more than one amount.
+    If a rollup surface is ever specified, the grouping function comes back with a consumer.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

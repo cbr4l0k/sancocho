@@ -530,7 +530,7 @@ reached from the nav, not the landing view.
 
 The route tree splits along **operational data vs. configuration**, and the nav
 mirrors that split. Operational surfaces sit at the top level —
-`/{locale}/chat`, `/{locale}/projects` and `/{locale}/services`. Configuration
+`/{locale}/chat`, `/{locale}/projects`, `/{locale}/events` and `/{locale}/services`. Configuration
 lives under settings:
 `/{locale}/settings` (organization, including the read-only member roster),
 `/{locale}/settings/service-kinds`, `/{locale}/settings/fields`, and
@@ -539,9 +539,12 @@ lives under settings:
 the top level alongside Services would have flattened that distinction — the
 one the whole architecture rests on.
 
+Events sit at the top level beside Projects and Services because they are
+operational data, not configuration managed under settings.
+
 Locale is always the short URL segment (`es` or `en`). Entity details are
 deep-linkable beneath their own surface: `/es/projects/{id}`,
-`/es/services/{id}`, `/es/services/new`, `/es/settings/service-kinds/{id}`,
+`/es/events/{id}`, `/es/events/new`, `/es/services/{id}`, `/es/services/new`, `/es/settings/service-kinds/{id}`,
 `/es/settings/service-kinds/{id}/draft`, `/es/settings/fields/{id}`, and
 `/es/settings/locations/{id}`. Detail screens inherit the same shell.
 
