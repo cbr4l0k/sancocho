@@ -33,7 +33,8 @@ export function parseMoneyInput(text: string): MoneyInputResult {
 
 /** Formats exact integer minor units into the `moneyValue` catalogue's amount part. */
 export function formatMoneyParts(locale: CanonicalLocale, minorUnits: number): { amount: string } {
-  if (!Number.isSafeInteger(minorUnits) || minorUnits < 0) throw new RangeError('minorUnits must be a non-negative safe integer');
+  if (!Number.isSafeInteger(minorUnits) || minorUnits < 0)
+    throw new RangeError('minorUnits must be a non-negative safe integer');
   const major = Math.floor(minorUnits / MINOR_UNIT_FACTOR);
   const minor = minorUnits % MINOR_UNIT_FACTOR;
   const parts = new Intl.NumberFormat(locale, {
@@ -41,21 +42,22 @@ export function formatMoneyParts(locale: CanonicalLocale, minorUnits: number): {
     maximumFractionDigits: MONEY_EXPONENT,
   }).formatToParts(BigInt(major));
   return {
-    amount: parts.map((part) => part.type === 'fraction' ? String(minor).padStart(MONEY_EXPONENT, '0') : part.value).join(''),
+    amount: parts
+      .map((part) => (part.type === 'fraction' ? String(minor).padStart(MONEY_EXPONENT, '0') : part.value))
+      .join(''),
   };
 }
 
 /** Exact, ungrouped decimal text suitable for repopulating an amount input. */
 export function moneyInputText(minorUnits: number): string {
-  if (!Number.isSafeInteger(minorUnits) || minorUnits < 0) throw new RangeError('minorUnits must be a non-negative safe integer');
+  if (!Number.isSafeInteger(minorUnits) || minorUnits < 0)
+    throw new RangeError('minorUnits must be a non-negative safe integer');
   const major = Math.floor(minorUnits / MINOR_UNIT_FACTOR);
   const minor = minorUnits % MINOR_UNIT_FACTOR;
   return `${major}.${String(minor).padStart(MONEY_EXPONENT, '0')}`;
 }
 
-export type BudgetInputProblem =
-  | { kind: 'incomplete' }
-  | { kind: 'amount'; problem: MoneyInputProblem };
+export type BudgetInputProblem = { kind: 'incomplete' } | { kind: 'amount'; problem: MoneyInputProblem };
 
 /** Mirrors the server's both-or-neither `validateEventBudget` contract. */
 export function budgetInputProblem(amountText: string, currency: Currency | ''): BudgetInputProblem | undefined {

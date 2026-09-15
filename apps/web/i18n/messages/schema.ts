@@ -3,6 +3,7 @@ import type {
   assignmentRevisionStatusValidator,
   executionStatusValidator,
   eventStatusValidator,
+  providerClaimStateValidator,
   serviceStatusValidator,
   fieldDataTypeValidator,
   locationTypeValidator,
@@ -29,6 +30,7 @@ type ServiceStatus = typeof serviceStatusValidator.type;
 type ArchivalStatus = typeof archivalStatusValidator.type;
 type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
 type ExecutionStatus = typeof executionStatusValidator.type;
+type ProviderClaimState = typeof providerClaimStateValidator.type;
 type RateModality = typeof rateModalityValidator.type;
 type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
@@ -456,6 +458,90 @@ export type MessageSchema = {
     loadMore: string;
     types: Record<LocationType, string>;
   };
+  providers: {
+    listTitle: string;
+    create: string;
+    createTitle: string;
+    edit: string;
+    editTitle: string;
+    save: string;
+    name: string;
+    legalName: string;
+    taxId: string;
+    contactName: string;
+    contactEmail: string;
+    contactPhone: string;
+    notes: string;
+    status: string;
+    claimState: string;
+    search: string;
+    statusFilter: string;
+    allStatuses: string;
+    emptyTitle: string;
+    emptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    invite: string;
+    inviteTitle: string;
+    inviteEmail: string;
+    inviteHint: string;
+    invitedEmail: string;
+    revokeInvitation: string;
+    revokeClaim: string;
+    revokeClaimTitle: string;
+    revokeClaimWarning: string;
+    notSet: string;
+    claimStates: Record<ProviderClaimState, string>;
+  };
+  fleet: {
+    classesTitle: string;
+    classesDescription: string;
+    vehiclesTitle: string;
+    vehiclesDescription: string;
+    createClass: string;
+    createVehicle: string;
+    createClassTitle: string;
+    editClassTitle: string;
+    createVehicleTitle: string;
+    editVehicleTitle: string;
+    edit: string;
+    save: string;
+    archive: string;
+    archiveTitle: string;
+    archiveWarning: string;
+    archiveConfirm: string;
+    key: string;
+    name: string;
+    description: string;
+    passengerCapacity: string;
+    cargoCapacityNote: string;
+    plate: string;
+    label: string;
+    year: string;
+    notes: string;
+    provider: string;
+    vehicleClass: string;
+    status: string;
+    search: string;
+    statusFilter: string;
+    allStatuses: string;
+    allProviders: string;
+    allClasses: string;
+    providerStillLoading: string;
+    classStillLoading: string;
+    classesEmptyTitle: string;
+    classesEmptyBody: string;
+    vehiclesEmptyTitle: string;
+    vehiclesEmptyBody: string;
+    noMatchesTitle: string;
+    noMatchesBody: string;
+    notSet: string;
+    selectedArchived: string;
+  };
   relationships: {
     title: string;
     link: string;
@@ -521,6 +607,8 @@ export type MessageSchema = {
       fields: string;
       locations: string;
       serviceKinds: string;
+      providers: string;
+      fleet: string;
     };
     adminOnlyTitle: string;
     adminOnlyBody: string;
@@ -562,6 +650,19 @@ export type MessageSchema = {
     invitationKindMismatch: string;
     providerClaimAlreadyClaimed: string;
     providerClaimOrganizationConflict: string;
+    providerDetailTooLong: string;
+    providerNotesTooLong: string;
+    providerArchived: string;
+    vehicleClassKeyInvalid: string;
+    vehicleClassDescriptionTooLong: string;
+    vehicleClassCapacityInvalid: string;
+    vehicleClassCargoNoteTooLong: string;
+    vehicleClassArchived: string;
+    fleetVehiclePlateInvalid: string;
+    fleetVehicleLabelInvalid: string;
+    fleetVehicleYearInvalid: string;
+    fleetVehicleNotesTooLong: string;
+    fleetVehicleArchived: string;
     projectDescriptionTooLong: string;
     projectArchived: string;
     projectArchiveRequired: string;

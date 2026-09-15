@@ -33,6 +33,10 @@ const sections = [
   { to: '/settings/service-kinds', labelKey: 'settings.sections.serviceKinds', adminOnly: false },
   { to: '/settings/fields', labelKey: 'settings.sections.fields', adminOnly: true },
   { to: '/settings/locations', labelKey: 'settings.sections.locations', adminOnly: true },
+  // Provider reads are open to organization members; the surface gates admin-only writes itself.
+  { to: '/settings/providers', labelKey: 'settings.sections.providers', adminOnly: false },
+  // Vehicle Class and Fleet Vehicle reads are open to members; the surface gates writes itself.
+  { to: '/settings/fleet', labelKey: 'settings.sections.fleet', adminOnly: false },
 ] as const;
 
 export function SettingsShell({ children }: { children: ReactNode }) {
@@ -67,9 +71,7 @@ export function SettingsShell({ children }: { children: ReactNode }) {
                   className={cn(
                     'block rounded-input px-3 py-2 text-sm font-semibold whitespace-nowrap transition-colors duration-150',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-                    section.to === active?.to
-                      ? 'bg-ground-2 text-ink'
-                      : 'text-ink-2 hover:bg-ground-1 hover:text-ink',
+                    section.to === active?.to ? 'bg-ground-2 text-ink' : 'text-ink-2 hover:bg-ground-1 hover:text-ink',
                   )}
                 >
                   {t(section.labelKey)}

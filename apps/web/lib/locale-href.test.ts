@@ -32,6 +32,7 @@ test('retains locale segments for Event and Service detail links', () => {
   expect(localeHref('en-US', '/services/service-id')).toBe('/en/services/service-id');
 });
 
+
 test('preserves fragments', () => {
   expect(localeHref('en-US', '/settings/service-kinds/123#versions')).toBe('/en/settings/service-kinds/123#versions');
 });

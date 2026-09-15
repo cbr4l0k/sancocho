@@ -205,6 +205,29 @@ a decision to stop rather than guess.
     budget call sites go through it, and no function in `lib/money.ts` accepts more than one amount.
     If a rollup surface is ever specified, the grouping function comes back with a consumer.
 
+14. **#72's Provider and Fleet surfaces live at `/settings/providers` and `/settings/fleet`.** The
+    issue asked for top-level `/proveedores` and `/flota`, and also for "navigation entries under
+    configuration, not operations". Those conflict, and the placement rule was taken as the binding
+    half: `docs/web-design.md` §14 puts configuration under `/settings`, and every shipped route is
+    English with the locale as its own segment. Resolving the placement settled the spelling.
+
+15. **Two fleet columns cannot be cleared from the console.** `year` on a Fleet Vehicle and
+    `passengerCapacity` on a Vehicle Class are `v.optional(v.number())` with no `null` clearing arm,
+    unlike `updateEvent`, which takes `T | null | absent` on every optional column. Blanking either
+    in the editor leaves the stored value. The console does not work around it, and the fix is a
+    backend argument change that a console issue should not be making. Text columns are clearable —
+    they accept a trimmed `''`, which stores an empty string rather than removing the column, and
+    `storedOptionalText` renders `''` as "not set" so the two read alike.
+
+16. **A Provider's pending claim invitation is known only as far as the loaded page.**
+    `listProviderClaimInvitations` is organization-wide with no per-Provider counterpart, so a
+    surface cannot ask "does this row have a live invitation" directly. The invite affordance is
+    therefore withheld until the invitation query reaches `Exhausted`, rather than offered on
+    incomplete knowledge: `inviteProviderOrganization` keys its conflict on
+    `(organizationId, email, 'pending')` — **address-scoped, not Provider-scoped** — so inviting a
+    different address on a row with an out-of-view pending invitation would have succeeded and left
+    two live claim offers on one Provider, whichever mailbox accepted first taking the row.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

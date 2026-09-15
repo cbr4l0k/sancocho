@@ -9,6 +9,7 @@ import {
   eventStatusTokens,
   executionStatusTokens,
   projectStatusTokens,
+  providerClaimStateTokens,
   serviceKindStatusTokens,
   serviceKindVersionStatusTokens,
   serviceStatusTokens,
@@ -34,18 +35,21 @@ const tables: Readonly<Record<string, Readonly<Record<string, StatusToken>>>> = 
   serviceKindVersionStatusTokens,
   serviceStatusTokens,
   archivalStatusTokens,
+  providerClaimStateTokens,
   executionStatusTokens,
   assignmentRevisionStatusTokens,
 };
 
 function resolve(catalogue: unknown, key: string): unknown {
-  return key.split('.').reduce<unknown>(
-    (node, segment) =>
-      typeof node === 'object' && node !== null && segment in node
-        ? (node as Record<string, unknown>)[segment]
-        : undefined,
-    catalogue,
-  );
+  return key
+    .split('.')
+    .reduce<unknown>(
+      (node, segment) =>
+        typeof node === 'object' && node !== null && segment in node
+          ? (node as Record<string, unknown>)[segment]
+          : undefined,
+      catalogue,
+    );
 }
 
 test('every status token labels its own status, not another member of its set', () => {
@@ -69,6 +73,52 @@ test('every status label resolves to a string in both catalogues', () => {
   }
 });
 
+/**
+ * Sets whose chips are rendered side by side on one row, and must therefore stay
+ * tellable apart without reading the label.
+ *
+ * Add a pair here whenever a surface starts rendering two chips together.
+ */
+type NamedTable = { name: string; table: Readonly<Record<string, StatusToken>> };
+
+/*
+ * Widened to `StatusToken` deliberately. Left as `as const`, the literal types
+ * are narrow enough that `tsc` rejects the comparison below as provably false —
+ * which is a fine property to have today, but it disappears the moment someone
+ * makes two tokens overlap, exactly when the check needs to run. The compiler
+ * cannot be the guard here because the guard must survive the change it guards
+ * against.
+ */
+const coRenderedPairs: readonly { left: NamedTable; right: NamedTable }[] = [
+  // `providers-surface.tsx` puts archival status and claim state in adjacent
+  // cells of the same row. They are independent axes — an archived Provider may
+  // be claimed — so two identical-looking chips would read as one repeated fact.
+  {
+    left: { name: 'archival', table: archivalStatusTokens },
+    right: { name: 'providerClaim', table: providerClaimStateTokens },
+  },
+];
+
+test('chips rendered side by side never collapse to the same tone and shape', () => {
+  // `claimed` and archival `active` already share `tone: 'go'`; only `shape`
+  // separates them. Mutation testing changed one character — `diamond` to `dot`
+  // — and made an active claimed Provider show two pixel-identical chips with
+  // the suite green, while the source comment above the table asserted the
+  // opposite and CLAUDE.md requires shape to carry the same information as
+  // colour. The rule now has an assertion instead of a comment.
+  const collisions: string[] = [];
+  for (const { left, right } of coRenderedPairs) {
+    for (const [leftStatus, leftToken] of Object.entries(left.table)) {
+      for (const [rightStatus, rightToken] of Object.entries(right.table)) {
+        if (leftToken.tone === rightToken.tone && leftToken.shape === rightToken.shape) {
+          collisions.push(`${left.name}.${leftStatus} is indistinguishable from ${right.name}.${rightStatus}`);
+        }
+      }
+    }
+  }
+  expect(collisions).toEqual([]);
+});
+
 test('statusToken dispatches each kind to its own table', () => {
   // A copy-pasted `case` returning a neighbouring table is invisible to `tsc`
   // when the two sets share member names — `draft` belongs to five of them.
@@ -79,5 +129,6 @@ test('statusToken dispatches each kind to its own table', () => {
   expect(statusToken({ kind: 'service', status: 'draft' })).toBe(serviceStatusTokens.draft);
   expect(statusToken({ kind: 'assignmentRevision', status: 'draft' })).toBe(assignmentRevisionStatusTokens.draft);
   expect(statusToken({ kind: 'archival', status: 'active' })).toBe(archivalStatusTokens.active);
+  expect(statusToken({ kind: 'providerClaim', status: 'claimed' })).toBe(providerClaimStateTokens.claimed);
   expect(statusToken({ kind: 'execution', status: 'unassigned' })).toBe(executionStatusTokens.unassigned);
 });

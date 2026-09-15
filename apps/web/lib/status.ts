@@ -3,6 +3,7 @@ import type {
   assignmentRevisionStatusValidator,
   executionStatusValidator,
   eventStatusValidator,
+  providerClaimStateValidator,
   serviceStatusValidator,
   projectStatusValidator,
   serviceKindStatusValidator,
@@ -55,6 +56,7 @@ export type ServiceStatus = typeof serviceStatusValidator.type;
 export type ArchivalStatus = typeof archivalStatusValidator.type;
 export type AssignmentRevisionStatus = typeof assignmentRevisionStatusValidator.type;
 export type ExecutionStatus = typeof executionStatusValidator.type;
+export type ProviderClaimState = typeof providerClaimStateValidator.type;
 
 /**
  * The catalogue paths for the localized labels. Spelling them out as a union
@@ -69,6 +71,7 @@ export type StatusLabelKey =
   | `services.statuses.${ServiceStatus}`
   | `portal.executionStatuses.${ExecutionStatus}`
   | `portal.revisionStatuses.${AssignmentRevisionStatus}`
+  | `providers.claimStates.${ProviderClaimState}`
   | `fields.statuses.${ArchivalStatus}`;
 
 /** Everything the interface needs to render one status, resolved by key. */
@@ -120,6 +123,12 @@ export const archivalStatusTokens = {
   archived: { tone: 'shelf', shape: 'square', labelKey: 'fields.statuses.archived' },
 } as const satisfies Record<ArchivalStatus, StatusToken>;
 
+/** Identity linkage is orthogonal to archival lifecycle, so it uses ring/diamond rather than dot/square. */
+export const providerClaimStateTokens = {
+  unclaimed: { tone: 'mute', shape: 'ring', labelKey: 'providers.claimStates.unclaimed' },
+  claimed: { tone: 'go', shape: 'diamond', labelKey: 'providers.claimStates.claimed' },
+} as const satisfies Record<ProviderClaimState, StatusToken>;
+
 export const executionStatusTokens = {
   unassigned: { tone: 'mute', shape: 'ring', labelKey: 'portal.executionStatuses.unassigned' },
   assigned: { tone: 'hold', shape: 'bar', labelKey: 'portal.executionStatuses.assigned' },
@@ -144,6 +153,7 @@ export type StatusKind =
   | 'serviceKindVersion'
   | 'service'
   | 'archival'
+  | 'providerClaim'
   | 'execution'
   | 'assignmentRevision';
 
@@ -160,6 +170,7 @@ export type StatusSelection =
   | { kind: 'service'; status: ServiceStatus }
   | { kind: 'execution'; status: ExecutionStatus }
   | { kind: 'assignmentRevision'; status: AssignmentRevisionStatus }
+  | { kind: 'providerClaim'; status: ProviderClaimState }
   | { kind: 'archival'; status: ArchivalStatus };
 
 export function statusToken(selection: StatusSelection): StatusToken {
@@ -178,6 +189,8 @@ export function statusToken(selection: StatusSelection): StatusToken {
       return executionStatusTokens[selection.status];
     case 'assignmentRevision':
       return assignmentRevisionStatusTokens[selection.status];
+    case 'providerClaim':
+      return providerClaimStateTokens[selection.status];
     case 'archival':
       return archivalStatusTokens[selection.status];
   }
@@ -199,15 +212,27 @@ export const serviceKindStatuses = ['draft', 'active', 'archived'] as const;
 export const serviceKindVersionStatuses = ['draft', 'published', 'retired'] as const;
 export const serviceStatuses = ['draft', 'planned', 'confirmed', 'active', 'completed', 'cancelled'] as const;
 export const archivalStatuses = ['active', 'archived'] as const;
-export const executionStatuses = ['unassigned', 'assigned', 'confirmed', 'dispatched', 'completed', 'notExecuted'] as const;
+export const providerClaimStates = ['unclaimed', 'claimed'] as const;
+export const executionStatuses = [
+  'unassigned',
+  'assigned',
+  'confirmed',
+  'dispatched',
+  'completed',
+  'notExecuted',
+] as const;
 export const assignmentRevisionStatuses = ['draft', 'accepted', 'superseded', 'declined'] as const;
 
 const _projectStatusesInSync: CoversExactly<(typeof projectStatuses)[number], ProjectStatus> = true;
 const _eventStatusesInSync: CoversExactly<(typeof eventStatuses)[number], EventStatus> = true;
 const _serviceKindStatusesInSync: CoversExactly<(typeof serviceKindStatuses)[number], ServiceKindStatus> = true;
-const _serviceKindVersionStatusesInSync: CoversExactly<(typeof serviceKindVersionStatuses)[number], ServiceKindVersionStatus> = true;
+const _serviceKindVersionStatusesInSync: CoversExactly<
+  (typeof serviceKindVersionStatuses)[number],
+  ServiceKindVersionStatus
+> = true;
 const _serviceStatusesInSync: CoversExactly<(typeof serviceStatuses)[number], ServiceStatus> = true;
 const _archivalStatusesInSync: CoversExactly<(typeof archivalStatuses)[number], ArchivalStatus> = true;
+const _providerClaimStatesInSync: CoversExactly<(typeof providerClaimStates)[number], ProviderClaimState> = true;
 const _executionStatusesInSync: CoversExactly<(typeof executionStatuses)[number], ExecutionStatus> = true;
 const _assignmentRevisionStatusesInSync: CoversExactly<
   (typeof assignmentRevisionStatuses)[number],
@@ -220,5 +245,6 @@ void _serviceKindStatusesInSync;
 void _serviceKindVersionStatusesInSync;
 void _serviceStatusesInSync;
 void _archivalStatusesInSync;
+void _providerClaimStatesInSync;
 void _executionStatusesInSync;
 void _assignmentRevisionStatusesInSync;

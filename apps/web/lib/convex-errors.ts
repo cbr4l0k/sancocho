@@ -15,6 +15,19 @@ export type ConvexErrorMessageKey =
   | 'errors.invitationKindMismatch'
   | 'errors.providerClaimAlreadyClaimed'
   | 'errors.providerClaimOrganizationConflict'
+  | 'errors.providerDetailTooLong'
+  | 'errors.providerNotesTooLong'
+  | 'errors.providerArchived'
+  | 'errors.vehicleClassKeyInvalid'
+  | 'errors.vehicleClassDescriptionTooLong'
+  | 'errors.vehicleClassCapacityInvalid'
+  | 'errors.vehicleClassCargoNoteTooLong'
+  | 'errors.vehicleClassArchived'
+  | 'errors.fleetVehiclePlateInvalid'
+  | 'errors.fleetVehicleLabelInvalid'
+  | 'errors.fleetVehicleYearInvalid'
+  | 'errors.fleetVehicleNotesTooLong'
+  | 'errors.fleetVehicleArchived'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
@@ -177,11 +190,9 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   costCentreArchived: 'errors.generic',
   costCentreArchiveRequired: 'errors.generic',
   costCentreDeleteBlocked: 'errors.generic',
-  // #72 owns the Providers console surface and does not exist yet; these stay
-  // generic until there is a screen whose input they could actually explain.
-  providerDetailTooLong: 'errors.generic',
-  providerNotesTooLong: 'errors.generic',
-  providerArchived: 'errors.generic',
+  providerDetailTooLong: 'errors.providerDetailTooLong',
+  providerNotesTooLong: 'errors.providerNotesTooLong',
+  providerArchived: 'errors.providerArchived',
   providerArchiveRequired: 'errors.generic',
   providerDeleteBlocked: 'errors.generic',
   providerClaimAlreadyClaimed: 'errors.providerClaimAlreadyClaimed',
@@ -226,21 +237,18 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   assignmentNotExecutedReasonInvalid: 'errors.generic',
   assignmentVehiclePlateOverrideInvalid: 'errors.generic',
   assignmentAcceptedRevisionRequired: 'errors.generic',
-  // #72 owns the fleet console surface and does not exist yet, so every Vehicle
-  // Class and Fleet Vehicle refusal stays generic: inventing message keys for a
-  // screen with no inputs would ship copy nothing can render in context.
-  vehicleClassKeyInvalid: 'errors.generic',
-  vehicleClassDescriptionTooLong: 'errors.generic',
-  vehicleClassCapacityInvalid: 'errors.generic',
-  vehicleClassCargoNoteTooLong: 'errors.generic',
-  vehicleClassArchived: 'errors.generic',
+  vehicleClassKeyInvalid: 'errors.vehicleClassKeyInvalid',
+  vehicleClassDescriptionTooLong: 'errors.vehicleClassDescriptionTooLong',
+  vehicleClassCapacityInvalid: 'errors.vehicleClassCapacityInvalid',
+  vehicleClassCargoNoteTooLong: 'errors.vehicleClassCargoNoteTooLong',
+  vehicleClassArchived: 'errors.vehicleClassArchived',
   vehicleClassArchiveRequired: 'errors.generic',
   vehicleClassDeleteBlocked: 'errors.generic',
-  fleetVehiclePlateInvalid: 'errors.generic',
-  fleetVehicleLabelInvalid: 'errors.generic',
-  fleetVehicleYearInvalid: 'errors.generic',
-  fleetVehicleNotesTooLong: 'errors.generic',
-  fleetVehicleArchived: 'errors.generic',
+  fleetVehiclePlateInvalid: 'errors.fleetVehiclePlateInvalid',
+  fleetVehicleLabelInvalid: 'errors.fleetVehicleLabelInvalid',
+  fleetVehicleYearInvalid: 'errors.fleetVehicleYearInvalid',
+  fleetVehicleNotesTooLong: 'errors.fleetVehicleNotesTooLong',
+  fleetVehicleArchived: 'errors.fleetVehicleArchived',
   fleetVehicleArchiveRequired: 'errors.generic',
   fleetVehicleDeleteBlocked: 'errors.generic',
   seedDisabled: 'errors.generic',

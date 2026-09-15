@@ -25,19 +25,31 @@ export function MemberPicker({
 }) {
   const t = useTranslations();
   const members = usePaginatedQuery(api.organizations.queries.listMembers, { organizationId }, { initialNumItems: 50 });
-  return <div className="flex flex-col gap-3">
-    {members.status === 'Exhausted' && members.results.length === 0 ? (
-      <EmptyState title={t('empty.noRecords')} />
-    ) : <div className="flex flex-wrap gap-2">
-      {members.results.map(({ user }) => <Button
-        key={user._id}
-        type="button"
-        size="sm"
-        selected={value === user._id}
-        disabled={disabled}
-        onClick={() => onChange(user._id)}
-      >{user.name ?? user.email ?? t('events.notSet')}</Button>)}
-    </div>}
-    {members.status === 'CanLoadMore' ? <Button type="button" size="sm" onClick={() => members.loadMore(50)}>{t('table.loadMore')}</Button> : null}
-  </div>;
+  return (
+    <div className="flex flex-col gap-3">
+      {members.status === 'Exhausted' && members.results.length === 0 ? (
+        <EmptyState title={t('empty.noRecords')} />
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {members.results.map(({ user }) => (
+            <Button
+              key={user._id}
+              type="button"
+              size="sm"
+              selected={value === user._id}
+              disabled={disabled}
+              onClick={() => onChange(user._id)}
+            >
+              {user.name ?? user.email ?? t('events.notSet')}
+            </Button>
+          ))}
+        </div>
+      )}
+      {members.status === 'CanLoadMore' ? (
+        <Button type="button" size="sm" onClick={() => members.loadMore(50)}>
+          {t('table.loadMore')}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
