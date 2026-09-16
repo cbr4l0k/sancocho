@@ -8,6 +8,7 @@ import { AuthenticatedOrganizationGate } from '@/components/application/app-shel
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
 import { LocaleSwitcher } from '@/app/[locale]/locale-switcher';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Button } from '@/components/ui/button';
 import { Panel, PanelBody } from '@/components/ui/panel';
 import { LocaleLink } from '@/i18n/locale-link';
 
@@ -25,7 +26,7 @@ function PortalFrame({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-ground-0">
-      <header className="border-b border-line bg-ground-0">
+      <header data-shell-chrome className="border-b border-line bg-ground-0">
         <div className="mx-auto flex min-h-20 w-full max-w-[72rem] flex-wrap items-center gap-x-6 gap-y-3 px-6 py-3">
           <LocaleLink
             to="/portal"
@@ -37,6 +38,9 @@ function PortalFrame({ children }: { children: ReactNode }) {
               <span className="text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">{t('standing')}</span>
             </span>
           </LocaleLink>
+          <Button size="sm" variant="ghost" render={<LocaleLink to="/portal/dispatch" />}>
+            {t('dispatch')}
+          </Button>
           <label className="ml-auto flex min-w-52 flex-col gap-1 text-micro font-semibold uppercase tracking-[0.09em] text-ink-3">
             {t('actingFirm')}
             <select

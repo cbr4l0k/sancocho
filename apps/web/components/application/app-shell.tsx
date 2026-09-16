@@ -226,8 +226,8 @@ function ShellFrame({ children }: ApplicationShellProps) {
   const t = useTranslations();
   // Nav visibility is presentation only, never authorization (I1); the server is sole authority.
   //
-  // Four destinations, in the order a day runs: ask, then plan, then dispatch,
-  // and configuration last. Service kinds, locations and field definitions are
+  // Destinations follow the order a day runs: ask, plan, then dispatch, with
+  // configuration last. Service kinds, locations and field definitions are
   // organization *configuration*, not daily operations, so they live under
   // /settings rather than competing with them here.
   const nav = [
@@ -235,12 +235,13 @@ function ShellFrame({ children }: ApplicationShellProps) {
     { to: '/projects', label: t('nav.projects') },
     { to: '/events', label: t('nav.events') },
     { to: '/services', label: t('nav.services') },
+    { to: '/dispatch', label: t('nav.dispatch') },
     { to: '/settings', label: t('nav.settings') },
   ];
 
   return (
     <div className="min-h-dvh bg-ground-0">
-      <header className="h-16 border-b border-line bg-ground-0">
+      <header data-shell-chrome className="h-16 border-b border-line bg-ground-0">
         <div className="mx-auto flex h-full w-full max-w-[88rem] items-center gap-4 px-6">
           <LocaleLink
             to="/"

@@ -250,3 +250,103 @@
     }
   }
 }
+
+/*
+ * Reusable operational-sheet print primitive. A surface opts in with
+ * `.dispatch-sheet`, identifies controls with `.dispatch-no-print`, and wraps
+ * each indivisible operational unit in `.dispatch-service-group`.
+ */
+.dispatch-print-header {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: landscape;
+  }
+
+  [data-shell-chrome],
+  .dispatch-no-print,
+  .dispatch-load-more,
+  .dispatch-mobile-cards {
+    display: none !important;
+  }
+
+  body,
+  main {
+    background: white !important;
+    color: black !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .dispatch-sheet [data-slot='panel'] {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+  }
+
+  .dispatch-print-header {
+    display: block;
+    margin-bottom: 8mm;
+    color: black;
+  }
+
+  .dispatch-print-header h1 {
+    font-size: 18pt;
+    font-weight: 800;
+  }
+
+  .dispatch-print-header p {
+    margin-top: 1mm;
+    font-size: 9pt;
+  }
+
+  .dispatch-desktop-table {
+    display: block !important;
+  }
+
+  .dispatch-sheet [data-slot='table-scroll'] {
+    overflow: visible !important;
+  }
+
+  .dispatch-sheet [data-slot='table'] {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: auto;
+    font-size: 7.5pt;
+    color: black;
+  }
+
+  .dispatch-sheet [data-slot='table-head'] {
+    display: table-header-group;
+  }
+
+  .dispatch-sheet [data-slot='table-header-cell'],
+  .dispatch-sheet [data-slot='table-cell'],
+  .dispatch-sheet [data-slot='table-row-header-cell'] {
+    height: auto;
+    padding: 1.5mm;
+    color: black !important;
+    background: white !important;
+    border-bottom: 0.25mm solid black;
+  }
+
+  .dispatch-service-group {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .dispatch-sheet [data-slot='status-chip'] {
+    --chip: black !important;
+    color: black !important;
+    background: transparent !important;
+    border: 0.25mm solid black;
+  }
+}

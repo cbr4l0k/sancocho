@@ -501,6 +501,24 @@ small modules align without bespoke widths.
 | `skeleton.tsx` | `Skeleton`, `SkeletonText` |
 | `empty-state.tsx` | `EmptyState`, `UnavailableState` |
 
+### Operational-sheet printing
+
+`app/globals.css` defines one reusable print primitive for dense operational
+boards. A sheet root uses `.dispatch-sheet`, its print-only identity block uses
+`.dispatch-print-header`, controls use `.dispatch-no-print`, pagination uses
+`.dispatch-load-more`, the wide table uses `.dispatch-desktop-table`, and every
+indivisible operational group uses `.dispatch-service-group`.
+
+At print time the application chrome, filters, edit controls, phone cards and
+load-more footer disappear. The table's scroll wrapper becomes visible overflow,
+the table loses its screen-only minimum width, `<thead>` repeats on each page,
+and Service groups opt out of page breaks. Status chips become black ink with
+their existing CSS-drawn shape intact, so monochrome never removes the lifecycle
+channel. Every participating screen supplies a header naming its scope, day and
+filters, and states whether the currently loaded set is complete. Printing is
+therefore explicitly a snapshot of the accumulated cursor pages, never an
+implicit claim that an unexhausted query represents the whole day.
+
 `apps/web/lib/status.ts` holds the status maps; `apps/web/lib/utils.ts` holds
 `cn`. There is no speculative component kit — dialogs, menus, toasts, tabs and
 the application shell arrive when a screen needs them, vendored from shadcn and
@@ -564,7 +582,10 @@ reached from the nav, not the landing view.
 
 The route tree splits along **operational data vs. configuration**, and the nav
 mirrors that split. Operational surfaces sit at the top level —
-`/{locale}/chat`, `/{locale}/projects`, `/{locale}/events` and `/{locale}/services`. Configuration
+`/{locale}/chat`, `/{locale}/projects`, `/{locale}/events`, `/{locale}/services`
+and `/{locale}/dispatch`. Dispatch sits beside Services because it is the daily
+execution view of those Services, not tenant configuration and not a child of
+one particular Service. Configuration
 lives under settings:
 `/{locale}/settings` (organization, including the read-only member roster),
 `/{locale}/settings/service-kinds`, `/{locale}/settings/fields`, and
@@ -645,6 +666,11 @@ The engagement route is keyed on the **Project** id, not the grant id, because
 `listProjectAssignments` resolves the Provider arm from the caller anyway. Keying it on the
 grant forced a deep link to find that grant by paging the whole engagement list
 client-side — defeating the very pagination it was reading — for no disclosure benefit.
+
+The Provider's day board is `/{locale}/portal/dispatch`. It stays under the
+portal prefix so it cannot collide with the coordinator's top-level
+`/{locale}/dispatch`, and it uses the Provider-only flat Assignment query rather
+than adapting or falling through to the coordinator read.
 
 ### The Service projection
 

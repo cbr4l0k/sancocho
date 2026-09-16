@@ -334,6 +334,15 @@ a decision to stop rather than guess.
     They are two views of the same screen with different orderings, and the Provider board
     cannot be chronological across pages without adding a time column to Assignments.
 
+27. **A dispatch day is the viewer's local calendar day.** Services store an absolute
+    `startsAt`, but the model stores no organization, Project, Event or user timezone and
+    performs no timezone conversion. The console therefore turns `?day=YYYY-MM-DD` into
+    local midnight through the next local midnight in the browser, preserving the backend's
+    half-open `[from, to)` window even when daylight-saving time makes that span 23 or 25
+    hours. Two coordinators in different timezones can consequently see different Services
+    for the same day key. A multi-timezone tenant needs a stored timezone and an ownership
+    decision for it; this model has neither, so the console must not imply a shared tenant day.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
