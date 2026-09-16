@@ -40,7 +40,7 @@ test('the number of codes left with no specific copy is pinned, so one more is a
   // version of this test filtered the codes by what the mapping already said
   // and then asserted the result was empty, which it always was.
   const generic = errorCodes.filter((code) => present(code) === 'errors.generic');
-  expect(generic).toHaveLength(54);
+  expect(generic).toHaveLength(30);
   expect(errorCodes).toHaveLength(168);
 });
 
@@ -51,7 +51,7 @@ test('the mapping is a real table, not a constant', () => {
   // impossible — a constant collapses this to 1.
   const distinct = new Set(errorCodes.map((code) => present(code)));
   expect(distinct.size).toBeGreaterThan(50);
-  expect(distinct.size).toBe(86);
+  expect(distinct.size).toBe(110);
 });
 
 test('each Provider, Fleet, and Rate Card code carries its own copy, not a neighbour\'s', () => {
@@ -89,4 +89,34 @@ test('each Provider, Fleet, and Rate Card code carries its own copy, not a neigh
   }
   // Each of them is distinct from every other, so no two can be merged either.
   expect(new Set(Object.values(pinned)).size).toBe(Object.keys(pinned).length);
+});
+
+test('Assignment failures use stable specific copy rather than backend prose', () => {
+  const pinned: Readonly<Record<string, string>> = {
+    assignmentPositionInvalid: 'errors.assignmentPositionInvalid',
+    assignmentNotesTooLong: 'errors.assignmentNotesTooLong',
+    assignmentLimitExceeded: 'errors.assignmentLimitExceeded',
+    assignmentRemoveBlocked: 'errors.assignmentRemoveBlocked',
+    assignmentRevisionQuantityInvalid: 'errors.assignmentRevisionQuantityInvalid',
+    assignmentRevisionNotDraft: 'errors.assignmentRevisionNotDraft',
+    assignmentRevisionNotDeclinable: 'errors.assignmentRevisionNotDeclinable',
+    assignmentRevisionProviderAcceptanceForbidden: 'errors.assignmentRevisionProviderAcceptanceForbidden',
+    assignmentRevisionOutdated: 'errors.assignmentRevisionOutdated',
+    assignmentRevisionLimitReached: 'errors.assignmentRevisionLimitReached',
+    assignmentCheckpointLimitReached: 'errors.assignmentCheckpointLimitReached',
+    assignmentDeclinedReasonRequired: 'errors.assignmentDeclinedReasonRequired',
+    assignmentDeclinedReasonTooLong: 'errors.assignmentDeclinedReasonTooLong',
+    assignmentCheckpointOccurredAtInvalid: 'errors.assignmentCheckpointOccurredAtInvalid',
+    assignmentCheckpointNoteTooLong: 'errors.assignmentCheckpointNoteTooLong',
+    assignmentExecutionTerminal: 'errors.assignmentExecutionTerminal',
+    assignmentExecutionStatusTransitionInvalid: 'errors.assignmentExecutionStatusTransitionInvalid',
+    assignmentExecutionVehicleInvalid: 'errors.assignmentExecutionVehicleInvalid',
+    assignmentExecutionDriverRequired: 'errors.assignmentExecutionDriverRequired',
+    assignmentExecutionDriverPhoneInvalid: 'errors.assignmentExecutionDriverPhoneInvalid',
+    assignmentExecutionServiceNotConfirmed: 'errors.assignmentExecutionServiceNotConfirmed',
+    assignmentNotExecutedReasonInvalid: 'errors.assignmentNotExecutedReasonInvalid',
+    assignmentVehiclePlateOverrideInvalid: 'errors.assignmentVehiclePlateOverrideInvalid',
+    assignmentAcceptedRevisionRequired: 'errors.assignmentAcceptedRevisionRequired',
+  };
+  for (const [code, key] of Object.entries(pinned)) expect(present(code)).toBe(key);
 });

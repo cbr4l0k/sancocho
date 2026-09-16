@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { budgetInputProblem, formatMoneyParts, moneyDisplay, moneyInputText, parseMoneyInput } from './money';
+import {
+  budgetInputProblem,
+  addMinorUnits,
+  formatMoneyParts,
+  moneyDisplay,
+  moneyInputText,
+  multiplyMinorUnits,
+  parseMoneyInput,
+} from './money';
 
 describe('parseMoneyInput', () => {
   test('accepts either decimal separator and rejects grouping ambiguity and negatives', () => {
@@ -77,4 +85,35 @@ test('COP and USD both use the fixed two-decimal exponent with locale-specific s
   expect(formatMoneyParts('es-CO', minorUnits).amount).toBe('1.234,56');
   expect(formatMoneyParts('en-US', minorUnits).amount).toBe('1,234.56');
   expect(moneyDisplay('en-US', 81_000_000, 'COP')).toEqual({ kind: 'money', currency: 'COP', amount: '810,000.00' });
+});
+
+test('minor-unit multiplication stays integer exact and refuses overflow', () => {
+  expect(multiplyMinorUnits(12_34, 3)).toBe(37_02);
+  expect(() => multiplyMinorUnits(Number.MAX_SAFE_INTEGER, 2)).toThrow(RangeError);
+});
+
+test('minor-unit multiplication rejects zero, negative, and fractional quantities', () => {
+  const problem = new RangeError('minor units and quantity must be non-negative safe integers');
+  expect(() => multiplyMinorUnits(12_34, 0)).toThrow(problem);
+  expect(() => multiplyMinorUnits(12_34, -1)).toThrow(problem);
+  expect(() => multiplyMinorUnits(12_34, 1.5)).toThrow(problem);
+});
+
+test('minor-unit multiplication rejects negative and fractional amounts', () => {
+  const problem = new RangeError('minor units and quantity must be non-negative safe integers');
+  expect(() => multiplyMinorUnits(-1, 2)).toThrow(problem);
+  expect(() => multiplyMinorUnits(1.5, 2)).toThrow(problem);
+});
+
+test('minor-unit addition stays integer exact and refuses overflow', () => {
+  expect(addMinorUnits(12_34, 20_00)).toBe(32_34);
+  expect(() => addMinorUnits(Number.MAX_SAFE_INTEGER, 1)).toThrow(RangeError);
+});
+
+test('minor-unit addition rejects negative and fractional amounts', () => {
+  const problem = new RangeError('minor units must be non-negative safe integers');
+  expect(() => addMinorUnits(-1, 2)).toThrow(problem);
+  expect(() => addMinorUnits(1, -2)).toThrow(problem);
+  expect(() => addMinorUnits(1.5, 2)).toThrow(problem);
+  expect(() => addMinorUnits(1, 2.5)).toThrow(problem);
 });

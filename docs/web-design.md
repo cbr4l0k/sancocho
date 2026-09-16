@@ -238,6 +238,40 @@ Two independent channels:
 | | `cancelled` | cross | stop |
 | archival (fields, locations) | `active` | dot | go |
 | | `archived` | square | shelf |
+| rate card version | `draft` | ring | mute |
+| | `published` | dot | go |
+| | `retired` | square | shelf |
+| provider claim | `unclaimed` | ring | mute |
+| | `claimed` | diamond | go |
+| execution | `unassigned` | ring | mute |
+| | `assigned` | bar | hold |
+| | `confirmed` | diamond | go |
+| | `dispatched` | pulse | live |
+| | `completed` | square | done |
+| | `notExecuted` | cross | stop |
+| assignment revision | `draft` | ring | hold |
+| | `accepted` | diamond | done |
+| | `superseded` | square | shelf |
+| | `declined` | cross | mute |
+
+### Sets that share a row
+
+Two constraints, both asserted in `lib/status.test.ts` rather than left to this
+table:
+
+- **Within one set**, no two members may share a tone *and* a shape. Colour is
+  never the only channel, so two members separated by colour alone are a defect.
+- **Across two sets rendered side by side**, the same rule applies, because two
+  identical-looking chips in adjacent cells read as one repeated fact rather
+  than two independent facts.
+
+The co-rendered pairs today are archival × provider claim
+(`providers-surface.tsx`) and execution × assignment revision
+(`assignments-panel.tsx`). The second pair is why the revision set carries
+`hold` / `done` / `mute` rather than the more obvious `mute` / `go` / `stop`:
+the shapes are right for both axes — provisional, committed, void — so tone is
+what separates them. Both constraints are registered lists, so a surface that
+starts co-rendering a new pair has to say so.
 
 ### Why it cannot silently break
 

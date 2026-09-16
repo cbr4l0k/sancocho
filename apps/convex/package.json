@@ -19,6 +19,10 @@
     "./assignments/execution": {
       "types": "./convex/assignments/execution.ts",
       "default": "./convex/assignments/execution.ts"
+    },
+    "./capability-floors": {
+      "types": "./convex/lib/capabilityFloors.ts",
+      "default": "./convex/lib/capabilityFloors.ts"
     }
   },
   "scripts": {

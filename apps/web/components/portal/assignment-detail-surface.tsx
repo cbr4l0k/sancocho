@@ -1,12 +1,14 @@
 'use client';
 
-import { usePaginatedQuery, useQuery } from 'convex/react';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 import { api } from '@priamo/convex/api';
 
 import { EmptyState } from '@/components/ui/empty-state';
+import { Button } from '@/components/ui/button';
 import {
   Panel, PanelBody, PanelDescription, PanelEyebrow, PanelHeader, PanelTitle,
 } from '@/components/ui/panel';
@@ -21,6 +23,9 @@ import { formatMoneyParts } from '@/lib/money';
 import { LocaleLink } from '@/i18n/locale-link';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { formatProjectionValue, prepareProjectionGroups } from '@/lib/portal-projection';
+import { assignmentActions } from '@/lib/assignment-actions';
+import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
+import { rateModalities } from '@/lib/rate-grid';
 
 type AssignmentDetail = FunctionReturnType<typeof api.assignments.queries.getAssignmentDetail>;
 type AssignmentId = AssignmentDetail['assignment']['_id'];
@@ -138,6 +143,27 @@ function RevisionRow({ revision }: { revision: Revision }) {
   const t = useTranslations('portal');
   const rootT = useTranslations();
   const locale = useCanonicalLocale();
+  const accept = useMutation(api.assignments.mutations.acceptAssignmentRevision);
+  const decline = useMutation(api.assignments.mutations.declineAssignmentRevision);
+  const counter = useMutation(api.assignments.mutations.counterAssignmentRevision);
+  const [mode, setMode] = useState<'idle' | 'decline' | 'counter'>('idle');
+  const [reason, setReason] = useState('');
+  const [quantity, setQuantity] = useState(String(revision.quantity));
+  const [modality, setModality] = useState(revision.modality);
+  const [message, setMessage] = useState<string | null>(null);
+  const actions = assignmentActions({ kind: 'provider' }, {
+    // The Provider projection intentionally does not disclose the Service
+    // lifecycle. This is an affordance only; the mutation remains authoritative.
+    serviceWritable: true,
+    hasRevisionHistory: true,
+    revision,
+    executionStatus: 'completed',
+  });
+  async function run(work: () => Promise<unknown>): Promise<void> {
+    try { await work(); setMessage(null); setMode('idle'); }
+    catch (error) { setMessage(rootT(errorMessageKey(presentConvexError(error)))); }
+  }
+  const parsedQuantity = parsePositiveInteger(quantity);
   return <TableRow>
     <TableRowHeaderCell>{t('revisionLabel', { number: revision.revisionNumber })}</TableRowHeaderCell>
     <TableCell><StatusChip kind="assignmentRevision" status={revision.status} /></TableCell>
@@ -146,6 +172,23 @@ function RevisionRow({ revision }: { revision: Revision }) {
     <TableCell align="end" mono>{rootT('common.moneyValue', { ...formatMoneyParts(locale, revision.lineTotal), currency: revision.currency })}</TableCell>
     <TableCell>{rootT(`common.modalities.${revision.modality}`)}</TableCell>
     <TableCell mono>{formatDateTime(locale, revision._creationTime)}</TableCell>
-    <TableCell>{revision.declinedReason ?? (revision.acceptedAt === undefined ? t('notSet') : t('acceptedAt', { value: formatDateTime(locale, revision.acceptedAt) }))}</TableCell>
+    <TableCell><div className="flex min-w-48 flex-col gap-2">
+      <span>{revision.declinedReason ?? (revision.acceptedAt === undefined ? t('notSet') : t('acceptedAt', { value: formatDateTime(locale, revision.acceptedAt) }))}</span>
+      <div className="flex flex-wrap gap-2">
+        {actions.has('acceptTerms') ? <Button size="sm" onClick={() => run(() => accept({ revisionId: revision._id }))}>{rootT('assignments.accept')}</Button> : null}
+        {actions.has('counterTerms') ? <Button size="sm" variant="secondary" onClick={() => setMode('counter')}>{rootT('assignments.counter')}</Button> : null}
+        {actions.has('declineTerms') ? <Button size="sm" variant="danger" onClick={() => setMode('decline')}>{rootT('assignments.decline')}</Button> : null}
+      </div>
+      {mode === 'decline' ? <div className="flex flex-col gap-2"><label className="text-xs font-medium text-ink">{rootT('assignments.declineReasonLabel')}</label><textarea className="min-h-20 rounded-input border border-line bg-well px-3 py-2 text-sm" value={reason} onChange={(event) => setReason(event.target.value)} /><Button size="sm" variant="danger" disabled={reason.trim() === ''} onClick={() => run(() => decline({ revisionId: revision._id, reason: reason.trim() }))}>{rootT('assignments.decline')}</Button>{reason.trim() === '' ? <p className="text-xs text-tone-stop">{rootT('assignments.declineReasonRequired')}</p> : null}</div> : null}
+      {mode === 'counter' ? <div className="flex flex-col gap-2"><p className="text-xs font-medium text-ink">{rootT('assignments.counterTitle')}</p><input inputMode="numeric" className="h-[38px] rounded-input border border-line bg-well px-3 text-sm" aria-label={rootT('assignments.quantity')} value={quantity} onChange={(event) => setQuantity(event.target.value)} /><select className="h-[38px] rounded-input border border-line bg-well px-3 text-sm" aria-label={rootT('assignments.modality')} value={modality} onChange={(event) => { const next = rateModalities.find((item) => item === event.target.value); if (next !== undefined) setModality(next); }}>{rateModalities.map((item) => <option key={item} value={item}>{rootT(`common.modalities.${item}`)}</option>)}</select><Button size="sm" disabled={parsedQuantity === undefined} onClick={() => parsedQuantity === undefined ? undefined : run(() => counter({ revisionId: revision._id, quantity: parsedQuantity, modality }))}>{rootT('assignments.counter')}</Button></div> : null}
+      {message === null ? null : <p role="alert" className="text-xs text-tone-stop">{message}</p>}
+    </div></TableCell>
   </TableRow>;
+}
+
+function parsePositiveInteger(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }

@@ -292,6 +292,34 @@ a decision to stop rather than guess.
     submitted. Adding the uniqueness constraint was considered and deferred: it is a backend
     policy change with a migration story, not a console issue's to make.
 
+22. **#74's "execution capability vs terms capability" test asks for an actor that cannot
+    exist.** The issue requires proving that "execution capability does not reveal reprice/terms
+    actions, and terms capability does not reveal unrelated coordinator actions". There is no
+    principal holding terms capability without execution capability: a member at the `planner`
+    floor necessarily clears the lower `operator` floor, and a Provider grant confers
+    `respondToTerms` and `writeExecution` together as a closed set. Inventing such an actor for
+    the console would have meant inventing a principal arm the backend does not have, and the
+    console's affordance table would then have stopped mirroring `memberRoleForCapability`.
+    The suite instead pins the one real execution-only actor — an `operator` member, which sees
+    no terms actions — and pins the complete action set for every other combination.
+
+23. **The Provider portal cannot know whether a Service is writable, so it renders response
+    actions optimistically.** `docs/provider-access.md` forbids disclosing the linked Service's
+    lifecycle to a Provider, so the portal has nothing to answer "is this Service frozen?" with.
+    It passes `serviceWritable: true` into the display-only affordance rule and lets the
+    mutation's own gates refuse. A Provider can therefore see an accept button on a Service that
+    was frozen after their last read, and get a mapped error on click. Showing a button that the
+    server refuses is strictly better than adding a Provider read the access model forbids, and
+    hiding it would require exactly that read.
+
+24. **The console offers "remove Assignment" one condition short of the backend's rule.**
+    `removeAssignment` refuses when an Assignment has revisions **or** checkpoints; the console
+    mirrors only the revision half, because the panel already loads revisions and does not load
+    checkpoints. An Assignment with checkpoints but no revisions therefore shows a remove button
+    that answers `assignmentRemoveBlocked`. Closing the gap means either a checkpoint-count read
+    on every panel row or a new backend field, for an affordance that is already correct in the
+    common case and maps to a clear error otherwise.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

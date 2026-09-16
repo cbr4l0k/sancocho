@@ -72,8 +72,8 @@ export type StatusLabelKey =
   | `serviceKinds.versionStatuses.${ServiceKindVersionStatus}`
   | `rateCards.versionStatuses.${RateCardVersionStatus}`
   | `services.statuses.${ServiceStatus}`
-  | `portal.executionStatuses.${ExecutionStatus}`
-  | `portal.revisionStatuses.${AssignmentRevisionStatus}`
+  | `vocab.executionStatuses.${ExecutionStatus}`
+  | `vocab.revisionStatuses.${AssignmentRevisionStatus}`
   | `providers.claimStates.${ProviderClaimState}`
   | `fields.statuses.${ArchivalStatus}`;
 
@@ -139,19 +139,34 @@ export const providerClaimStateTokens = {
 } as const satisfies Record<ProviderClaimState, StatusToken>;
 
 export const executionStatusTokens = {
-  unassigned: { tone: 'mute', shape: 'ring', labelKey: 'portal.executionStatuses.unassigned' },
-  assigned: { tone: 'hold', shape: 'bar', labelKey: 'portal.executionStatuses.assigned' },
-  confirmed: { tone: 'go', shape: 'diamond', labelKey: 'portal.executionStatuses.confirmed' },
-  dispatched: { tone: 'live', shape: 'pulse', labelKey: 'portal.executionStatuses.dispatched' },
-  completed: { tone: 'done', shape: 'square', labelKey: 'portal.executionStatuses.completed' },
-  notExecuted: { tone: 'stop', shape: 'cross', labelKey: 'portal.executionStatuses.notExecuted' },
+  unassigned: { tone: 'mute', shape: 'ring', labelKey: 'vocab.executionStatuses.unassigned' },
+  assigned: { tone: 'hold', shape: 'bar', labelKey: 'vocab.executionStatuses.assigned' },
+  confirmed: { tone: 'go', shape: 'diamond', labelKey: 'vocab.executionStatuses.confirmed' },
+  dispatched: { tone: 'live', shape: 'pulse', labelKey: 'vocab.executionStatuses.dispatched' },
+  completed: { tone: 'done', shape: 'square', labelKey: 'vocab.executionStatuses.completed' },
+  notExecuted: { tone: 'stop', shape: 'cross', labelKey: 'vocab.executionStatuses.notExecuted' },
 } as const satisfies Record<ExecutionStatus, StatusToken>;
 
+/**
+ * The commercial axis, co-rendered with `executionStatusTokens` on every row of
+ * the Assignment panel. The SHAPES are right for both axes and are left alone —
+ * a draft is provisional, an acceptance is committed, a decline is void — so the
+ * separation is carried by tone.
+ *
+ * Three pairs used to be pixel-identical (`draft`/`unassigned`,
+ * `accepted`/`confirmed`, `declined`/`notExecuted`), which put two chips saying
+ * the same thing in adjacent cells of one row. The retunes each also read better
+ * on their own: a draft Revision is an open offer waiting on a reply (`hold`,
+ * not inert `mute`), an accepted one is a settled agreement rather than a live
+ * operational green (`done`), and a declined one is out of play (`mute`, with
+ * `cross` still carrying "deliberately refused" in the channel that survives
+ * colour blindness).
+ */
 export const assignmentRevisionStatusTokens = {
-  draft: { tone: 'mute', shape: 'ring', labelKey: 'portal.revisionStatuses.draft' },
-  accepted: { tone: 'go', shape: 'diamond', labelKey: 'portal.revisionStatuses.accepted' },
-  superseded: { tone: 'shelf', shape: 'square', labelKey: 'portal.revisionStatuses.superseded' },
-  declined: { tone: 'stop', shape: 'cross', labelKey: 'portal.revisionStatuses.declined' },
+  draft: { tone: 'hold', shape: 'ring', labelKey: 'vocab.revisionStatuses.draft' },
+  accepted: { tone: 'done', shape: 'diamond', labelKey: 'vocab.revisionStatuses.accepted' },
+  superseded: { tone: 'shelf', shape: 'square', labelKey: 'vocab.revisionStatuses.superseded' },
+  declined: { tone: 'mute', shape: 'cross', labelKey: 'vocab.revisionStatuses.declined' },
 } as const satisfies Record<AssignmentRevisionStatus, StatusToken>;
 
 /** The set a chip belongs to. Chosen at the call site, never inferred. */

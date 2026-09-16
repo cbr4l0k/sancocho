@@ -57,6 +57,26 @@ export function moneyInputText(minorUnits: number): string {
   return `${major}.${String(minor).padStart(MONEY_EXPONENT, '0')}`;
 }
 
+/** Exact integer arithmetic for displaying a resolved unit amount at a quantity. */
+export function multiplyMinorUnits(minorUnits: number, quantity: number): number {
+  if (!Number.isSafeInteger(minorUnits) || minorUnits < 0 || !Number.isSafeInteger(quantity) || quantity < 1) {
+    throw new RangeError('minor units and quantity must be non-negative safe integers');
+  }
+  const result = minorUnits * quantity;
+  if (!Number.isSafeInteger(result)) throw new RangeError('line total exceeds safe integer minor units');
+  return result;
+}
+
+/** Exact addition for same-currency stored minor-unit amounts. */
+export function addMinorUnits(left: number, right: number): number {
+  if (!Number.isSafeInteger(left) || left < 0 || !Number.isSafeInteger(right) || right < 0) {
+    throw new RangeError('minor units must be non-negative safe integers');
+  }
+  const result = left + right;
+  if (!Number.isSafeInteger(result)) throw new RangeError('money total exceeds safe integer minor units');
+  return result;
+}
+
 export type BudgetInputProblem = { kind: 'incomplete' } | { kind: 'amount'; problem: MoneyInputProblem };
 
 /** Mirrors the server's both-or-neither `validateEventBudget` contract. */

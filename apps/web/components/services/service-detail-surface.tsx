@@ -9,6 +9,7 @@ import { api } from '@priamo/convex/api';
 import { auditActionMessageKey } from '@/i18n/vocab-keys';
 
 import { useCurrentOrganization } from '@/components/organizations/current-organization';
+import { AssignmentsPanel } from '@/components/assignments/assignments-panel';
 import { ProjectWindowHint, ServiceDateTime, ServiceDynamicField } from '@/components/services/service-fields';
 import { ServiceRelationships } from '@/components/services/service-relationships';
 import { Button } from '@/components/ui/button';
@@ -96,6 +97,7 @@ export function ServiceDetailSurface({ serviceId }: { serviceId: ServiceId }) {
         />
       ) : (
         <>
+          <AssignmentsPanel serviceId={data.service._id} serviceWritable={canEdit} />
           <ServiceCoreDetails data={data} />
           <ServiceKindVersionPanel version={version} />
           <ServiceValues data={data} version={version} />

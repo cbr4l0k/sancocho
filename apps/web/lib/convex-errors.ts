@@ -37,6 +37,30 @@ export type ConvexErrorMessageKey =
   | 'errors.rateLineVehicleClassUnavailable'
   | 'errors.rateLineDuplicateCell'
   | 'errors.rateLineLimitExceeded'
+  | 'errors.assignmentPositionInvalid'
+  | 'errors.assignmentNotesTooLong'
+  | 'errors.assignmentLimitExceeded'
+  | 'errors.assignmentRemoveBlocked'
+  | 'errors.assignmentRevisionQuantityInvalid'
+  | 'errors.assignmentRevisionNotDraft'
+  | 'errors.assignmentRevisionNotDeclinable'
+  | 'errors.assignmentRevisionProviderAcceptanceForbidden'
+  | 'errors.assignmentRevisionOutdated'
+  | 'errors.assignmentRevisionLimitReached'
+  | 'errors.assignmentCheckpointLimitReached'
+  | 'errors.assignmentDeclinedReasonRequired'
+  | 'errors.assignmentDeclinedReasonTooLong'
+  | 'errors.assignmentCheckpointOccurredAtInvalid'
+  | 'errors.assignmentCheckpointNoteTooLong'
+  | 'errors.assignmentExecutionTerminal'
+  | 'errors.assignmentExecutionStatusTransitionInvalid'
+  | 'errors.assignmentExecutionVehicleInvalid'
+  | 'errors.assignmentExecutionDriverRequired'
+  | 'errors.assignmentExecutionDriverPhoneInvalid'
+  | 'errors.assignmentExecutionServiceNotConfirmed'
+  | 'errors.assignmentNotExecutedReasonInvalid'
+  | 'errors.assignmentVehiclePlateOverrideInvalid'
+  | 'errors.assignmentAcceptedRevisionRequired'
   | 'errors.projectDescriptionTooLong'
   | 'errors.projectArchived'
   | 'errors.projectArchiveRequired'
@@ -218,32 +242,31 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   rateLineVehicleClassUnavailable: 'errors.rateLineVehicleClassUnavailable',
   rateLineDuplicateCell: 'errors.rateLineDuplicateCell',
   rateLineLimitExceeded: 'errors.rateLineLimitExceeded',
-  // #74 owns the Assignment console; keep backend lifecycle details opaque here.
-  assignmentPositionInvalid: 'errors.generic',
-  assignmentNotesTooLong: 'errors.generic',
-  assignmentLimitExceeded: 'errors.generic',
-  assignmentRemoveBlocked: 'errors.generic',
-  assignmentRevisionQuantityInvalid: 'errors.generic',
-  assignmentRevisionNotDraft: 'errors.generic',
-  assignmentRevisionNotDeclinable: 'errors.generic',
-  assignmentRevisionProviderAcceptanceForbidden: 'errors.generic',
-  assignmentRevisionOutdated: 'errors.generic',
-  assignmentRevisionLimitReached: 'errors.generic',
-  assignmentCheckpointLimitReached: 'errors.generic',
-  assignmentDeclinedReasonRequired: 'errors.generic',
-  assignmentDeclinedReasonTooLong: 'errors.generic',
-  assignmentCheckpointOccurredAtInvalid: 'errors.generic',
-  assignmentCheckpointNoteTooLong: 'errors.generic',
-  assignmentExecutionTerminal: 'errors.generic',
-  assignmentExecutionStatusTransitionInvalid: 'errors.generic',
-  assignmentExecutionVehicleInvalid: 'errors.generic',
-  assignmentExecutionDriverRequired: 'errors.generic',
-  assignmentExecutionDriverPhoneInvalid: 'errors.generic',
+  assignmentPositionInvalid: 'errors.assignmentPositionInvalid',
+  assignmentNotesTooLong: 'errors.assignmentNotesTooLong',
+  assignmentLimitExceeded: 'errors.assignmentLimitExceeded',
+  assignmentRemoveBlocked: 'errors.assignmentRemoveBlocked',
+  assignmentRevisionQuantityInvalid: 'errors.assignmentRevisionQuantityInvalid',
+  assignmentRevisionNotDraft: 'errors.assignmentRevisionNotDraft',
+  assignmentRevisionNotDeclinable: 'errors.assignmentRevisionNotDeclinable',
+  assignmentRevisionProviderAcceptanceForbidden: 'errors.assignmentRevisionProviderAcceptanceForbidden',
+  assignmentRevisionOutdated: 'errors.assignmentRevisionOutdated',
+  assignmentRevisionLimitReached: 'errors.assignmentRevisionLimitReached',
+  assignmentCheckpointLimitReached: 'errors.assignmentCheckpointLimitReached',
+  assignmentDeclinedReasonRequired: 'errors.assignmentDeclinedReasonRequired',
+  assignmentDeclinedReasonTooLong: 'errors.assignmentDeclinedReasonTooLong',
+  assignmentCheckpointOccurredAtInvalid: 'errors.assignmentCheckpointOccurredAtInvalid',
+  assignmentCheckpointNoteTooLong: 'errors.assignmentCheckpointNoteTooLong',
+  assignmentExecutionTerminal: 'errors.assignmentExecutionTerminal',
+  assignmentExecutionStatusTransitionInvalid: 'errors.assignmentExecutionStatusTransitionInvalid',
+  assignmentExecutionVehicleInvalid: 'errors.assignmentExecutionVehicleInvalid',
+  assignmentExecutionDriverRequired: 'errors.assignmentExecutionDriverRequired',
+  assignmentExecutionDriverPhoneInvalid: 'errors.assignmentExecutionDriverPhoneInvalid',
   paginationNumItemsInvalid: 'errors.generic',
-  assignmentExecutionServiceNotConfirmed: 'errors.generic',
-  assignmentNotExecutedReasonInvalid: 'errors.generic',
-  assignmentVehiclePlateOverrideInvalid: 'errors.generic',
-  assignmentAcceptedRevisionRequired: 'errors.generic',
+  assignmentExecutionServiceNotConfirmed: 'errors.assignmentExecutionServiceNotConfirmed',
+  assignmentNotExecutedReasonInvalid: 'errors.assignmentNotExecutedReasonInvalid',
+  assignmentVehiclePlateOverrideInvalid: 'errors.assignmentVehiclePlateOverrideInvalid',
+  assignmentAcceptedRevisionRequired: 'errors.assignmentAcceptedRevisionRequired',
   vehicleClassKeyInvalid: 'errors.vehicleClassKeyInvalid',
   vehicleClassDescriptionTooLong: 'errors.vehicleClassDescriptionTooLong',
   vehicleClassCapacityInvalid: 'errors.vehicleClassCapacityInvalid',

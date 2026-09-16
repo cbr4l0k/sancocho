@@ -99,6 +99,16 @@ const coRenderedPairs: readonly { left: NamedTable; right: NamedTable }[] = [
     left: { name: 'archival', table: archivalStatusTokens },
     right: { name: 'providerClaim', table: providerClaimStateTokens },
   },
+  // `assignments-panel.tsx` puts execution state and terms state in adjacent
+  // cells of the same row. Independent axes again — a confirmed vehicle may sit
+  // on a declined offer — and three pairs collided when the panel was written:
+  // `unassigned`/`draft`, `confirmed`/`accepted`, `notExecuted`/`declined`. The
+  // most common row in the panel is an unassigned vehicle on draft terms, so the
+  // default state was the broken one.
+  {
+    left: { name: 'execution', table: executionStatusTokens },
+    right: { name: 'assignmentRevision', table: assignmentRevisionStatusTokens },
+  },
 ];
 
 test('chips rendered side by side never collapse to the same tone and shape', () => {
@@ -116,6 +126,25 @@ test('chips rendered side by side never collapse to the same tone and shape', ()
           collisions.push(`${left.name}.${leftStatus} is indistinguishable from ${right.name}.${rightStatus}`);
         }
       }
+    }
+  }
+  expect(collisions).toEqual([]);
+});
+
+test('no status set distinguishes two of its own members by colour alone', () => {
+  // The co-rendered check above compares two DIFFERENT tables. This one guards
+  // the inside of each: `CLAUDE.md` says colour is never the only channel, so
+  // two members of one set sharing a shape must be a mutation the suite
+  // notices. Retoning `execution.assigned` to `go`/`diamond` — a one-word edit
+  // colliding it with `confirmed` — previously survived the whole suite.
+  const collisions: string[] = [];
+  for (const { name, table } of Object.entries(tables).map(([name, table]) => ({ name, table }))) {
+    const seen = new Map<string, string>();
+    for (const [status, token] of Object.entries(table)) {
+      const key = `${token.tone}/${token.shape}`;
+      const previous = seen.get(key);
+      if (previous !== undefined) collisions.push(`${name}.${previous} is indistinguishable from ${name}.${status}`);
+      seen.set(key, status);
     }
   }
   expect(collisions).toEqual([]);
