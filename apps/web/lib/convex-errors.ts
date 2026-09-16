@@ -267,6 +267,12 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   assignmentNotExecutedReasonInvalid: 'errors.assignmentNotExecutedReasonInvalid',
   assignmentVehiclePlateOverrideInvalid: 'errors.assignmentVehiclePlateOverrideInvalid',
   assignmentAcceptedRevisionRequired: 'errors.assignmentAcceptedRevisionRequired',
+  // Deliberately generic. The console builds the dispatch window itself from the
+  // day the board is showing, so no user action can produce an invalid one — a
+  // bespoke message here would be copy in two catalogues that nobody can ever
+  // read. If a user-reachable path to this code ever appears, it needs real copy
+  // and this comment is the reason it does not have any yet.
+  assignmentDispatchWindowInvalid: 'errors.generic',
   vehicleClassKeyInvalid: 'errors.vehicleClassKeyInvalid',
   vehicleClassDescriptionTooLong: 'errors.vehicleClassDescriptionTooLong',
   vehicleClassCapacityInvalid: 'errors.vehicleClassCapacityInvalid',

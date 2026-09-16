@@ -320,6 +320,20 @@ a decision to stop rather than guess.
     on every panel row or a new backend field, for an affordance that is already correct in the
     common case and maps to a clear error otherwise.
 
+25. **The Provider dispatch day window is an in-memory filter over a paginated anchor.**
+    This is literally the shape I6 forbids, and it is deliberate here. Inverting the anchor
+    is the only way to prevent a Provider from enumerating Services on which it has no work,
+    while Assignments carry no time column and denormalizing `startsAt` was rejected in #69.
+    The consequences are explicit: ordering is by Assignment `position`, not time; rendering
+    one day requires paging the Provider's whole Project Assignment range; and most pages may
+    be empty after the Service-time filter is applied.
+
+26. **The coordinator and Provider dispatch boards order differently.** The coordinator's
+    day is ordered by Service `startsAt`. The Provider board is ordered by Assignment
+    `position`, because its safe anchor is inverted through the firm's own Assignment ranges.
+    They are two views of the same screen with different orderings, and the Provider board
+    cannot be chronological across pages without adding a time column to Assignments.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

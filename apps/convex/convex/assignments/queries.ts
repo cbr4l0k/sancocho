@@ -6,11 +6,13 @@ import {
   anyArmAssignmentDocValidator,
   anyArmAssignmentCheckpointDocValidator,
   assignmentDocValidator,
+  providerAssignmentDocValidator,
   assignmentRevisionDocValidator,
   archivalStatusValidator,
   rateModalityValidator,
   providerAssignmentRevisionDocValidator,
   executionStatusValidator,
+  serviceStatusValidator,
   paginatedResult,
 } from '../validators';
 import { providerServiceProjectionEntryValidator } from '../lib/providerProjection';
@@ -24,6 +26,9 @@ import {
   listServiceAssignments as listServiceAssignmentsModel,
   listServiceAssignmentRows as listServiceAssignmentRowsModel,
   assignmentsAwaitingDispatch as assignmentsAwaitingDispatchModel,
+  listDispatchDay as listDispatchDayModel,
+  listProviderDispatchDay as listProviderDispatchDayModel,
+  dispatchDayReadiness as dispatchDayReadinessModel,
 } from './model';
 import {
   assignmentRateLookupResultValidator,
@@ -108,6 +113,84 @@ export const listServiceAssignmentRows = query({
     }), v.null()),
   })),
   handler: (ctx, args) => listServiceAssignmentRowsModel(ctx, args.serviceId),
+});
+
+const serviceAssignmentRowValidator = v.object({
+  assignment: assignmentDocValidator,
+  currentRevision: v.union(assignmentRevisionDocValidator, v.null()),
+  latestRevision: v.union(assignmentRevisionDocValidator, v.null()),
+  provider: v.union(v.object({
+    _id: v.id('providers'),
+    name: v.string(),
+    status: archivalStatusValidator,
+  }), v.null()),
+  vehicleClass: v.union(v.object({
+    _id: v.id('vehicleClasses'),
+    name: v.string(),
+    status: archivalStatusValidator,
+  }), v.null()),
+  costCentre: v.union(v.object({
+    _id: v.id('costCentres'),
+    key: v.string(),
+    name: v.string(),
+    status: archivalStatusValidator,
+  }), v.null()),
+});
+
+export const listDispatchDay = query({
+  args: {
+    projectId: v.id('projects'),
+    from: v.number(),
+    to: v.number(),
+    eventId: v.optional(v.id('events')),
+    status: v.optional(executionStatusValidator),
+    providerId: v.optional(v.id('providers')),
+    costCentreId: v.optional(v.id('costCentres')),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginatedResult(v.object({
+    service: v.object({
+      _id: v.id('services'),
+      name: v.string(),
+      startsAt: v.number(),
+      endsAt: v.optional(v.number()),
+      status: serviceStatusValidator,
+      eventId: v.id('events'),
+    }),
+    rows: v.array(serviceAssignmentRowValidator),
+  })),
+  handler: (ctx, args) => listDispatchDayModel(ctx, args),
+});
+
+export const listProviderDispatchDay = query({
+  args: {
+    projectId: v.id('projects'),
+    from: v.number(),
+    to: v.number(),
+    status: v.optional(executionStatusValidator),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginatedResult(v.object({
+    assignment: providerAssignmentDocValidator,
+    service: v.object({ _id: v.id('services'), startsAt: v.number() }),
+    serviceProjection: v.array(providerServiceProjectionEntryValidator),
+  })),
+  handler: (ctx, args) => listProviderDispatchDayModel(ctx, args),
+});
+
+export const dispatchDayReadiness = query({
+  args: {
+    projectId: v.id('projects'),
+    from: v.number(),
+    to: v.number(),
+    eventId: v.optional(v.id('events')),
+  },
+  returns: v.object({
+    unassigned: v.number(),
+    total: v.number(),
+    complete: v.boolean(),
+  }),
+  handler: (ctx, args) => dispatchDayReadinessModel(ctx, args),
 });
 
 export const listProjectAssignments = query({

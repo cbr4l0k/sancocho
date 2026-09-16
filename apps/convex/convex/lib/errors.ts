@@ -151,6 +151,7 @@ export const errorCodes = [
   'paginationNumItemsInvalid',
   'assignmentVehiclePlateOverrideInvalid',
   'assignmentAcceptedRevisionRequired',
+  'assignmentDispatchWindowInvalid',
   // Vehicle Classes are what is planned and priced; Fleet Vehicles are the
   // physical plates retained by Assignment execution history.
   'vehicleClassKeyInvalid',

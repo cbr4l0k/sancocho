@@ -35,6 +35,7 @@ import type * as invitations_mutations from "../invitations/mutations.js";
 import type * as invitations_queries from "../invitations/queries.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_authAdapter from "../lib/authAdapter.js";
+import type * as lib_capabilityFloors from "../lib/capabilityFloors.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_names from "../lib/names.js";
@@ -120,6 +121,7 @@ declare const fullApi: ApiFromModules<{
   "invitations/queries": typeof invitations_queries;
   "lib/access": typeof lib_access;
   "lib/authAdapter": typeof lib_authAdapter;
+  "lib/capabilityFloors": typeof lib_capabilityFloors;
   "lib/errors": typeof lib_errors;
   "lib/money": typeof lib_money;
   "lib/names": typeof lib_names;

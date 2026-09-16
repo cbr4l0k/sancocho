@@ -40,8 +40,8 @@ test('the number of codes left with no specific copy is pinned, so one more is a
   // version of this test filtered the codes by what the mapping already said
   // and then asserted the result was empty, which it always was.
   const generic = errorCodes.filter((code) => present(code) === 'errors.generic');
-  expect(generic).toHaveLength(30);
-  expect(errorCodes).toHaveLength(168);
+  expect(generic).toHaveLength(31);
+  expect(errorCodes).toHaveLength(169);
 });
 
 test('the mapping is a real table, not a constant', () => {

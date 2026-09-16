@@ -9,6 +9,7 @@ import {
   requireAuthenticatedUser,
   requirePrincipalForProject,
   type Principal,
+  type ProviderPrincipal,
   type ProjectIntent,
 } from '../lib/access';
 import { conflict, invalidInput, notFoundOrInaccessible } from '../lib/errors';
@@ -30,6 +31,11 @@ type AssignmentCheckpointKind = typeof assignmentCheckpointKindValidator.type;
 
 /** The enforced ceiling that makes a Service's complete child read bounded. */
 export const maxAssignmentsPerService = 200;
+/** The bounded Service prefix used by the non-paginated readiness summary. */
+export const maxDispatchReadinessServices = 500;
+/** The bounded Assignment prefix used by the non-paginated readiness summary. */
+export const maxDispatchReadinessAssignments = 5000;
+const maxDispatchWindowMilliseconds = 31 * 24 * 60 * 60 * 1000;
 const maxAssignmentNotesLength = 2000;
 const maxDeclinedReasonLength = 1000;
 const maxVehiclePlateOverrideLength = 32;
@@ -738,12 +744,12 @@ export async function recordAssignmentCheckpoint(
  * Both outcomes fail closed. The wider Service projection is composed with this
  * row only by `getAssignmentDetail` below.
  */
-type ProviderAssignmentView = Omit<
+export type ProviderAssignmentView = Omit<
   Doc<'assignments'>,
   'costCentreId' | 'notExecutedAmount' | 'additionalCharges' | 'additionalDetail'
 >;
 
-function providerAssignmentView(assignment: Doc<'assignments'>): ProviderAssignmentView {
+export function providerAssignmentView(assignment: Doc<'assignments'>): ProviderAssignmentView {
   return {
     _id: assignment._id,
     _creationTime: assignment._creationTime,
@@ -919,6 +925,12 @@ export type ServiceAssignmentRow = {
   costCentre: Pick<Doc<'costCentres'>, '_id' | 'key' | 'name' | 'status'> | null;
 };
 
+type AssignmentRowFilters = {
+  status?: ExecutionStatus;
+  providerId?: Id<'providers'>;
+  costCentreId?: Id<'costCentres'>;
+};
+
 /**
  * Member-only Assignment-panel projection. Provider principals are refused
  * because this joins Cost Centre data (provider may-not-see #7), coordinator
@@ -943,6 +955,19 @@ export async function listServiceAssignmentRows(
     return notFoundOrInaccessible();
   }
 
+  return buildServiceAssignmentRows(ctx, service);
+}
+
+/**
+ * The one implementation of the coordinator Assignment row projection. Both
+ * the Service panel and dispatch board use this helper so revision selection
+ * and degrade-to-null catalogue joins cannot drift between the two screens.
+ */
+async function buildServiceAssignmentRows(
+  ctx: QueryCtx,
+  service: Doc<'services'>,
+  filters: AssignmentRowFilters = {},
+): Promise<ServiceAssignmentRow[]> {
   const assignments = await ctx.db
     .query('assignments')
     .withIndex('by_service_position', (q) => q.eq('serviceId', service._id))
@@ -960,6 +985,15 @@ export async function listServiceAssignmentRows(
       assignment.organizationId !== service.organizationId ||
       assignment.projectId !== service.projectId
     ) return notFoundOrInaccessible();
+    // These in-memory filters narrow one Service's COMPLETE bounded child set;
+    // they never decide which Services belong to a paginated page. That is the
+    // documented I6 exemption, unlike filtering the Service range after paging.
+    if (
+      (filters.status !== undefined && assignment.executionStatus !== filters.status) ||
+      (filters.providerId !== undefined && assignment.providerId !== filters.providerId) ||
+      (filters.costCentreId !== undefined && assignment.costCentreId !== filters.costCentreId)
+    ) continue;
+
     const pointedRevision = assignment.currentRevisionId === undefined
       ? null
       : await ctx.db.get(assignment.currentRevisionId);
@@ -1022,6 +1056,308 @@ export async function listServiceAssignmentRows(
   return rows;
 }
 
+export type DispatchServiceEntry = {
+  service: Pick<Doc<'services'>, '_id' | 'name' | 'startsAt' | 'endsAt' | 'status' | 'eventId'>;
+  rows: ServiceAssignmentRow[];
+};
+
+export async function listDispatchDay(
+  ctx: QueryCtx,
+  args: {
+    projectId: Id<'projects'>;
+    from: number;
+    to: number;
+    eventId?: Id<'events'>;
+    status?: ExecutionStatus;
+    providerId?: Id<'providers'>;
+    costCentreId?: Id<'costCentres'>;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<DispatchServiceEntry>> {
+  await requireAuthenticatedUser(ctx);
+  const principal = await requirePrincipalForProject(ctx, args.projectId, 'readAssignment');
+  if (principal.kind === 'provider') return notFoundOrInaccessible();
+  assertDispatchWindow(args.from, args.to);
+  const paginationOpts = boundedDispatchPaginationOptions(args.paginationOpts);
+
+  if (args.eventId !== undefined) {
+    const event = await ctx.db.get(args.eventId);
+    if (
+      event === null ||
+      event.projectId !== args.projectId ||
+      event.organizationId !== principal.organization._id
+    ) return notFoundOrInaccessible();
+    const page = await ctx.db
+      .query('services')
+      .withIndex('by_event_startsAt', (q) =>
+        q.eq('eventId', event._id).gte('startsAt', args.from).lt('startsAt', args.to),
+      )
+      .paginate(paginationOpts);
+    // `by_event_startsAt` proves only the Event id. Re-derive the Project from
+    // every returned Service before disclosing it: the sole writer currently
+    // copies both columns from the same gated Event, but I4 does not let this
+    // read trust that denormalized relationship forever.
+    return mapDispatchServicePage(ctx, page, principal.organization._id, args.projectId, args);
+  }
+
+  const page = await ctx.db
+    .query('services')
+    .withIndex('by_project_startsAt', (q) =>
+      q.eq('projectId', args.projectId).gte('startsAt', args.from).lt('startsAt', args.to),
+    )
+    .paginate(paginationOpts);
+  return mapDispatchServicePage(ctx, page, principal.organization._id, args.projectId, args);
+}
+
+async function mapDispatchServicePage(
+  ctx: QueryCtx,
+  page: PaginationResult<Doc<'services'>>,
+  organizationId: Id<'organizations'>,
+  projectId: Id<'projects'>,
+  filters: AssignmentRowFilters,
+): Promise<PaginationResult<DispatchServiceEntry>> {
+  const entries: DispatchServiceEntry[] = [];
+  for (const service of page.page) {
+    if (
+      service.organizationId !== organizationId ||
+      service.projectId !== projectId
+    ) return notFoundOrInaccessible();
+    entries.push({
+      service: {
+        _id: service._id,
+        name: service.name,
+        startsAt: service.startsAt,
+        ...(service.endsAt === undefined ? {} : { endsAt: service.endsAt }),
+        status: service.status,
+        eventId: service.eventId,
+      },
+      rows: await buildServiceAssignmentRows(ctx, service, filters),
+    });
+  }
+  return { ...page, page: entries };
+}
+
+export type ProviderDispatchAssignmentEntry = {
+  assignment: ProviderAssignmentView;
+  service: Pick<Doc<'services'>, '_id' | 'startsAt'>;
+  serviceProjection: Awaited<ReturnType<typeof providerServiceProjection>>;
+};
+
+/**
+ * Returns a flat Assignment page. A cursor boundary can fall inside a Service,
+ * so a grouped page would lie that either half contained the Service's complete
+ * work. The honest pagination unit is the indexed Assignment row; the console
+ * may group only after it has loaded the desired pages.
+ */
+export async function listProviderDispatchDay(
+  ctx: QueryCtx,
+  args: {
+    projectId: Id<'projects'>;
+    from: number;
+    to: number;
+    status?: ExecutionStatus;
+    paginationOpts: PaginationOptions;
+  },
+): Promise<PaginationResult<ProviderDispatchAssignmentEntry>> {
+  await requireAuthenticatedUser(ctx);
+  const principal = await requirePrincipalForProject(ctx, args.projectId, 'readAssignment');
+  await requirePrincipalForProject(ctx, args.projectId, 'readLinkedServiceProjection');
+  if (principal.kind !== 'provider') return notFoundOrInaccessible();
+  assertDispatchWindow(args.from, args.to);
+
+  // The anchor is deliberately inverted relative to the coordinator board:
+  // its day is a set of Services, while a Provider's day is a set of its own
+  // Assignments. Starting here prevents the Provider from enumerating Services
+  // on which it has no work. The day window is consequently an in-memory filter
+  // over this one bounded assignment page, never an unbounded read.
+  const assignmentPage = await paginateProviderDispatchAssignments(ctx, args, principal);
+  const serviceContexts = new Map<Id<'services'>, {
+    service: Doc<'services'>;
+    serviceProjection: Awaited<ReturnType<typeof providerServiceProjection>> | null;
+  }>();
+  const entries: ProviderDispatchAssignmentEntry[] = [];
+  for (const assignment of assignmentPage.page) {
+    let context = serviceContexts.get(assignment.serviceId);
+    if (context === undefined) {
+      const service = await ctx.db.get(assignment.serviceId);
+      if (
+        service === null ||
+        service.projectId !== args.projectId ||
+        service.organizationId !== assignment.organizationId
+      ) return notFoundOrInaccessible();
+      context = {
+        service,
+        serviceProjection: service.startsAt < args.from || service.startsAt >= args.to
+          ? null
+          : await providerServiceProjection(ctx, service),
+      };
+      serviceContexts.set(assignment.serviceId, context);
+    }
+    // The per-Provider index ranges make this unreachable by construction.
+    // Keep the row-level proof because the duplicated ownership columns are not
+    // authority, and because it fails closed if either the index or merge logic
+    // is changed later without preserving that construction.
+    if (
+      assignment.serviceId !== context.service._id ||
+      assignment.projectId !== context.service.projectId ||
+      assignment.organizationId !== context.service.organizationId ||
+      !principal.accessibleProviderIds.has(assignment.providerId)
+    ) return notFoundOrInaccessible();
+    if (context.serviceProjection === null) continue;
+    entries.push({
+      assignment: providerAssignmentView(assignment),
+      // Provider MAY-see #6 in docs/provider-access.md explicitly includes
+      // these two Service columns for a Service carrying the firm's Assignment.
+      service: { _id: context.service._id, startsAt: context.service.startsAt },
+      serviceProjection: context.serviceProjection,
+    });
+  }
+  return { ...assignmentPage, page: entries };
+}
+
+async function paginateProviderDispatchAssignments(
+  ctx: QueryCtx,
+  args: {
+    projectId: Id<'projects'>;
+    status?: ExecutionStatus;
+    paginationOpts: PaginationOptions;
+  },
+  principal: ProviderPrincipal,
+): Promise<PaginationResult<Doc<'assignments'>>> {
+  const { numItems } = boundedDispatchPaginationOptions(args.paginationOpts);
+  const providerIds = [...principal.accessibleProviderIds]
+    .sort((left, right) => String(left).localeCompare(String(right)));
+  const state = decodeProviderDispatchCursor(args.paginationOpts.cursor, providerIds, args.status);
+  const page: Doc<'assignments'>[] = [];
+
+  while (page.length < numItems) {
+    const candidates: { row: Doc<'assignments'>; providerId: Id<'providers'> }[] = [];
+    for (const providerId of providerIds) {
+      const rangeState = state.get(providerId);
+      if (rangeState === undefined || rangeState.done) continue;
+      const row = await firstProviderDispatchRow(
+        ctx,
+        args.projectId,
+        providerId,
+        args.status,
+        rangeState.resume,
+      );
+      if (row === null) state.set(providerId, { resume: rangeState.resume, done: true });
+      else candidates.push({ row, providerId });
+    }
+    if (candidates.length === 0) break;
+    candidates.sort(compareDispatchCandidates);
+    const selected = candidates[0];
+    if (selected === undefined) break;
+    page.push(selected.row);
+    state.set(selected.providerId, {
+      resume: { position: selected.row.position, creationTime: selected.row._creationTime },
+      done: false,
+    });
+  }
+
+  return {
+    page,
+    isDone: providerIds.every((providerId) => state.get(providerId)?.done === true),
+    continueCursor: encodeProviderDispatchCursor(providerIds, args.status, state),
+  };
+}
+
+export async function dispatchDayReadiness(
+  ctx: QueryCtx,
+  args: { projectId: Id<'projects'>; from: number; to: number; eventId?: Id<'events'> },
+): Promise<{ unassigned: number; total: number; complete: boolean }> {
+  await requireAuthenticatedUser(ctx);
+  const principal = await requirePrincipalForProject(ctx, args.projectId, 'readAssignment');
+  if (principal.kind === 'provider') return notFoundOrInaccessible();
+  assertDispatchWindow(args.from, args.to);
+
+  const services = args.eventId === undefined
+    ? await ctx.db.query('services')
+        .withIndex('by_project_startsAt', (q) =>
+          q.eq('projectId', args.projectId).gte('startsAt', args.from).lt('startsAt', args.to),
+        )
+        .take(maxDispatchReadinessServices + 1)
+    : await takeEventDispatchServices(ctx, args, principal.organization._id);
+  let complete = services.length <= maxDispatchReadinessServices;
+  let unassigned = 0;
+  let total = 0;
+  for (const service of services.slice(0, maxDispatchReadinessServices)) {
+    // The Event index pins only `eventId`; re-derive the Project as well as the
+    // tenant before counting a denormalized Service relationship (I4). This is
+    // unreachable under today's sole writer, which copies both from one Event.
+    if (
+      service.organizationId !== principal.organization._id ||
+      service.projectId !== args.projectId
+    ) return notFoundOrInaccessible();
+    const remaining = maxDispatchReadinessAssignments - total;
+    const assignments = await ctx.db.query('assignments')
+      .withIndex('by_service_position', (q) => q.eq('serviceId', service._id))
+      .take(Math.min(maxAssignmentsPerService, remaining + 1));
+    const includedAssignments = assignments.slice(0, remaining);
+    for (const assignment of includedAssignments) {
+      if (
+        assignment.organizationId !== service.organizationId ||
+        assignment.projectId !== service.projectId
+      ) return notFoundOrInaccessible();
+      total += 1;
+      if (assignment.executionStatus === 'unassigned') unassigned += 1;
+    }
+    if (assignments.length > remaining) {
+      complete = false;
+      break;
+    }
+  }
+  return { unassigned, total, complete };
+}
+
+function boundedDispatchPaginationOptions(
+  paginationOpts: PaginationOptions,
+): PaginationOptions {
+  if (!Number.isInteger(paginationOpts.numItems) || paginationOpts.numItems <= 0) {
+    return invalidInput('paginationNumItemsInvalid', 'numItems must be a positive integer');
+  }
+  return {
+    ...paginationOpts,
+    numItems: Math.min(paginationOpts.numItems, maxDispatchPageSize),
+  };
+}
+
+async function takeEventDispatchServices(
+  ctx: QueryCtx,
+  args: { projectId: Id<'projects'>; from: number; to: number; eventId?: Id<'events'> },
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'services'>[]> {
+  if (args.eventId === undefined) return [];
+  const event = await ctx.db.get(args.eventId);
+  if (
+    event === null ||
+    event.projectId !== args.projectId ||
+    event.organizationId !== organizationId
+  ) return notFoundOrInaccessible();
+  return ctx.db.query('services')
+    .withIndex('by_event_startsAt', (q) =>
+      q.eq('eventId', event._id).gte('startsAt', args.from).lt('startsAt', args.to),
+    )
+    .take(maxDispatchReadinessServices + 1);
+}
+
+function assertDispatchWindow(from: number, to: number): void {
+  if (
+    !Number.isFinite(from) ||
+    !Number.isFinite(to) ||
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from >= to ||
+    to - from > maxDispatchWindowMilliseconds
+  ) {
+    return invalidInput(
+      'assignmentDispatchWindowInvalid',
+      'Dispatch windows require finite integer bounds, increasing order, and a maximum span of 31 days',
+    );
+  }
+}
+
 export async function listProjectAssignments(
   ctx: QueryCtx,
   args: { projectId: Id<'projects'>; paginationOpts: PaginationOptions },
@@ -1055,7 +1391,114 @@ export async function listProjectAssignments(
 }
 
 type DispatchResume = { position: number; creationTime: number };
+type ProviderDispatchRangeState = { resume: DispatchResume | undefined; done: boolean };
+type ProviderDispatchCursorState = Map<Id<'providers'>, ProviderDispatchRangeState>;
 type DispatchCursorState = Record<ExecutionStatus, { resume: DispatchResume | undefined; done: boolean }>;
+
+async function firstProviderDispatchRow(
+  ctx: QueryCtx,
+  projectId: Id<'projects'>,
+  providerId: Id<'providers'>,
+  status: ExecutionStatus | undefined,
+  resume: DispatchResume | undefined,
+): Promise<Doc<'assignments'> | null> {
+  if (resume !== undefined) {
+    const samePosition = status === undefined
+      ? ctx.db.query('assignments').withIndex('by_project_provider_position', (q) => q
+          .eq('projectId', projectId)
+          .eq('providerId', providerId)
+          .eq('position', resume.position)
+          .gt('_creationTime', resume.creationTime))
+      : ctx.db.query('assignments').withIndex('by_project_provider_execution_position', (q) => q
+          .eq('projectId', projectId)
+          .eq('providerId', providerId)
+          .eq('executionStatus', status)
+          .eq('position', resume.position)
+          .gt('_creationTime', resume.creationTime));
+    const row = (await samePosition.take(1))[0];
+    if (row !== undefined) return row;
+  }
+
+  const later = status === undefined
+    ? ctx.db.query('assignments').withIndex('by_project_provider_position', (q) => {
+        const range = q.eq('projectId', projectId).eq('providerId', providerId);
+        return resume === undefined ? range : range.gt('position', resume.position);
+      })
+    : ctx.db.query('assignments').withIndex('by_project_provider_execution_position', (q) => {
+        const range = q
+          .eq('projectId', projectId)
+          .eq('providerId', providerId)
+          .eq('executionStatus', status);
+        return resume === undefined ? range : range.gt('position', resume.position);
+      });
+  return (await later.take(1))[0] ?? null;
+}
+
+function decodeProviderDispatchCursor(
+  cursor: string | null,
+  providerIds: readonly Id<'providers'>[],
+  status: ExecutionStatus | undefined,
+): ProviderDispatchCursorState {
+  const initial: ProviderDispatchCursorState = new Map(providerIds.map((providerId) => [
+    providerId,
+    { resume: undefined, done: false },
+  ]));
+  if (cursor === null) return initial;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cursor);
+  } catch {
+    return conflict();
+  }
+  if (
+    !isRecord(parsed) ||
+    parsed.status !== status ||
+    !Array.isArray(parsed.ranges) ||
+    parsed.ranges.length !== providerIds.length
+  ) return conflict();
+
+  for (let index = 0; index < providerIds.length; index += 1) {
+    const providerId = providerIds[index];
+    const range = parsed.ranges[index];
+    if (
+      providerId === undefined ||
+      !isRecord(range) ||
+      range.providerId !== providerId ||
+      typeof range.done !== 'boolean'
+    ) return conflict();
+    if (range.resume === undefined) {
+      initial.set(providerId, { resume: undefined, done: range.done });
+      continue;
+    }
+    if (
+      !isRecord(range.resume) ||
+      typeof range.resume.position !== 'number' ||
+      typeof range.resume.creationTime !== 'number'
+    ) return conflict();
+    initial.set(providerId, {
+      resume: {
+        position: range.resume.position,
+        creationTime: range.resume.creationTime,
+      },
+      done: range.done,
+    });
+  }
+  return initial;
+}
+
+function encodeProviderDispatchCursor(
+  providerIds: readonly Id<'providers'>[],
+  status: ExecutionStatus | undefined,
+  state: ProviderDispatchCursorState,
+): string {
+  return JSON.stringify({
+    ...(status === undefined ? {} : { status }),
+    ranges: providerIds.map((providerId) => ({
+      providerId,
+      ...state.get(providerId),
+    })),
+  });
+}
 
 /**
  * Merges one-row pages from the requested indexed status ranges. Keeping a

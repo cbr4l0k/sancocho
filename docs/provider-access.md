@@ -140,7 +140,12 @@ configuration.
    execution status machine remains the sole definition of execution state.
 6. The **code-owned semantic projection** of the Service each granted Assignment links to
    — the enumerated operational fields defined in §"Visibility is a code-owned semantic
-   projection" below, and no other field of that Service.
+   projection" below, and no other tenant-authored field of that Service. For a Service on
+   which it already has an Assignment, the Provider may also see `services._id` and
+   `services.startsAt`: the id lets the dispatch surface group that firm's own work, and
+   the canonical start is the timing of that work and is required to place it on a day
+   board. Neither column makes Services browsable; both travel only with an Assignment
+   already admitted by MAY-see #3.
 
 ## What a Provider MAY NOT see
 
