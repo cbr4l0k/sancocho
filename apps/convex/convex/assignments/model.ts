@@ -1229,8 +1229,15 @@ async function paginateProviderDispatchAssignments(
     .sort((left, right) => String(left).localeCompare(String(right)));
   const state = decodeProviderDispatchCursor(args.paginationOpts.cursor, providerIds, args.status);
   const page: Doc<'assignments'>[] = [];
+  let iterations = 0;
 
   while (page.length < numItems) {
+    iterations += 1;
+    // Every successful iteration must append exactly one row, so `numItems` is
+    // also the hard query-work ceiling. Keep that invariant explicit: if this
+    // loop is later changed to retry a range without emitting, fail closed
+    // instead of allowing a cursor regression to spin until Convex times out.
+    if (iterations > numItems) return conflict();
     const candidates: { row: Doc<'assignments'>; providerId: Id<'providers'> }[] = [];
     for (const providerId of providerIds) {
       const rangeState = state.get(providerId);
@@ -1249,6 +1256,13 @@ async function paginateProviderDispatchAssignments(
     candidates.sort(compareDispatchCandidates);
     const selected = candidates[0];
     if (selected === undefined) break;
+    const priorResume = state.get(selected.providerId)?.resume;
+    if (
+      priorResume !== undefined &&
+      (selected.row.position < priorResume.position ||
+        (selected.row.position === priorResume.position &&
+          selected.row._creationTime <= priorResume.creationTime))
+    ) return conflict();
     page.push(selected.row);
     state.set(selected.providerId, {
       resume: { position: selected.row.position, creationTime: selected.row._creationTime },

@@ -5,7 +5,6 @@ import { expect, test, vi } from 'vitest';
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import {
-  maxDispatchReadinessAssignments,
   requireAssignmentAccess,
   type ProviderDispatchAssignmentEntry,
 } from '../convex/assignments/model';
@@ -161,7 +160,13 @@ async function fixture(subject = 'assignments', currency: 'COP' | 'USD' = 'COP')
 
 async function insertFixtureService(
   f: Awaited<ReturnType<typeof fixture>>,
-  args: { name: string; startsAt: number; eventId?: Id<'events'> },
+  args: {
+    name: string;
+    startsAt: number;
+    endsAt?: number;
+    eventId?: Id<'events'>;
+    status?: Doc<'services'>['status'];
+  },
 ): Promise<Id<'services'>> {
   return f.t.run(async (ctx) => {
     const base = await ctx.db.get(f.serviceId);
@@ -173,8 +178,9 @@ async function insertFixtureService(
       serviceKindId: base.serviceKindId,
       serviceKindVersionId: base.serviceKindVersionId,
       name: args.name,
-      status: 'draft',
+      status: args.status ?? 'draft',
       startsAt: args.startsAt,
+      ...(args.endsAt === undefined ? {} : { endsAt: args.endsAt }),
     });
   });
 }
@@ -1463,10 +1469,15 @@ test('requireAssignmentAccess delegates live grant policy and revocation takes e
 
 test('listDispatchDay pages Services by start time, preserves half-open bounds, and orders complete child rows', async () => {
   const f = await fixture('dispatch-day-order');
-  const lowerOutsideId = await insertFixtureService(f, { name: 'Lower outside', startsAt: 999 });
-  const firstId = await insertFixtureService(f, { name: 'First included', startsAt: 1_000 });
+  await insertFixtureService(f, { name: 'Lower outside', startsAt: 999 });
+  const firstId = await insertFixtureService(f, {
+    name: 'First included',
+    startsAt: 1_000,
+    endsAt: 1_400,
+    status: 'confirmed',
+  });
   const secondId = await insertFixtureService(f, { name: 'Second included', startsAt: 1_500 });
-  const upperOutsideId = await insertFixtureService(f, { name: 'Upper outside', startsAt: 2_000 });
+  await insertFixtureService(f, { name: 'Upper outside', startsAt: 2_000 });
   await f.t.run(async (ctx) => {
     await ctx.db.insert('assignments', {
       organizationId: f.organizationId,
@@ -1496,10 +1507,14 @@ test('listDispatchDay pages Services by start time, preserves half-open bounds, 
     .toEqual([firstId, secondId]);
   expect(page.page[0]?.rows.map((row) => row.assignment.position), 'rows follow by_service_position order')
     .toEqual([5, 30]);
-  expect(page.page.map((entry) => entry.service._id), 'from - 1 millisecond is excluded')
-    .not.toContain(lowerOutsideId);
-  expect(page.page.map((entry) => entry.service._id), 'the exclusive to boundary is excluded')
-    .not.toContain(upperOutsideId);
+  expect(page.page[0]?.service, 'the coordinator board discloses the stored Service column values').toEqual({
+    _id: firstId,
+    name: 'First included',
+    startsAt: 1_000,
+    endsAt: 1_400,
+    status: 'confirmed',
+    eventId: f.eventId,
+  });
 
   const filtered = await f.owner.client.query(listDispatchDay, {
     projectId: f.projectId,
@@ -1609,11 +1624,45 @@ test('listDispatchDay refuses Provider principals and authenticated non-members'
     .rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
+test('dispatchDayReadiness refuses Provider principals and authenticated non-members', async () => {
+  const f = await fixture('dispatch-readiness-member-only');
+  const firm = await makeGrantedProvider(f, 'dispatch-readiness-provider-firm', 'Readiness Provider');
+  const outsider = await provision(f.t, 'dispatch-readiness-outsider');
+  const args = { projectId: f.projectId, from: 0, to: 10 };
+  await expect(firm.client.query(dispatchDayReadiness, args), 'Provider principal cannot read coordinator aggregates')
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.client.query(dispatchDayReadiness, args), 'non-member cannot read coordinator aggregates')
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listProviderDispatchDay refuses coordinator members and authenticated non-members', async () => {
+  const f = await fixture('provider-dispatch-provider-only');
+  const outsider = await provision(f.t, 'provider-dispatch-provider-only-outsider');
+  const args = { projectId: f.projectId, from: 0, to: 10, paginationOpts: firstPage };
+  await expect(f.owner.client.query(listProviderDispatchDay, args), 'member cannot enter the Provider board')
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(outsider.client.query(listProviderDispatchDay, args), 'non-member cannot enter the Provider board')
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listProviderDispatchDay requests both Assignment and linked-Service capabilities', () => {
+  const sources = import.meta.glob('../convex/assignments/model.ts', { query: '?raw', import: 'default', eager: true });
+  const source = Object.values(sources)[0] ?? '';
+  const functionBody = source.slice(
+    source.indexOf('export async function listProviderDispatchDay'),
+    source.indexOf('async function paginateProviderDispatchAssignments'),
+  );
+  expect(functionBody.match(/requirePrincipalForProject\(ctx, args\.projectId, 'readAssignment'\)/g))
+    .toHaveLength(1);
+  expect(functionBody.match(/requirePrincipalForProject\(ctx, args\.projectId, 'readLinkedServiceProjection'\)/g))
+    .toHaveLength(1);
+});
+
 test('listProviderDispatchDay exposes only Services carrying the Provider own narrowed rows and rechecks revocation', async () => {
   const f = await fixture('provider-dispatch-day');
   await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
   const ownServiceId = await insertFixtureService(f, { name: 'Provider own Service', startsAt: 200 });
-  const unrelatedServiceId = await insertFixtureService(f, { name: 'Unrelated Service', startsAt: 300 });
+  await insertFixtureService(f, { name: 'Unrelated Service', startsAt: 300 });
   const firm = await makeGrantedProvider(f, 'provider-dispatch-firm', 'Provider Dispatch Firm');
   const assignmentId = await f.owner.client.mutation(createAssignment, {
     serviceId: ownServiceId,
@@ -1635,12 +1684,11 @@ test('listProviderDispatchDay exposes only Services carrying the Provider own na
   });
   expect(page.page.map((entry) => entry.service._id), 'only a Service with this Provider Assignment is disclosed')
     .toEqual([ownServiceId]);
-  expect(page.page.map((entry) => entry.service._id), 'the fixture Service without Provider work is absent')
-    .not.toContain(f.serviceId);
-  expect(page.page.map((entry) => entry.service._id), 'the third Service without Provider work is absent')
-    .not.toContain(unrelatedServiceId);
+  // The strict public return validator is the primary enforcement of this
+  // shell. This assertion documents the same contract at the model boundary.
   expect(Object.keys(page.page[0]?.service ?? {}), 'Provider Service shell is exactly id plus start')
     .toEqual(['_id', 'startsAt']);
+  expect(page.page[0]?.service.startsAt, 'Provider Service start retains its stored value').toBe(200);
   expectNoForbiddenProviderKeys(page.page[0]?.assignment ?? {});
 
   await f.owner.client.mutation(revokeProviderAccessGrant, { grantId: firm.grantId });
@@ -1651,6 +1699,206 @@ test('listProviderDispatchDay exposes only Services carrying the Provider own na
     paginationOpts: firstPage,
   }), 'revocation removes access on the immediately following query')
     .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listProviderDispatchDay includes from and excludes both sides of its half-open day window', async () => {
+  const f = await fixture('provider-dispatch-window');
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-window-firm', 'Window Firm');
+  const beforeId = await insertFixtureService(f, { name: 'Before window', startsAt: 99 });
+  const fromId = await insertFixtureService(f, { name: 'At from', startsAt: 100 });
+  const toId = await insertFixtureService(f, { name: 'At to', startsAt: 200 });
+  const afterId = await insertFixtureService(f, { name: 'After window', startsAt: 201 });
+  const assignmentIds = await f.t.run(async (ctx) => {
+    const ids: Id<'assignments'>[] = [];
+    for (const [serviceId, position] of [
+      [beforeId, 20], [fromId, 30], [toId, 40], [afterId, 50],
+    ] as const) {
+      ids.push(await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId,
+        projectId: f.projectId,
+        providerId: firm.providerId,
+        position,
+        executionStatus: 'unassigned',
+      }));
+    }
+    return ids;
+  });
+
+  const page = await firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 100,
+    to: 200,
+    paginationOpts: firstPage,
+  });
+  const returned = page.page.map((entry) => entry.assignment._id);
+  expect(returned, 'an Assignment before from is excluded').not.toContain(assignmentIds[0]);
+  expect(returned, 'an Assignment exactly at from is included').toContain(assignmentIds[1]);
+  expect(returned, 'an Assignment exactly at to is excluded').not.toContain(assignmentIds[2]);
+  expect(returned, 'an Assignment after to is excluded').not.toContain(assignmentIds[3]);
+});
+
+test('listProviderDispatchDay returns same-position Assignments from different Services', async () => {
+  const f = await fixture('provider-dispatch-same-position');
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
+  const otherServiceId = await insertFixtureService(f, { name: 'Same position peer', startsAt: 110 });
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-same-position-firm', 'Same Position Firm');
+  const firstId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: firm.providerId,
+    position: 20,
+  });
+  const secondId = await f.owner.client.mutation(createAssignment, {
+    serviceId: otherServiceId,
+    providerId: firm.providerId,
+    position: 20,
+  });
+
+  const page = await firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 200,
+    paginationOpts: firstPage,
+  });
+  expect(page.page.map((entry) => entry.assignment._id)).toEqual([firstId, secondId]);
+});
+
+test('listProviderDispatchDay rejects fractional page sizes and clamps oversized pages to 200 Assignments', async () => {
+  const f = await fixture('provider-dispatch-page-bound');
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
+  const secondServiceId = await insertFixtureService(f, { name: 'Provider page bound peer', startsAt: 110 });
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-page-bound-firm', 'Page Bound Firm');
+  await f.t.run(async (ctx) => {
+    for (let index = 0; index < 201; index += 1) {
+      await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId: index < 200 ? f.serviceId : secondServiceId,
+        projectId: f.projectId,
+        providerId: firm.providerId,
+        position: index < 200 ? index : 0,
+        executionStatus: 'unassigned',
+      });
+    }
+  });
+  await expect(firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 200,
+    paginationOpts: { numItems: 1.5, cursor: null },
+  })).rejects.toMatchObject({ data: { code: 'paginationNumItemsInvalid' } });
+  const page = await firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 200,
+    paginationOpts: { numItems: 1_000, cursor: null },
+  });
+  expect(page.page).toHaveLength(200);
+  expect(page.isDone).toBe(false);
+});
+
+test('listProviderDispatchDay refuses replaying a cursor under a different status filter', async () => {
+  const f = await fixture('provider-dispatch-cursor-status');
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-cursor-status-firm', 'Cursor Status Firm');
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: firm.providerId,
+    position: 20,
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(assignmentId, { executionStatus: 'assigned' }));
+  const first = await firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 200,
+    status: 'assigned',
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  await expect(firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 200,
+    status: 'unassigned',
+    paginationOpts: { numItems: 1, cursor: first.continueCursor },
+  })).rejects.toMatchObject({ data: { code: 'conflict' } });
+});
+
+test('listProviderDispatchDay refuses a linked Service whose Project column disagrees', async () => {
+  const f = await fixture('provider-dispatch-service-project-invariant');
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-service-project-firm', 'Service Project Firm');
+  const assignmentId = await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: firm.providerId,
+    position: 20,
+  });
+  const foreignProjectId = await f.t.run((ctx) => ctx.db.insert('projects', {
+    organizationId: f.organizationId,
+    name: 'Provider dispatch foreign Project',
+    status: 'active',
+  }));
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.serviceId, { projectId: foreignProjectId });
+    // The Assignment stays in the requested Project index range; only the
+    // authoritative linked Service is corrupted.
+    await ctx.db.patch(assignmentId, { projectId: f.projectId });
+  });
+  await expect(firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listProviderDispatchDay refuses a linked Service whose organization column disagrees', async () => {
+  const f = await fixture('provider-dispatch-service-organization-invariant');
+  const firm = await makeGrantedProvider(f, 'provider-dispatch-service-org-firm', 'Service Organization Firm');
+  await f.owner.client.mutation(createAssignment, {
+    serviceId: f.serviceId,
+    providerId: firm.providerId,
+    position: 20,
+  });
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Provider Dispatch Foreign Organization',
+    slug: 'provider-dispatch-service-organization-foreign',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { organizationId: foreignOrganizationId }));
+  await expect(firm.client.query(listProviderDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listProviderDispatchDay retains the fail-closed per-row Provider proof', () => {
+  const sources = import.meta.glob('../convex/assignments/model.ts', { query: '?raw', import: 'default', eager: true });
+  const source = Object.values(sources)[0] ?? '';
+  const functionBody = source.slice(
+    source.indexOf('export async function listProviderDispatchDay'),
+    source.indexOf('async function paginateProviderDispatchAssignments'),
+  );
+  expect(functionBody).toContain('!principal.accessibleProviderIds.has(assignment.providerId)');
+});
+
+test('listProviderDispatchDay retains both linked Service ownership re-derivations', () => {
+  const sources = import.meta.glob('../convex/assignments/model.ts', { query: '?raw', import: 'default', eager: true });
+  const source = Object.values(sources)[0] ?? '';
+  const functionBody = source.slice(
+    source.indexOf('export async function listProviderDispatchDay'),
+    source.indexOf('async function paginateProviderDispatchAssignments'),
+  );
+  expect(functionBody).toContain('service.projectId !== args.projectId');
+  expect(functionBody).toContain('service.organizationId !== assignment.organizationId');
+});
+
+test('listProviderDispatchDay pagination loop retains an explicit iteration ceiling', () => {
+  const sources = import.meta.glob('../convex/assignments/model.ts', { query: '?raw', import: 'default', eager: true });
+  const source = Object.values(sources)[0] ?? '';
+  const functionBody = source.slice(
+    source.indexOf('async function paginateProviderDispatchAssignments'),
+    source.indexOf('export async function dispatchDayReadiness'),
+  );
+  expect(functionBody).toContain('if (iterations > numItems) return conflict()');
 });
 
 test('listDispatchDay applies Provider and Cost Centre filters to each complete Service child set', async () => {
@@ -1702,6 +1950,43 @@ test('listDispatchDay applies Provider and Cost Centre filters to each complete 
   });
   expect(costCentreFiltered.page.flatMap((entry) => entry.rows.map((row) => row.assignment._id)))
     .toEqual([f.assignmentId]);
+});
+
+test('listDispatchDay checks Assignment ownership before applying a row filter', async () => {
+  const f = await fixture('dispatch-filter-ownership-order');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Dispatch Filter Foreign Organization',
+    slug: 'dispatch-filter-ownership-order-foreign',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, {
+    organizationId: foreignOrganizationId,
+    executionStatus: 'unassigned',
+  }));
+  await expect(f.owner.client.query(listDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+    status: 'assigned',
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('listDispatchDay refuses a Service whose tenant column disagrees with its Project', async () => {
+  const f = await fixture('dispatch-service-organization-invariant');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Dispatch Service Foreign Organization',
+    slug: 'dispatch-service-organization-invariant-foreign',
+  });
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.serviceId, { organizationId: foreignOrganizationId });
+    await ctx.db.patch(f.assignmentId, { organizationId: foreignOrganizationId });
+  });
+  await expect(f.owner.client.query(listDispatchDay, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+    paginationOpts: firstPage,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('listDispatchDay rejects fractional page sizes and clamps oversized pages to 200 Services', async () => {
@@ -1774,6 +2059,8 @@ test('listProviderDispatchDay keeps page-straddling Assignments flat and returns
   expect(assignmentIds).toEqual([firstAssignmentId, secondAssignmentId]);
   expect(new Set(assignmentIds).size).toBe(2);
   expect(serviceIds).toEqual([f.serviceId, f.serviceId]);
+  // The strict public return validator rejects grouped response shapes first;
+  // this model-level assertion remains useful documentation of the flat API.
   expect(groupedClaims).toEqual([false, false]);
 });
 
@@ -1817,7 +2104,7 @@ test('listProviderDispatchDay merges two granted firms with a status filter and 
   });
   await f.t.run(async (ctx) => {
     await ctx.db.patch(assignmentAId, { executionStatus: 'assigned' });
-    await ctx.db.patch(assignmentBId, { executionStatus: 'assigned' });
+    await ctx.db.patch(assignmentBId, { executionStatus: 'confirmed' });
     await ctx.db.patch(f.assignmentId, { executionStatus: 'assigned' });
   });
 
@@ -1828,8 +2115,7 @@ test('listProviderDispatchDay merges two granted firms with a status filter and 
     status: 'assigned',
     paginationOpts: firstPage,
   });
-  expect(page.page.map((entry) => entry.assignment._id)).toEqual([assignmentAId, assignmentBId]);
-  expect(page.page.map((entry) => entry.assignment.providerId)).not.toContain(f.providerId);
+  expect(page.page.map((entry) => entry.assignment._id)).toEqual([assignmentAId]);
   expect(page.continueCursor).not.toContain(String(f.providerId));
   expect(page).not.toHaveProperty('splitCursor');
   expect(page).not.toHaveProperty('pageStatus');
@@ -1892,15 +2178,69 @@ test('listProviderDispatchDay removes only the revoked firm row on the next dual
     .toEqual([serviceBId]);
 });
 
+test('listProviderDispatchDay pages two granted firms to exhaustion without loss or duplication', async () => {
+  const f = await fixture('provider-dispatch-dual-pagination');
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
+  const dispatcher = await provision(f.t, 'provider-dispatch-dual-pagination-user');
+  const firmOrganizationId = await dispatcher.client.mutation(createOrganization, {
+    name: 'Dual Pagination Firm',
+    slug: 'provider-dispatch-dual-pagination-firm',
+  });
+  const providerIds = await Promise.all(['A', 'B'].map(async (suffix) => {
+    const providerId = await f.owner.client.mutation(createProvider, {
+      organizationId: f.organizationId,
+      name: `Dual Pagination Provider ${suffix}`,
+    });
+    await f.t.run(async (ctx) => ctx.db.patch(providerId, { linkedOrganizationId: firmOrganizationId }));
+    await f.owner.client.mutation(grantProjectAccessToProvider, {
+      projectId: f.projectId,
+      providerId,
+    });
+    return providerId;
+  }));
+  const expected: Id<'assignments'>[] = [];
+  for (const [providerId, position] of [
+    [providerIds[0], 20], [providerIds[1], 21], [providerIds[0], 30], [providerIds[1], 31],
+  ] as const) {
+    if (providerId === undefined) throw new Error('Expected Provider id');
+    expected.push(await f.owner.client.mutation(createAssignment, {
+      serviceId: f.serviceId,
+      providerId,
+      position,
+    }));
+  }
+
+  let cursor: string | null = null;
+  const seen: Id<'assignments'>[] = [];
+  for (;;) {
+    const page: PaginationResult<ProviderDispatchAssignmentEntry> = await dispatcher.client.query(listProviderDispatchDay, {
+      projectId: f.projectId,
+      from: 0,
+      to: 200,
+      paginationOpts: { numItems: 1, cursor },
+    });
+    const parsedCursor = JSON.parse(page.continueCursor) as { ranges?: { providerId?: string }[] };
+    expect(parsedCursor.ranges?.map((range) => range.providerId), 'cursor ranges use canonical Provider-id order')
+      .toEqual([...providerIds].map(String).sort((left, right) => left.localeCompare(right)));
+    seen.push(...page.page.map((entry) => entry.assignment._id));
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  expect(new Set(seen), 'every row appears exactly once across dual-firm pages').toEqual(new Set(expected));
+  expect(seen).toHaveLength(expected.length);
+});
+
 test('dispatchDayReadiness counts only the half-open Service window', async () => {
   const f = await fixture('dispatch-readiness-window');
   await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
   const assignedServiceId = await insertFixtureService(f, { name: 'Assigned inside', startsAt: 200 });
+  const secondAssignedServiceId = await insertFixtureService(f, { name: 'Second assigned inside', startsAt: 250 });
   const lowerOutsideId = await insertFixtureService(f, { name: 'Readiness lower outside', startsAt: 99 });
   const upperOutsideId = await insertFixtureService(f, { name: 'Readiness upper outside', startsAt: 300 });
   await f.t.run(async (ctx) => {
     for (const [serviceId, position, executionStatus] of [
       [assignedServiceId, 20, 'assigned'],
+      [secondAssignedServiceId, 25, 'assigned'],
       [lowerOutsideId, 30, 'unassigned'],
       [upperOutsideId, 40, 'unassigned'],
     ] as const) {
@@ -1919,7 +2259,94 @@ test('dispatchDayReadiness counts only the half-open Service window', async () =
     from: 100,
     to: 300,
   }), 'readiness counts Assignments only under Services in the requested window')
+    .toEqual({ unassigned: 1, total: 3, complete: true });
+});
+
+test('Event-scoped dispatch boards include from and exclude to', async () => {
+  const f = await fixture('dispatch-event-window-boundaries');
+  await f.t.run(async (ctx) => ctx.db.patch(f.serviceId, { startsAt: 100 }));
+  const insideId = await insertFixtureService(f, { name: 'Event inside', startsAt: 200 });
+  const toId = await insertFixtureService(f, { name: 'Event at to', startsAt: 300 });
+  await insertFixtureService(f, { name: 'Event before', startsAt: 99 });
+  await insertFixtureService(f, { name: 'Event after', startsAt: 301 });
+  await f.t.run(async (ctx) => {
+    for (const [serviceId, position] of [[insideId, 20], [toId, 30]] as const) {
+      await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId,
+        projectId: f.projectId,
+        providerId: f.providerId,
+        position,
+        executionStatus: 'assigned',
+      });
+    }
+  });
+  const args = { projectId: f.projectId, eventId: f.eventId, from: 100, to: 300 };
+  const board = await f.owner.client.query(listDispatchDay, { ...args, paginationOpts: firstPage });
+  expect(board.page.map((entry) => entry.service._id)).toEqual([f.serviceId, insideId]);
+  expect(await f.owner.client.query(dispatchDayReadiness, args))
     .toEqual({ unassigned: 1, total: 2, complete: true });
+});
+
+test('Event-scoped dispatch boards refuse an Event whose organization disagrees with its Project', async () => {
+  const f = await fixture('dispatch-event-organization-invariant');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Dispatch Event Foreign Organization',
+    slug: 'dispatch-event-organization-invariant-foreign',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.eventId, { organizationId: foreignOrganizationId }));
+  const args = { projectId: f.projectId, eventId: f.eventId, from: 0, to: 10 };
+  await expect(f.owner.client.query(listDispatchDay, { ...args, paginationOpts: firstPage }))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(f.owner.client.query(dispatchDayReadiness, args))
+    .rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('dispatchDayReadiness refuses a Service whose organization disagrees with its Event', async () => {
+  const f = await fixture('dispatch-readiness-service-organization-invariant');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Readiness Service Foreign Organization',
+    slug: 'dispatch-readiness-service-organization-foreign',
+  });
+  await f.t.run(async (ctx) => {
+    await ctx.db.patch(f.serviceId, { organizationId: foreignOrganizationId });
+    await ctx.db.patch(f.assignmentId, { organizationId: foreignOrganizationId });
+  });
+  await expect(f.owner.client.query(dispatchDayReadiness, {
+    projectId: f.projectId,
+    eventId: f.eventId,
+    from: 0,
+    to: 10,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('dispatchDayReadiness refuses an Assignment whose organization disagrees with its Service', async () => {
+  const f = await fixture('dispatch-readiness-assignment-organization-invariant');
+  const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
+    name: 'Readiness Assignment Foreign Organization',
+    slug: 'dispatch-readiness-assignment-organization-foreign',
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { organizationId: foreignOrganizationId }));
+  await expect(f.owner.client.query(dispatchDayReadiness, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('dispatchDayReadiness refuses an Assignment whose Project disagrees with its Service', async () => {
+  const f = await fixture('dispatch-readiness-assignment-project-invariant');
+  const foreignProjectId = await f.t.run((ctx) => ctx.db.insert('projects', {
+    organizationId: f.organizationId,
+    name: 'Readiness Assignment Foreign Project',
+    status: 'active',
+  }));
+  await f.t.run(async (ctx) => ctx.db.patch(f.assignmentId, { projectId: foreignProjectId }));
+  await expect(f.owner.client.query(dispatchDayReadiness, {
+    projectId: f.projectId,
+    from: 0,
+    to: 10,
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
 test('dispatchDayReadiness marks a count incomplete when more than 500 Services are in the day', async () => {
@@ -1928,7 +2355,7 @@ test('dispatchDayReadiness marks a count incomplete when more than 500 Services 
     const base = await ctx.db.get(f.serviceId);
     if (base === null) throw new Error('Expected fixture Service');
     for (let index = 0; index < 501; index += 1) {
-      await ctx.db.insert('services', {
+      const serviceId = await ctx.db.insert('services', {
         organizationId: base.organizationId,
         projectId: base.projectId,
         eventId: base.eventId,
@@ -1938,6 +2365,14 @@ test('dispatchDayReadiness marks a count incomplete when more than 500 Services 
         status: 'draft',
         startsAt: 1_000 + index,
       });
+      await ctx.db.insert('assignments', {
+        organizationId: f.organizationId,
+        serviceId,
+        projectId: f.projectId,
+        providerId: f.providerId,
+        position: 10,
+        executionStatus: 'unassigned',
+      });
     }
   });
   expect(await f.owner.client.query(dispatchDayReadiness, {
@@ -1945,7 +2380,7 @@ test('dispatchDayReadiness marks a count incomplete when more than 500 Services 
     from: 1_000,
     to: 2_000,
   }), '501 Services make the bounded readiness count explicitly incomplete')
-    .toEqual({ unassigned: 0, total: 0, complete: false });
+    .toEqual({ unassigned: 500, total: 500, complete: false });
 });
 
 test('dispatchDayReadiness marks a count incomplete when the total Assignment budget is exceeded', async () => {
@@ -1956,7 +2391,7 @@ test('dispatchDayReadiness marks a count incomplete when the total Assignment bu
     await ctx.db.patch(f.assignmentId, { executionStatus: 'unassigned' });
     let inserted = 1;
     let serviceNumber = 0;
-    while (inserted <= maxDispatchReadinessAssignments) {
+    while (inserted <= 5_000) {
       const serviceId = serviceNumber === 0
         ? f.serviceId
         : await ctx.db.insert('services', {
@@ -1972,7 +2407,7 @@ test('dispatchDayReadiness marks a count incomplete when the total Assignment bu
       const startingPosition = serviceNumber === 0 ? 1 : 0;
       for (
         let position = startingPosition;
-        position < 200 && inserted <= maxDispatchReadinessAssignments;
+        position < 200 && inserted <= 5_000;
         position += 1
       ) {
         await ctx.db.insert('assignments', {
@@ -1994,7 +2429,7 @@ test('dispatchDayReadiness marks a count incomplete when the total Assignment bu
     to: 2_000,
   });
   expect(result.complete).toBe(false);
-  expect(result.total).toBe(maxDispatchReadinessAssignments);
+  expect(result.total).toBe(5_000);
 });
 
 test('Event-scoped dispatch reads refuse a Service whose denormalized Project disagrees with its Event', async () => {
