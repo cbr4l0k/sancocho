@@ -1,6 +1,6 @@
 'use client';
 
-import { usePaginatedQuery, useQueries, useQuery, type RequestForQueries } from 'convex/react';
+import { useMutation, usePaginatedQuery, useQueries, useQuery, type RequestForQueries } from 'convex/react';
 import type { FunctionArgs } from 'convex/server';
 import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
@@ -16,6 +16,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow, Tabl
 import { formatDateTime } from '@/i18n/formats';
 import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { formatFieldValue } from '@/lib/field-value-format';
+import { importRow } from '@/lib/import-row';
+import {
+  canSetImportRowAction,
+  importRowIsBlocked,
+  importRowSkipReason,
+  importSelectionCounts,
+  initialImportRowAction,
+  nextImportRowIndex,
+  recordImportRowOutcome,
+  runSummary,
+  startImportRun,
+  stopImportRun,
+  type ImportRowAction,
+  type ImportRowOutcome,
+  type ImportRunState,
+} from '@/lib/import-run';
 import { moneyDisplay } from '@/lib/money';
 import {
   distinctRateLookupRequests,
@@ -37,6 +53,11 @@ import {
 } from '@/lib/workbook-plan';
 
 type EventId = FunctionArgs<typeof api.events.queries.getEventDetail>['eventId'];
+type ServiceKindVersionId = FunctionArgs<typeof api.services.mutations.createServiceFromServiceKind>['serviceKindVersionId'];
+type FieldDefinitionId = FunctionArgs<typeof api.services.mutations.createServiceFromServiceKind>['values'][number]['fieldDefinitionId'];
+type ProviderId = FunctionArgs<typeof api.assignments.mutations.createAssignment>['providerId'];
+type CostCentreId = NonNullable<FunctionArgs<typeof api.assignments.mutations.createAssignment>['costCentreId']>;
+type VehicleClassId = FunctionArgs<typeof api.assignments.mutations.createAssignmentRevision>['vehicleClassId'];
 
 const pageSize = 200;
 const previewCellCount = 3;
@@ -77,6 +98,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
   const [headerRowNumber, setHeaderRowNumber] = useState(1);
   const [mapping, setMapping] = useState<WorkbookMapping>([]);
   const [previewRequested, setPreviewRequested] = useState(false);
+  const [importRunning, setImportRunning] = useState(false);
 
   const detail = useQuery(api.events.queries.getEventDetail, { eventId });
   const serviceKinds = usePaginatedQuery(
@@ -178,6 +200,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
   if (currentOrganization === null || organizationId === undefined || detail === undefined) return null;
 
   async function chooseFile(file: File | undefined): Promise<void> {
+    if (importRunning) return;
     const sequence = readSequence.current + 1;
     readSequence.current = sequence;
     setFileName(file?.name ?? '');
@@ -226,7 +249,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
           <Field>
             <FieldLabel required>{t('file')}</FieldLabel>
             <FieldControl
-              render={<input type="file" />}
+              render={<input type="file" disabled={importRunning} />}
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(event) => chooseFile(event.target.files?.[0])}
             />
@@ -253,7 +276,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
           <Field>
             <FieldLabel required>{t('sheet')}</FieldLabel>
             <FieldControl
-              render={<select />}
+              render={<select disabled={importRunning} />}
               value={selectedSheet?.sheet ?? ''}
               onChange={(event) => {
                 const nextSheetIndex = sheets.findIndex((sheet) => sheet.sheet === event.target.value);
@@ -267,7 +290,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
               {sheets.map((sheet) => <option key={sheet.sheet} value={sheet.sheet}>{sheet.sheet}</option>)}
             </FieldControl>
           </Field>
-          <Button type="button" variant="primary" onClick={() => setSheetConfirmed(true)}>
+          <Button type="button" variant="primary" disabled={importRunning} onClick={() => setSheetConfirmed(true)}>
             {t('confirmSheet')}
           </Button>
         </StepPanel>
@@ -278,7 +301,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
           <Field>
             <FieldLabel required>{t('serviceKind')}</FieldLabel>
             <FieldControl
-              render={<select />}
+              render={<select disabled={importRunning} />}
               value={selectedVersionId ?? ''}
               onChange={(event) => {
                 const selected = serviceKinds.results.find((item) => item.publishedVersion._id === event.target.value);
@@ -296,7 +319,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
             </FieldControl>
           </Field>
           {serviceKinds.status === 'CanLoadMore' ? (
-            <Button type="button" size="sm" onClick={() => serviceKinds.loadMore(pageSize)}>{rootT('table.loadMore')}</Button>
+            <Button type="button" size="sm" disabled={importRunning} onClick={() => serviceKinds.loadMore(pageSize)}>{rootT('table.loadMore')}</Button>
           ) : null}
         </StepPanel>
       )}
@@ -310,6 +333,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
                 type="number"
                 min={1}
                 max={Math.max(1, selectedSheet.rows.length)}
+                disabled={importRunning}
                 value={headerRowNumber}
                 onChange={(event) => {
                   if (
@@ -336,7 +360,7 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
                   <Field>
                     <FieldLabel>{t('target')}</FieldLabel>
                     <FieldControl
-                      render={<select />}
+                      render={<select disabled={importRunning} />}
                       value={targetValue(mapping[column] ?? { kind: 'ignored' })}
                       onChange={(event) => {
                         const next = Array.from({ length: columnCount }, (_, index) => mapping[index] ?? { kind: 'ignored' as const });
@@ -379,14 +403,14 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-ink-3">{t('cataloguesIncomplete')}</p>
                 {catalogueQueries.some((query) => query.status === 'CanLoadMore') ? (
-                  <Button type="button" size="sm" onClick={loadMoreCatalogues}>{t('loadMoreCatalogues')}</Button>
+                  <Button type="button" size="sm" disabled={importRunning} onClick={loadMoreCatalogues}>{t('loadMoreCatalogues')}</Button>
                 ) : null}
               </div>
             ) : null}
             <Button
               type="button"
-              variant="primary"
-              disabled={!mappingReady || !cataloguesComplete || !canPreview || dataRows.length === 0}
+              variant={previewRequested ? 'secondary' : 'primary'}
+              disabled={importRunning || !mappingReady || !cataloguesComplete || !canPreview || dataRows.length === 0}
               onClick={() => setPreviewRequested(true)}
             >
               {t('preview')}
@@ -395,11 +419,18 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
         </>
       )}
 
-      {!previewRequested ? null : !pricingComplete ? (
+      {!previewRequested || selectedVersionId === undefined || fields === undefined ? null : !pricingComplete ? (
         <Panel><PanelBody><p className="text-sm text-ink-3">{t('pricing')}</p></PanelBody></Panel>
       ) : (
         <Preview
           plan={plan}
+          eventId={eventId}
+          serviceKindVersionId={selectedVersionId}
+          fieldDefinitionIds={new Map(fields.map((item) => [String(item.fieldDefinitionId), item.fieldDefinitionId]))}
+          providerIds={new Map(providers.results.map((item) => [String(item._id), item._id]))}
+          vehicleClassIds={new Map(vehicleClasses.results.map((item) => [String(item._id), item._id]))}
+          costCentreIds={new Map(costCentres.results.map((item) => [String(item._id), item._id]))}
+          onRunningChange={setImportRunning}
           fieldLabels={fieldLabels}
           providerNames={new Map(providers.results.map((item) => [item._id, item.name]))}
           vehicleClassNames={new Map(vehicleClasses.results.map((item) => [item._id, item.name]))}
@@ -450,6 +481,13 @@ function targetLabel(target: string, t: Translator): string {
 
 function Preview({
   plan,
+  eventId,
+  serviceKindVersionId,
+  fieldDefinitionIds,
+  providerIds,
+  vehicleClassIds,
+  costCentreIds,
+  onRunningChange,
   fieldLabels,
   providerNames,
   vehicleClassNames,
@@ -461,6 +499,13 @@ function Preview({
   locale,
 }: {
   plan: WorkbookPlan;
+  eventId: EventId;
+  serviceKindVersionId: ServiceKindVersionId;
+  fieldDefinitionIds: ReadonlyMap<string, FieldDefinitionId>;
+  providerIds: ReadonlyMap<string, ProviderId>;
+  vehicleClassIds: ReadonlyMap<string, VehicleClassId>;
+  costCentreIds: ReadonlyMap<string, CostCentreId>;
+  onRunningChange: (running: boolean) => void;
   fieldLabels: ReadonlyMap<string, string>;
   providerNames: ReadonlyMap<string, string>;
   vehicleClassNames: ReadonlyMap<string, string>;
@@ -472,6 +517,78 @@ function Preview({
   locale: ReturnType<typeof useCanonicalLocale>;
 }) {
   const t = useTranslations('workbookImport');
+  const createService = useMutation(api.services.mutations.createServiceFromServiceKind);
+  const createAssignment = useMutation(api.assignments.mutations.createAssignment);
+  const createRevision = useMutation(api.assignments.mutations.createAssignmentRevision);
+  const acceptRevision = useMutation(api.assignments.mutations.acceptAssignmentRevision);
+  const stopRequestedRef = useRef(false);
+  const [stopRequested, setStopRequested] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runState, setRunState] = useState<ImportRunState>();
+  const [actions, setActions] = useState<ReadonlyMap<number, ImportRowAction>>(() => new Map(
+    plan.rows.map((row) => [row.rowNumber, initialImportRowAction(row, rowRateResult(row, rateResults))]),
+  ));
+  const selections = plan.rows.map((row) => ({
+    row,
+    action: actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults)),
+  }));
+  const selectionCounts = importSelectionCounts(selections);
+  const summary = runState === undefined ? undefined : runSummary(runState);
+
+  async function runImport(): Promise<void> {
+    if (running || selectionCounts.services === 0) return;
+    const snapshot = selections.map((selection) => ({
+      ...selection,
+      rateResult: rowRateResult(selection.row, rateResults),
+    }));
+    stopRequestedRef.current = false;
+    setStopRequested(false);
+    setRunning(true);
+    onRunningChange(true);
+    let nextState = startImportRun(snapshot.length);
+    setRunState(nextState);
+    let nextIndex = nextImportRowIndex(nextState);
+    while (nextIndex !== undefined) {
+      if (stopRequestedRef.current) {
+        nextState = stopImportRun(nextState);
+        setRunState(nextState);
+        break;
+      }
+      const item = snapshot[nextIndex];
+      if (item === undefined) break;
+      const outcome: ImportRowOutcome = item.action === 'skip'
+        ? { kind: 'skipped', rowNumber: item.row.rowNumber, reason: importRowSkipReason(item.row, item.rateResult) }
+        : await importRow(
+          { createService, createAssignment, createRevision, acceptRevision },
+          {
+            row: item.row,
+            rateResult: item.rateResult,
+            eventId,
+            serviceKindVersionId,
+            fieldDefinitionIds,
+            providerIds,
+            vehicleClassIds,
+            costCentreIds,
+          },
+        );
+      nextState = recordImportRowOutcome(nextState, outcome);
+      setRunState(nextState);
+      nextIndex = nextImportRowIndex(nextState);
+    }
+    setRunning(false);
+    onRunningChange(false);
+  }
+
+  function requestStop(): void {
+    stopRequestedRef.current = true;
+    setStopRequested(true);
+  }
+
+  function updateAction(row: PlannedRow, action: ImportRowAction): void {
+    if (runState !== undefined || !canSetImportRowAction(row, rowRateResult(row, rateResults), action)) return;
+    setActions((current) => new Map(current).set(row.rowNumber, action));
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <Panel>
@@ -521,11 +638,49 @@ function Preview({
                 versionFields={versionFields}
                 rateResult={row.rateLookup === undefined ? undefined : rateResults[rateLookupKey(row.rateLookup)]}
                 locale={locale}
+                action={actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults))}
+                actionLocked={runState !== undefined}
+                outcome={runState?.outcomes.find((outcome) => outcome.rowNumber === row.rowNumber)}
+                current={running && runState?.outcomes.length === plan.rows.findIndex((candidate) => candidate.rowNumber === row.rowNumber)}
+                onAction={(action) => updateAction(row, action)}
               />
             ))}
           </TableBody>
         </Table>
       </Panel>
+
+      {runState === undefined && selectionCounts.services > 0 && plan.rows.some((row) => row.defaultAction === 'create') ? (
+        <Panel emphasis="focal">
+          <PanelHeader><div><PanelTitle>{t('confirmTitle')}</PanelTitle><PanelDescription>{t('confirmCounts', selectionCounts)}</PanelDescription></div></PanelHeader>
+          <PanelBody><Button type="button" variant="primary" onClick={runImport}>{t('confirmImport')}</Button></PanelBody>
+        </Panel>
+      ) : null}
+
+      {runState === undefined ? null : (
+        <Panel emphasis="focal" aria-live="polite">
+          <PanelHeader><div><PanelTitle>{running ? t('runningTitle') : t('reportTitle')}</PanelTitle><PanelDescription>{running ? t('progress', { processed: runState.outcomes.length, total: runState.totalRows }) : t(runState.stopped ? 'stoppedDescription' : 'reportDescription')}</PanelDescription></div></PanelHeader>
+          <PanelBody>
+            <progress className="h-2 w-full accent-accent" value={runState.outcomes.length} max={runState.totalRows} />
+            {summary === undefined ? null : (
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                <Metric label={t('createdCount')} value={summary.created} />
+                <Metric label={t('skippedCount')} value={summary.skipped} />
+                <Metric label={t('failedCount')} value={summary.failedService} />
+                <Metric label={t('halfImportedCount')} value={summary.halfImported} />
+                <Metric label={t('untouchedCount')} value={summary.untouched} />
+              </dl>
+            )}
+            {!running ? null : <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="danger" disabled={stopRequested} onClick={requestStop}>{t('stopAfterRow')}</Button>{stopRequested ? <p className="text-sm text-ink-3">{t('stopRequested')}</p> : null}</div>}
+          </PanelBody>
+          <Table>
+            <TableHead><TableRow><TableHeaderCell>{t('excelRow')}</TableHeaderCell><TableHeaderCell>{t('service')}</TableHeaderCell><TableHeaderCell>{t('reportOutcome')}</TableHeaderCell><TableHeaderCell>{t('details')}</TableHeaderCell></TableRow></TableHead>
+            <TableBody>{plan.rows.map((row, index) => {
+              const outcome = runState.outcomes[index];
+              return <ReportRow key={row.rowNumber} row={row} outcome={outcome} running={running && index === runState.outcomes.length} />;
+            })}</TableBody>
+          </Table>
+        </Panel>
+      )}
 
       <Panel>
         <PanelHeader><div><PanelTitle>{t('unresolvedReferences')}</PanelTitle><PanelDescription>{t(canConfigure ? 'referencesAdminRemedy' : 'referencesPlannerRemedy')}</PanelDescription></div></PanelHeader>
@@ -556,7 +711,22 @@ function Preview({
   );
 }
 
-function PreviewRow({ row, fieldLabels, providerNames, vehicleClassNames, costCentreNames, locationNames, versionFields, rateResult, locale }: {
+function PreviewRow({
+  row,
+  fieldLabels,
+  providerNames,
+  vehicleClassNames,
+  costCentreNames,
+  locationNames,
+  versionFields,
+  rateResult,
+  locale,
+  action,
+  actionLocked,
+  outcome,
+  current,
+  onAction,
+}: {
   row: PlannedRow;
   fieldLabels: ReadonlyMap<string, string>;
   providerNames: ReadonlyMap<string, string>;
@@ -566,10 +736,17 @@ function PreviewRow({ row, fieldLabels, providerNames, vehicleClassNames, costCe
   versionFields: readonly VersionField[];
   rateResult: unknown;
   locale: ReturnType<typeof useCanonicalLocale>;
+  action: ImportRowAction;
+  actionLocked: boolean;
+  outcome: ImportRowOutcome | undefined;
+  current: boolean;
+  onAction: (action: ImportRowAction) => void;
 }) {
   const t = useTranslations('workbookImport');
+  const rootT = useTranslations();
   const lookupResult = isRateLookupResult(rateResult) ? rateResult : undefined;
   const comparison = row.amountComparison;
+  const blocked = importRowIsBlocked(row, lookupResult);
   return (
     <TableRow>
       <TableRowHeaderCell className="font-mono text-xs tabular-nums">{row.rowNumber}</TableRowHeaderCell>
@@ -611,14 +788,84 @@ function PreviewRow({ row, fieldLabels, providerNames, vehicleClassNames, costCe
         )}
       </TableCell>
       <TableCell>
-        <p className={row.defaultAction === 'create' ? 'text-tone-go' : 'text-ink-3'}>{t(row.defaultAction === 'create' ? 'createOutcome' : 'skipOutcome')}</p>
+        <label className="flex flex-col gap-1 text-xs text-ink-3">
+          <span>{t('rowAction')}</span>
+          <select
+            className="h-[30px] rounded-input border border-line bg-well px-2 text-sm text-ink disabled:opacity-60"
+            value={action}
+            disabled={actionLocked}
+            onChange={(event) => onAction(event.target.value === 'create' ? 'create' : 'skip')}
+          >
+            <option value="create" disabled={blocked}>{t('createOutcome')}</option>
+            <option value="skip">{t('skipOutcome')}</option>
+          </select>
+        </label>
+        {current ? <p className="mt-1 text-xs text-tone-hold">{t('rowRunning')}</p> : null}
+        {outcome === undefined ? null : <p className={`mt-1 text-xs ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</p>}
+        {outcome === undefined || !('errorKey' in outcome) ? null : <p className="mt-1 text-xs text-ink-2">{rootT(outcome.errorKey)}</p>}
         {row.existingServiceId === undefined ? null : <p className="text-xs text-ink-3">{t('duplicateExisting')}</p>}
+        {lookupResult?.kind !== 'ambiguous' ? null : <p className="mt-1 text-xs text-tone-stop">{t('ambiguousBlocked')}</p>}
         {row.problems.length === 0 ? null : (
           <ul className="mt-1 space-y-1 text-xs text-tone-stop">
             {row.problems.map((problem, index) => <li key={`${problem.kind}-${index}`}>{rowProblemText(problem, t, fieldLabels)}</li>)}
           </ul>
         )}
       </TableCell>
+    </TableRow>
+  );
+}
+
+function rowRateResult(row: PlannedRow, results: Readonly<Record<string, unknown>>): RateLookupResult | undefined {
+  if (row.rateLookup === undefined) return undefined;
+  const value = results[rateLookupKey(row.rateLookup)];
+  return isRateLookupResult(value) ? value : undefined;
+}
+
+function outcomeTone(outcome: ImportRowOutcome): string {
+  if (outcome.kind === 'created') return 'text-tone-go';
+  if (outcome.kind === 'failedAssignment' || outcome.kind === 'failedRevision') return 'text-tone-hold';
+  if (outcome.kind === 'failedService') return 'text-tone-stop';
+  return 'text-ink-3';
+}
+
+function outcomeLabel(outcome: ImportRowOutcome, t: Translator): string {
+  switch (outcome.kind) {
+    case 'created':
+      if (outcome.assignment === 'priced') return t('createdPriced');
+      if (outcome.assignment === 'unpriced') return t('createdUnpriced');
+      return t('createdServiceOnly');
+    case 'skipped':
+      if (outcome.reason === 'blocked') return t('skippedBlocked');
+      if (outcome.reason === 'existingService') return t('skippedExisting');
+      return t('skippedSelected');
+    case 'failedService': return t('failedService');
+    case 'failedAssignment': return t('failedAssignment');
+    case 'failedRevision': return t(outcome.step === 'acceptance' ? 'failedAcceptance' : 'failedRevision');
+  }
+}
+
+function ReportRow({ row, outcome, running }: {
+  row: PlannedRow;
+  outcome: ImportRowOutcome | undefined;
+  running: boolean;
+}) {
+  const t = useTranslations('workbookImport');
+  const rootT = useTranslations();
+  const detail = outcome === undefined
+    ? t(running ? 'rowRunning' : 'untouchedRow')
+    : 'errorKey' in outcome
+      ? rootT(outcome.errorKey)
+      : outcome.kind === 'skipped'
+        ? outcomeLabel(outcome, t)
+        : outcome.kind === 'created'
+          ? outcomeLabel(outcome, t)
+          : '';
+  return (
+    <TableRow>
+      <TableRowHeaderCell className="font-mono text-xs tabular-nums">{row.rowNumber}</TableRowHeaderCell>
+      <TableCell>{row.service?.name ?? t('notAvailable')}</TableCell>
+      <TableCell><span className={outcome === undefined ? running ? 'text-tone-hold' : 'text-ink-3' : outcomeTone(outcome)}>{outcome === undefined ? t(running ? 'rowRunning' : 'untouchedOutcome') : outcomeLabel(outcome, t)}</span></TableCell>
+      <TableCell className={outcome !== undefined && 'errorKey' in outcome ? outcomeTone(outcome) : 'text-ink-2'}>{detail}</TableCell>
     </TableRow>
   );
 }
