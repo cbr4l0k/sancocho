@@ -33,6 +33,7 @@ import {
 import {
   assignmentRateLookupResultValidator,
   resolveAssignmentRate as resolveAssignmentRateModel,
+  resolveProspectiveRate as resolveProspectiveRateModel,
 } from './rateLookup';
 
 export const getAssignment = query({
@@ -87,6 +88,17 @@ export const resolveAssignmentRate = query({
   },
   returns: assignmentRateLookupResultValidator,
   handler: (ctx, args) => resolveAssignmentRateModel(ctx, args),
+});
+
+export const resolveProspectiveRate = query({
+  args: {
+    eventId: v.id('events'),
+    providerId: v.id('providers'),
+    vehicleClassId: v.id('vehicleClasses'),
+    modality: rateModalityValidator,
+  },
+  returns: assignmentRateLookupResultValidator,
+  handler: (ctx, args) => resolveProspectiveRateModel(ctx, args),
 });
 
 export const listServiceAssignmentRows = query({

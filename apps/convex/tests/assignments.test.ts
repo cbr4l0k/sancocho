@@ -56,6 +56,7 @@ const listAssignmentRevisions = api.assignments.queries.listAssignmentRevisions;
 const listServiceAssignments = api.assignments.queries.listServiceAssignments;
 const listServiceAssignmentRows = api.assignments.queries.listServiceAssignmentRows;
 const resolveAssignmentRate = api.assignments.queries.resolveAssignmentRate;
+const resolveProspectiveRate = api.assignments.queries.resolveProspectiveRate;
 const listProjectAssignments = api.assignments.queries.listProjectAssignments;
 const assignmentsAwaitingDispatch = api.assignments.queries.assignmentsAwaitingDispatch;
 const listDispatchDay = api.assignments.queries.listDispatchDay;
@@ -282,6 +283,257 @@ test('planner resolves the one Assignment pricing cell without Rate Card catalog
   });
 });
 
+test('planner resolves a prospective Event-anchored pricing cell with source ids', async () => {
+  const f = await fixture('prospective-rate-planner');
+  const planner = await provision(f.t, 'prospective-rate-planner-member');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: planner.userId,
+    role: 'planner',
+  });
+
+  await expect(planner.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).resolves.toEqual({
+    kind: 'resolved',
+    rateCardId: f.rateCardId,
+    rateCardName: 'prospective-rate-planner Card',
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'COP',
+  });
+});
+
+test('prospective rate lookup refuses viewer members at the generic boundary', async () => {
+  const f = await fixture('prospective-rate-viewer');
+  const viewer = await provision(f.t, 'prospective-rate-viewer-member');
+  await f.owner.client.mutation(addMember, {
+    organizationId: f.organizationId,
+    userId: viewer.userId,
+    role: 'viewer',
+  });
+
+  await expect(viewer.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('prospective rate lookup refuses a granted Provider principal at the generic boundary', async () => {
+  const f = await fixture('prospective-rate-provider');
+  const provider = await grantFixtureProvider(f, 'prospective-rate-provider-firm', 'Prospective Rate Firm');
+
+  await expect(provider.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+});
+
+test('prospective rate lookup hides foreign and cross-tenant Events exactly like a missing Event', async () => {
+  const f = await fixture('prospective-rate-event-boundary');
+  const {
+    foreignEventId,
+    foreignProviderId,
+    foreignVehicleClassId,
+    crossTenantEventId,
+    missingEventId,
+  } = await f.t.run(async (ctx) => {
+    const foreignOrganizationId = await ctx.db.insert('organizations', {
+      name: 'Foreign Event organization',
+      slug: 'prospective-rate-event-boundary-foreign',
+    });
+    const foreignProjectId = await ctx.db.insert('projects', {
+      organizationId: foreignOrganizationId,
+      name: 'Foreign Event project',
+      status: 'active',
+    });
+    const foreignEventId = await ctx.db.insert('events', {
+      organizationId: foreignOrganizationId,
+      projectId: foreignProjectId,
+      name: 'Foreign Event',
+      status: 'active',
+      startsAt: 0,
+    });
+    const foreignProviderId = await ctx.db.insert('providers', {
+      organizationId: foreignOrganizationId,
+      name: 'Foreign Event Provider',
+      searchText: 'foreign event provider',
+      status: 'active',
+    });
+    const foreignVehicleClassId = await ctx.db.insert('vehicleClasses', {
+      organizationId: foreignOrganizationId,
+      key: 'foreignEventClass',
+      name: 'Foreign Event Class',
+      searchText: 'foreign event class',
+      status: 'active',
+    });
+    const crossTenantEventId = await ctx.db.insert('events', {
+      organizationId: foreignOrganizationId,
+      projectId: f.projectId,
+      name: 'Mismatched Event graph',
+      status: 'active',
+      startsAt: 0,
+    });
+    const missingEventId = await ctx.db.insert('events', {
+      organizationId: f.organizationId,
+      projectId: f.projectId,
+      name: 'Deleted Event',
+      status: 'active',
+      startsAt: 0,
+    });
+    await ctx.db.delete(missingEventId);
+    return {
+      foreignEventId,
+      foreignProviderId,
+      foreignVehicleClassId,
+      crossTenantEventId,
+      missingEventId,
+    };
+  });
+  const args = {
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+
+  const foreign = await refusal(f.owner.client.query(resolveProspectiveRate, {
+    eventId: foreignEventId,
+    providerId: foreignProviderId,
+    vehicleClassId: foreignVehicleClassId,
+    modality: 'disposition',
+  }));
+  const crossTenant = await refusal(f.owner.client.query(resolveProspectiveRate, {
+    ...args,
+    eventId: crossTenantEventId,
+  }));
+  const missing = await refusal(f.owner.client.query(resolveProspectiveRate, { ...args, eventId: missingEventId }));
+  expect(foreign).toEqual(missing);
+  expect(crossTenant).toEqual(missing);
+  expect(foreign.data).toEqual({ code: inaccessible });
+});
+
+test('prospective Event pricing reaches resolved, ambiguous, and noRateLine outcomes', async () => {
+  const f = await fixture('prospective-rate-outcomes');
+  const args = {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+  await expect(f.owner.client.query(resolveProspectiveRate, args)).resolves.toEqual({
+    kind: 'resolved',
+    rateCardId: f.rateCardId,
+    rateCardName: 'prospective-rate-outcomes Card',
+    rateCardVersionId: f.rateCardVersionId,
+    rateLineId: f.rateLineId,
+    unitAmount: 12_345,
+    currency: 'COP',
+  });
+
+  const secondCardId = await f.owner.client.mutation(createRateCard, {
+    organizationId: f.organizationId,
+    providerId: f.providerId,
+    name: 'Second prospective card',
+  });
+  const secondVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId: secondCardId,
+    currency: 'USD',
+  });
+  await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId: secondVersionId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    unitAmount: 54_321,
+  });
+  await f.owner.client.mutation(publishRateCardVersion, { rateCardVersionId: secondVersionId });
+  await expect(f.owner.client.query(resolveProspectiveRate, args)).resolves.toEqual({
+    kind: 'ambiguous',
+    candidates: [
+      {
+        rateCardId: f.rateCardId,
+        rateCardName: 'prospective-rate-outcomes Card',
+        rateCardVersionId: f.rateCardVersionId,
+        unitAmount: 12_345,
+        currency: 'COP',
+      },
+      {
+        rateCardId: secondCardId,
+        rateCardName: 'Second prospective card',
+        rateCardVersionId: secondVersionId,
+        unitAmount: 54_321,
+        currency: 'USD',
+      },
+    ],
+  });
+
+  await expect(f.owner.client.query(resolveProspectiveRate, {
+    ...args,
+    modality: 'transfer',
+  })).resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+});
+
+test('Service and Event anchors return deeply equal pricing results for the same cell', async () => {
+  const f = await fixture('prospective-rate-equivalence');
+  const cell = {
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+  const serviceResult = await f.owner.client.query(resolveAssignmentRate, {
+    ...cell,
+    serviceId: f.serviceId,
+  });
+  const eventResult = await f.owner.client.query(resolveProspectiveRate, {
+    ...cell,
+    eventId: f.eventId,
+  });
+  expect(eventResult).toEqual(serviceResult);
+});
+
+test('prospective Event pricing skips draft and retired Versions and archived Cards', async () => {
+  const f = await fixture('prospective-rate-lifecycle');
+  const args = {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition' as const,
+  };
+  const draftVersionId = await f.owner.client.mutation(createInitialDraftVersion, {
+    rateCardId: f.rateCardId,
+    currency: 'USD',
+  });
+  await f.owner.client.mutation(addRateLine, {
+    rateCardVersionId: draftVersionId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+    unitAmount: 1,
+  });
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, { currentPublishedVersionId: draftVersionId }));
+  await expect(f.owner.client.query(resolveProspectiveRate, args))
+    .resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, {
+    currentPublishedVersionId: f.rateCardVersionId,
+    status: 'archived',
+  }));
+  await expect(f.owner.client.query(resolveProspectiveRate, args))
+    .resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, { status: 'active' }));
+  await f.owner.client.mutation(retireRateCardVersion, { rateCardVersionId: f.rateCardVersionId });
+  await f.t.run(async (ctx) => ctx.db.patch(f.rateCardId, { currentPublishedVersionId: f.rateCardVersionId }));
+  await expect(f.owner.client.query(resolveProspectiveRate, args))
+    .resolves.toEqual({ kind: 'unpriceable', reason: 'noRateLine' });
+});
+
 test('Assignment rate lookup reports every ambiguous card without exposing submit-ready Rate Line ids', async () => {
   const f = await fixture('assignment-rate-ambiguous');
   const secondCardId = await f.owner.client.mutation(createRateCard, {
@@ -387,10 +639,10 @@ test('Assignment rate lookup excludes archived Rate Cards from missing and ambig
   finder.mockRestore();
 });
 
-test('Assignment rate lookup refuses to resolve from a partial read above the Rate Card cap', async () => {
+test('Event and Service rate lookups refuse to resolve from a partial read above the Rate Card cap', async () => {
   const f = await fixture('assignment-rate-card-limit');
   await f.t.run(async (ctx) => {
-    for (let cardNumber = 2; cardNumber <= 101; cardNumber += 1) {
+    for (let cardNumber = 2; cardNumber <= maxRateCardsPerRateLookup + 1; cardNumber += 1) {
       await ctx.db.insert('rateCards', {
         organizationId: f.organizationId,
         providerId: f.providerId,
@@ -399,6 +651,12 @@ test('Assignment rate lookup refuses to resolve from a partial read above the Ra
       });
     }
   });
+  await expect(f.owner.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).resolves.toEqual({ kind: 'unpriceable', reason: 'rateCardLimitExceeded' });
   await expect(f.owner.client.query(resolveAssignmentRate, {
     serviceId: f.serviceId,
     providerId: f.providerId,
@@ -472,9 +730,15 @@ test('Assignment rate lookup refuses Provider principals, non-members, and every
   }
 });
 
-test('Assignment rate lookup refuses archived Provider and Vehicle Class references', async () => {
+test('Event and Service rate lookups refuse archived Provider and Vehicle Class references', async () => {
   const archivedProvider = await fixture('assignment-rate-archived-provider');
   await archivedProvider.owner.client.mutation(archiveProvider, { providerId: archivedProvider.providerId });
+  await expect(archivedProvider.owner.client.query(resolveProspectiveRate, {
+    eventId: archivedProvider.eventId,
+    providerId: archivedProvider.providerId,
+    vehicleClassId: archivedProvider.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(archivedProvider.owner.client.query(resolveAssignmentRate, {
     serviceId: archivedProvider.serviceId,
     providerId: archivedProvider.providerId,
@@ -484,6 +748,12 @@ test('Assignment rate lookup refuses archived Provider and Vehicle Class referen
 
   const archivedClass = await fixture('assignment-rate-archived-class');
   await archivedClass.owner.client.mutation(archiveVehicleClass, { vehicleClassId: archivedClass.vehicleClassId });
+  await expect(archivedClass.owner.client.query(resolveProspectiveRate, {
+    eventId: archivedClass.eventId,
+    providerId: archivedClass.providerId,
+    vehicleClassId: archivedClass.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(archivedClass.owner.client.query(resolveAssignmentRate, {
     serviceId: archivedClass.serviceId,
     providerId: archivedClass.providerId,
@@ -733,7 +1003,7 @@ test('new Assignment queries refuse when the Service and Project organizations d
   })).rejects.toMatchObject({ data: { code: inaccessible } });
 });
 
-test('Assignment rate lookup refuses foreign Provider and Vehicle Class references', async () => {
+test('Event and Service rate lookups refuse foreign Provider and Vehicle Class references', async () => {
   const f = await fixture('assignment-rate-foreign-references');
   const foreignOrganizationId = await f.owner.client.mutation(createOrganization, {
     name: 'Foreign Rate Lookup organization',
@@ -748,10 +1018,22 @@ test('Assignment rate lookup refuses foreign Provider and Vehicle Class referenc
     key: 'foreignRateClass',
     name: 'Foreign Rate Class',
   });
+  await expect(f.owner.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: foreignProviderId,
+    vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(f.owner.client.query(resolveAssignmentRate, {
     serviceId: f.serviceId,
     providerId: foreignProviderId,
     vehicleClassId: f.vehicleClassId,
+    modality: 'disposition',
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(f.owner.client.query(resolveProspectiveRate, {
+    eventId: f.eventId,
+    providerId: f.providerId,
+    vehicleClassId: foreignVehicleClassId,
     modality: 'disposition',
   })).rejects.toMatchObject({ data: { code: inaccessible } });
   await expect(f.owner.client.query(resolveAssignmentRate, {
@@ -2465,6 +2747,13 @@ test('unauthenticated Assignment reads and writes refuse real and fabricated ids
   const gone = await f.t.run(async (ctx) => {
     const service = await ctx.db.get(f.serviceId);
     if (service === null) throw new Error('Expected fixture Service');
+    const goneEventId = await ctx.db.insert('events', {
+      organizationId: f.organizationId,
+      projectId: f.projectId,
+      name: 'Gone Event',
+      status: 'active',
+      startsAt: 0,
+    });
     const goneServiceId = await ctx.db.insert('services', {
       organizationId: service.organizationId,
       projectId: service.projectId,
@@ -2505,8 +2794,9 @@ test('unauthenticated Assignment reads and writes refuse real and fabricated ids
     await ctx.db.delete(goneRevisionId);
     await ctx.db.delete(goneAssignmentId);
     await ctx.db.delete(goneServiceId);
+    await ctx.db.delete(goneEventId);
     await ctx.db.delete(goneProjectId);
-    return { goneProjectId, goneServiceId, goneAssignmentId, goneRevisionId };
+    return { goneProjectId, goneEventId, goneServiceId, goneAssignmentId, goneRevisionId };
   });
 
   const pairs = [
@@ -2519,6 +2809,20 @@ test('unauthenticated Assignment reads and writes refuse real and fabricated ids
       }),
       () => f.t.query(resolveAssignmentRate, {
         serviceId: gone.goneServiceId,
+        providerId: f.providerId,
+        vehicleClassId: f.vehicleClassId,
+        modality: 'disposition',
+      }),
+    ],
+    [
+      () => f.t.query(resolveProspectiveRate, {
+        eventId: f.eventId,
+        providerId: f.providerId,
+        vehicleClassId: f.vehicleClassId,
+        modality: 'disposition',
+      }),
+      () => f.t.query(resolveProspectiveRate, {
+        eventId: gone.goneEventId,
         providerId: f.providerId,
         vehicleClassId: f.vehicleClassId,
         modality: 'disposition',

@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { requireAuthenticatedUser, requirePrincipalForProject } from '../lib/access';
 import { notFoundOrInaccessible } from '../lib/errors';
@@ -84,13 +84,55 @@ export async function resolveAssignmentRate(
   if (project === null || project.organizationId !== service.organizationId) {
     return notFoundOrInaccessible();
   }
-  await assertUsableProvider(ctx, args.providerId, service.organizationId);
-  await assertUsableVehicleClass(ctx, args.vehicleClassId, service.organizationId);
+  return resolveRateForAuthorizedProject(ctx, project, args);
+}
+
+/**
+ * Prices an Assignment cell before its Service exists, using the prospective
+ * Service's Event as the path to the same Project-scoped pricing policy.
+ *
+ * This resolves the Event graph directly rather than calling
+ * `requireEventAccess`: that helper authorizes only the membership arm, while
+ * `readAssignmentPricing` must go through the single Project-principal gate so
+ * the member floor and Provider-principal refusal stay centralized (I1).
+ */
+export async function resolveProspectiveRate(
+  ctx: QueryCtx,
+  args: {
+    eventId: Id<'events'>;
+    providerId: Id<'providers'>;
+    vehicleClassId: Id<'vehicleClasses'>;
+    modality: RateModality;
+  },
+): Promise<AssignmentRateLookupResult> {
+  await requireAuthenticatedUser(ctx);
+  const event = await ctx.db.get(args.eventId);
+  if (event === null) return notFoundOrInaccessible();
+  const project = await ctx.db.get(event.projectId);
+  if (project === null || project.organizationId !== event.organizationId) {
+    return notFoundOrInaccessible();
+  }
+  await requirePrincipalForProject(ctx, project._id, 'readAssignmentPricing');
+  return resolveRateForAuthorizedProject(ctx, project, args);
+}
+
+/** The sole pricing body, entered only after a Project principal gate passes. */
+async function resolveRateForAuthorizedProject(
+  ctx: QueryCtx,
+  project: Doc<'projects'>,
+  args: {
+    providerId: Id<'providers'>;
+    vehicleClassId: Id<'vehicleClasses'>;
+    modality: RateModality;
+  },
+): Promise<AssignmentRateLookupResult> {
+  await assertUsableProvider(ctx, args.providerId, project.organizationId);
+  await assertUsableVehicleClass(ctx, args.vehicleClassId, project.organizationId);
 
   const rateCards = await ctx.db
     .query('rateCards')
     .withIndex('by_org_provider', (q) =>
-      q.eq('organizationId', service.organizationId).eq('providerId', args.providerId),
+      q.eq('organizationId', project.organizationId).eq('providerId', args.providerId),
     )
     .take(maxRateCardsPerRateLookup + 1);
   if (rateCards.length > maxRateCardsPerRateLookup) {
