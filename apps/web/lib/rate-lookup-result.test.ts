@@ -113,6 +113,13 @@ describe('rate result collection', () => {
     })).toBe('complete');
   });
 
+  test('reports a malformed resolved payload as error, never as complete', () => {
+    const requests: readonly RateLookupRequest[] = [
+      { key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' },
+    ];
+    expect(rateLookupCollectionState(requests, { one: { kind: 'resolved' } })).toBe('error');
+  });
+
   test('accepts a resolved payload carrying a field this console does not know', () => {
     // A backend addition must not silently degrade every row to unpriced.
     const widened = { ...resolved, rateCardCurrencyNote: 'added later' };

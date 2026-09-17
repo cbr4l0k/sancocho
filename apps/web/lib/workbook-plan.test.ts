@@ -118,6 +118,31 @@ describe('workbook plan rows', () => {
     expect(plan.summary).toMatchObject({ willCreate: 0, alreadyExists: 1, blockedByErrors: 0 });
   });
 
+  test('does not treat a service as existing unless both name and start match', () => {
+    const withExisting: WorkbookCatalogues = {
+      ...catalogues,
+      existingServices: [{
+        id: 'existing-1',
+        name: 'Morning transfer',
+        startsAt: new Date(2026, 8, 12, 10, 20).getTime(),
+      }],
+    };
+    const later = goodRow(2, 'Morning transfer');
+    const laterCells = [...later.cells];
+    laterCells[2] = 0.5;
+    const plan = buildWorkbookPlan({
+      rows: [{ ...later, cells: laterCells }, goodRow(3, 'Afternoon transfer')],
+      mapping,
+      versionFields: fields,
+      catalogues: withExisting,
+    });
+    expect(plan.rows[0]?.existingServiceId).toBeUndefined();
+    expect(plan.rows[0]?.defaultAction).toBe('create');
+    expect(plan.rows[1]?.existingServiceId).toBeUndefined();
+    expect(plan.rows[1]?.defaultAction).toBe('create');
+    expect(plan.summary).toMatchObject({ willCreate: 2, alreadyExists: 0, blockedByErrors: 0 });
+  });
+
   test('keeps workbook amount solely in its comparison, outside assignment mutation data', () => {
     const plan = buildWorkbookPlan({ rows: [goodRow(2)], mapping, versionFields: fields, catalogues });
     expect(plan.rows[0]?.assignment).toEqual({
@@ -201,6 +226,27 @@ describe('workbook plan rows', () => {
     expect(plan.unresolvedOptions).toEqual([{ fieldDefinitionId: 'stage', label: 'Side', rows: [7] }]);
   });
 
+  test('rejects provider names that normalize to more than one catalogue entry', () => {
+    const colliding: WorkbookCatalogues = {
+      ...catalogues,
+      providers: [
+        { id: 'provider-1', name: 'Transportes Uno' },
+        { id: 'provider-2', name: 'transportes uno ' },
+      ],
+    };
+    const plan = buildWorkbookPlan({
+      rows: [goodRow(2, 'Service 2', 'Transportes Uno')],
+      mapping,
+      versionFields: fields,
+      catalogues: colliding,
+    });
+    expect(plan.rows[0]?.problems).toContainEqual({
+      kind: 'assignment', target: 'provider', problem: 'unresolvedReference',
+    });
+    expect(plan.rows[0]?.defaultAction).toBe('skip');
+    expect(plan.unresolvedReferences).toEqual([{ kind: 'provider', name: 'Transportes Uno', rows: [2] }]);
+  });
+
   test('accepts every backend modality', () => {
     const rows = Object.keys(backendRateModalities).map((modality, index) => {
       const row = goodRow(index + 2);
@@ -248,6 +294,114 @@ describe('workbook plan rows', () => {
     });
     expect(plan.summary.willBeUnpriced).toBe(1);
   });
+
+  test('does not price a disposition row from a transfer rate', () => {
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells.slice(0, 6), 'disposition', ...row.cells.slice(7)] }],
+      mapping,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.rows[0]?.problems).toEqual([]);
+    expect(plan.rows[0]?.assignment).toEqual({
+      create: { providerId: 'provider-1', position: 0 },
+      unpricedReason: 'noRate',
+    });
+    expect(plan.summary.willBeUnpriced).toBe(1);
+  });
+
+  test('puts a resolved cost centre on the assignment create payload', () => {
+    const mappingWithCostCentre: WorkbookMapping = [...mapping, { kind: 'costCentre' }];
+    const withCostCentres: WorkbookCatalogues = {
+      ...catalogues,
+      costCentres: [{ id: 'cc-1', name: 'Operations' }],
+    };
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells, 'Operations'] }],
+      mapping: mappingWithCostCentre,
+      versionFields: fields,
+      catalogues: withCostCentres,
+    });
+    expect(plan.rows[0]?.problems).toEqual([]);
+    expect(plan.rows[0]?.assignment?.create).toEqual({
+      providerId: 'provider-1',
+      costCentreId: 'cc-1',
+      position: 0,
+    });
+  });
+
+  test('reports an unresolved cost centre as a row problem and an unresolved reference', () => {
+    const mappingWithCostCentre: WorkbookMapping = [...mapping, { kind: 'costCentre' }];
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells, 'Unknown Centre'] }],
+      mapping: mappingWithCostCentre,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.rows[0]?.problems).toContainEqual({
+      kind: 'assignment', target: 'costCentre', problem: 'unresolvedReference',
+    });
+    expect(plan.rows[0]?.defaultAction).toBe('skip');
+    expect(plan.unresolvedReferences).toEqual([{ kind: 'costCentre', name: 'Unknown Centre', rows: [2] }]);
+  });
+
+  test('sets the service end from a valid date and time pair', () => {
+    const mappingWithEnd: WorkbookMapping = [...mapping, { kind: 'endsAtDate' }, { kind: 'endsAtTime' }];
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells, 46277, 0.5] }],
+      mapping: mappingWithEnd,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.rows[0]?.problems).toEqual([]);
+    expect(plan.rows[0]?.service?.endsAt).toBe(new Date(2026, 8, 12, 12, 0).getTime());
+  });
+
+  test('blocks a row whose end is before its start', () => {
+    const mappingWithEnd: WorkbookMapping = [...mapping, { kind: 'endsAtDate' }, { kind: 'endsAtTime' }];
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells, 46277, 0.25] }],
+      mapping: mappingWithEnd,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.rows[0]?.problems).toContainEqual({ kind: 'endsBeforeStart' });
+    expect(plan.rows[0]?.defaultAction).toBe('skip');
+  });
+
+  test('treats an empty end window as absent, not an error', () => {
+    const mappingWithEnd: WorkbookMapping = [...mapping, { kind: 'endsAtDate' }, { kind: 'endsAtTime' }];
+    const row = goodRow(2);
+    const plan = buildWorkbookPlan({
+      rows: [{ ...row, cells: [...row.cells, '', ''] }],
+      mapping: mappingWithEnd,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.rows[0]?.problems).toEqual([]);
+    expect(plan.rows[0]?.service?.endsAt).toBeUndefined();
+    expect(plan.rows[0]?.defaultAction).toBe('create');
+  });
+
+  test('blocks quantity cells that are not a positive integer', () => {
+    const quantities = [0, 2.5, '3 buses'] as const;
+    const rows = quantities.map((quantity, index) => {
+      const row = goodRow(index + 2);
+      return { ...row, cells: [...row.cells.slice(0, 7), quantity, ...row.cells.slice(8)] };
+    });
+    const plan = buildWorkbookPlan({ rows, mapping, versionFields: fields, catalogues });
+    for (const row of plan.rows) {
+      expect(row.problems).toContainEqual({
+        kind: 'assignment', target: 'quantity', problem: 'notPositiveInteger',
+      });
+      expect(row.defaultAction).toBe('skip');
+    }
+  });
 });
 
 describe('plan summary', () => {
@@ -280,5 +434,36 @@ describe('plan summary', () => {
       { currency: 'USD', workbookMinorUnits: 25_000, cardMinorUnits: 25_000 },
     ]);
     expect(plan.summary.rateDiffers).toBe(1);
+  });
+
+  test('operator skips drop those rows from selected, rate, unpriced and currency figures', () => {
+    const withUnpricedProvider: WorkbookCatalogues = {
+      ...catalogues,
+      providers: [...catalogues.providers, { id: 'provider-3', name: 'Sin Tarifa' }],
+    };
+    const usd = goodRow(4, 'USD service', 'Transportes Dos');
+    const usdCells = [...usd.cells];
+    usdCells[8] = '250';
+    const blocked = goodRow(5);
+    const plan = buildWorkbookPlan({
+      rows: [
+        goodRow(2),
+        goodRow(3, 'Unpriced service', 'Sin Tarifa'),
+        { ...usd, cells: usdCells },
+        { ...blocked, cells: ['', ...blocked.cells.slice(1)] },
+      ],
+      mapping,
+      versionFields: fields,
+      catalogues: withUnpricedProvider,
+    });
+    const summary = summarizePlan(plan.rows, (row) => (
+      row.rowNumber === 2 || row.rowNumber === 3 ? 'skip' : row.defaultAction
+    ));
+    expect(summary.selectedForCreation).toBe(1);
+    expect(summary.rateDiffers).toBe(0);
+    expect(summary.willBeUnpriced).toBe(0);
+    expect(summary.currencies).toEqual([
+      { currency: 'USD', workbookMinorUnits: 25_000, cardMinorUnits: 25_000 },
+    ]);
   });
 });

@@ -68,6 +68,36 @@ describe('import run outcomes', () => {
     expect(summary).toMatchObject({ processedRows: 1, created: 1, skipped: 0, failedService: 0, halfImported: 0, untouched: 3 });
     expect(nextImportRowIndex(stopped)).toBeUndefined();
   });
+
+  test('ignores an outcome recorded after the run was stopped', () => {
+    const afterFirst = recordImportRowOutcome(startImportRun(4), {
+      kind: 'created', rowNumber: 2, assignment: 'none',
+    });
+    const stopped = stopImportRun(afterFirst);
+    const afterStopped = recordImportRowOutcome(stopped, {
+      kind: 'created', rowNumber: 3, assignment: 'none',
+    });
+    expect(afterStopped).toEqual({
+      totalRows: 4,
+      outcomes: [{ kind: 'created', rowNumber: 2, assignment: 'none' }],
+      stopped: true,
+    });
+  });
+
+  test('does not mark an already-complete run as stopped', () => {
+    const complete = stateWith([
+      { kind: 'created', rowNumber: 2, assignment: 'priced' },
+      { kind: 'skipped', rowNumber: 3, reason: 'selected' },
+    ]);
+    expect(stopImportRun(complete)).toEqual({
+      totalRows: 2,
+      outcomes: [
+        { kind: 'created', rowNumber: 2, assignment: 'priced' },
+        { kind: 'skipped', rowNumber: 3, reason: 'selected' },
+      ],
+      stopped: false,
+    });
+  });
 });
 
 describe('import row decisions', () => {
@@ -89,6 +119,13 @@ describe('import row decisions', () => {
     expect(importRowSkipReason({ problems: [{ kind: 'missingServiceName' }] }, undefined)).toBe('blocked');
     expect(importRowSkipReason({ problems: [], existingServiceId: 'service-1' }, undefined)).toBe('existingService');
     expect(importRowSkipReason({ problems: [] }, undefined)).toBe('selected');
+  });
+
+  test('a blocked existing-service match is skipped as blocked', () => {
+    expect(importRowSkipReason(
+      { problems: [{ kind: 'missingServiceName' }], existingServiceId: 'service-1' },
+      undefined,
+    )).toBe('blocked');
   });
 
   test('confirmation counts only selected Services and their requested Assignments', () => {

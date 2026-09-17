@@ -68,4 +68,18 @@ describe('workbook mapping validation', () => {
     expect(problems).toContainEqual({ kind: 'partialAssignment', missing: ['vehicleClass', 'modality'] });
     expect(problems).toContainEqual({ kind: 'workbookAmountWithoutAssignment' });
   });
+
+  test('does not treat several ignored columns as a duplicate target', () => {
+    const mapping: WorkbookMapping = [
+      { kind: 'ignored' },
+      { kind: 'serviceName' },
+      { kind: 'ignored' },
+      { kind: 'startsAtDate' },
+      { kind: 'ignored' },
+      { kind: 'startsAtTime' },
+      { kind: 'field', fieldDefinitionId: 'required' },
+      { kind: 'ignored' },
+    ];
+    expect(mappingProblems(mapping, fields)).toEqual([]);
+  });
 });

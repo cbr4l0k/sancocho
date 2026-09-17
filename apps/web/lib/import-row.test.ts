@@ -14,6 +14,7 @@ function fixtureId<TableName extends string>(tableName: TableName, value: string
   return Object.assign(value, { __tableName: tableName });
 }
 
+const fieldDefinitionId = fixtureId('fieldDefinitions', 'field-definition-id');
 const eventId = fixtureId('events', 'event-id');
 const serviceKindVersionId = fixtureId('serviceKindVersions', 'service-kind-version-id');
 const providerId = fixtureId('providers', 'provider-id');
@@ -23,12 +24,17 @@ const serviceId = fixtureId('services', 'service-id');
 const assignmentId = fixtureId('assignments', 'assignment-id');
 const revisionId = fixtureId('assignmentRevisions', 'revision-id');
 
+// Named separately so the argument assertion can name the FRESH ids directly, and
+// so they visibly differ from the stale ones the plan carries.
+const resolvedVersionId = fixtureId('rateCardVersions', 'rate-card-version-id');
+const resolvedLineId = fixtureId('rateLines', 'rate-line-id');
+
 const resolvedRate: RateLookupResult = {
   kind: 'resolved',
   rateCardId: fixtureId('rateCards', 'rate-card-id'),
   rateCardName: 'Standard',
-  rateCardVersionId: fixtureId('rateCardVersions', 'rate-card-version-id'),
-  rateLineId: fixtureId('rateLines', 'rate-line-id'),
+  rateCardVersionId: resolvedVersionId,
+  rateLineId: resolvedLineId,
   unitAmount: 125_00,
   currency: 'USD',
 };
@@ -49,7 +55,12 @@ const pricedAssignment: PlannedAssignment = {
 function plannedRow(assignment: PlannedAssignment | null = pricedAssignment): PlannedRow {
   return {
     rowNumber: 7,
-    service: { name: 'Airport transfer', startsAt: 1_700_000_000_000, values: [] },
+    service: {
+      name: 'Airport transfer',
+      startsAt: 1_700_000_000_000,
+      endsAt: 1_700_003_600_000,
+      values: [{ fieldDefinitionId: 'planned-field', value: { kind: 'number', value: 12 } }],
+    },
     ...(assignment === null ? {} : { assignment }),
     problems: [],
     unresolvedReferences: [],
@@ -67,7 +78,7 @@ function input(
     rateResult,
     eventId,
     serviceKindVersionId,
-    fieldDefinitionIds: new Map(),
+    fieldDefinitionIds: new Map([['planned-field', fieldDefinitionId]]),
     providerIds: new Map([['planned-provider', providerId]]),
     vehicleClassIds: new Map([['planned-vehicle-class', vehicleClassId]]),
     costCentreIds: new Map([['planned-cost-centre', costCentreId]]),
@@ -200,21 +211,54 @@ describe('importRow', () => {
     expect(outcome).toEqual({ kind: 'created', rowNumber: 7, assignment: 'none' });
   });
 
-  test('omits monetary values from assignment and revision mutation arguments', async () => {
+  test('sends each mutation exactly the arguments the row resolved to', async () => {
     const recorded = recordingMutations();
 
     await importRow(recorded.mutations, input());
 
-    const assignment = recorded.assignmentArgs[0];
-    const revision = recorded.revisionArgs[0];
-    if (assignment === undefined || revision === undefined) throw new Error('Expected both mutation arguments');
-    // Any money-shaped key, not a fixed list: the server resolves and stores the
-    // price from the published Rate Card Version (I10), so a figure arriving from the
-    // workbook must never reach a mutation argument under ANY spelling.
-    const moneyShaped = /amount|total|currency|price|rate$|minorUnits/iu;
-    const offending = (args: object): string[] => Object.keys(args).filter((key) => moneyShaped.test(key));
-    expect(offending(assignment)).toEqual([]);
-    expect(offending(revision)).toEqual([]);
+    // Exact objects, not a key-name heuristic. This is the I10 guard: `toEqual` fails
+    // on ANY extra key, so a money figure cannot ride along under an innocuous name —
+    // a spelling regex let `{ note: unitAmount }` through and passed.
+    expect(recorded.serviceArgs[0]).toEqual({
+      eventId,
+      serviceKindVersionId,
+      name: 'Airport transfer',
+      startsAt: 1_700_000_000_000,
+      endsAt: 1_700_003_600_000,
+      values: [{ fieldDefinitionId, value: { kind: 'number', value: 12 } }],
+    });
+    expect(recorded.assignmentArgs[0]).toEqual({
+      serviceId,
+      providerId,
+      position: 2,
+      costCentreId,
+    });
+    // The rate ids come from the FRESH lookup, never from the plan built during the
+    // preview: the fixtures deliberately disagree, so sourcing them from
+    // `row.assignment.revision` would commit a price from a possibly-retired Version.
+    expect(recorded.revisionArgs[0]).toEqual({
+      assignmentId,
+      vehicleClassId,
+      modality: 'transfer',
+      quantity: 3,
+      rateCardVersionId: resolvedVersionId,
+      rateLineId: resolvedLineId,
+    });
+    expect(recorded.acceptanceArgs[0]).toEqual({ revisionId });
+  });
+
+  test('refuses to write a revision when the rate is ambiguous', async () => {
+    const recorded = recordingMutations();
+    const ambiguous: RateLookupResult = { kind: 'ambiguous', candidates: [] };
+
+    // The row still carries a planned revision; only the server's answer changed.
+    const outcome = await importRow(recorded.mutations, input(plannedRow(), ambiguous));
+
+    expect(recorded.calls).toEqual(['createService', 'createAssignment']);
+    expect(recorded.revisionArgs).toHaveLength(0);
+    expect(outcome).toEqual({
+      kind: 'failedRevision', rowNumber: 7, step: 'revision', errorKey: 'errors.generic',
+    });
   });
 
   test('maps a structured backend failure to a message key without carrying raw prose', async () => {

@@ -34,6 +34,14 @@ describe('Excel serial conversion', () => {
   });
 });
 
+/*
+ * These tests run under TZ=America/Bogota, pinned in apps/web/package.json.
+ * It is not cosmetic: `dateStringFromCell` and `timeStringFromCell` read a parser
+ * `Date` with the UTC getters on purpose, and under a UTC runner swapping them for
+ * the local getters passes every test here. Only a non-zero offset can tell the two
+ * apart, and es-CO is the product's default locale, so Bogota is the honest zone to
+ * test in — a date shifted a day back is exactly the bug a Colombian operator hits.
+ */
 describe('target-directed cell conversion', () => {
   test('keeps date and time values as wall-clock strings', () => {
     expect(cellToFieldValue(46277, { kind: 'date' })).toEqual({
@@ -89,6 +97,32 @@ describe('target-directed cell conversion', () => {
       options: [{ id: 'one', label: 'Bus' }, { id: 'two', label: ' bus ' }],
     };
     expect(cellToFieldValue('BUS', config)).toEqual({ ok: false, problem: 'unknownOption' });
+  });
+
+  test('rejects location names that normalize to more than one catalogue entry', () => {
+    const locations = [
+      { id: Object.assign('loc-1', { __tableName: 'locations' as const }), name: 'Depot' },
+      { id: Object.assign('loc-2', { __tableName: 'locations' as const }), name: ' depot ' },
+    ];
+    expect(cellToFieldValue('DEPOT', { kind: 'location' }, { locations })).toEqual({
+      ok: false,
+      problem: 'unresolvedLocation',
+    });
+  });
+
+  test('converts ISO datetime strings and rejects an impossible calendar date', () => {
+    expect(cellToFieldValue('2026-09-12T10:20', { kind: 'datetime' })).toEqual({
+      ok: true,
+      value: { kind: 'datetime', date: '2026-09-12', time: '10:20' },
+    });
+    expect(cellToFieldValue('2026-09-12 10:20', { kind: 'datetime' })).toEqual({
+      ok: true,
+      value: { kind: 'datetime', date: '2026-09-12', time: '10:20' },
+    });
+    expect(cellToFieldValue('2026-13-45T10:20', { kind: 'datetime' })).toEqual({
+      ok: false,
+      problem: 'notADate',
+    });
   });
 
   test('pre-converted Dates agree with their date, time and datetime serial forms', () => {
