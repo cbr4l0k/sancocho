@@ -208,9 +208,13 @@ describe('importRow', () => {
     const assignment = recorded.assignmentArgs[0];
     const revision = recorded.revisionArgs[0];
     if (assignment === undefined || revision === undefined) throw new Error('Expected both mutation arguments');
-    const forbiddenKeys = ['amount', 'unitAmount', 'total', 'currency'];
-    expect(Object.keys(assignment).filter((key) => forbiddenKeys.includes(key))).toEqual([]);
-    expect(Object.keys(revision).filter((key) => forbiddenKeys.includes(key))).toEqual([]);
+    // Any money-shaped key, not a fixed list: the server resolves and stores the
+    // price from the published Rate Card Version (I10), so a figure arriving from the
+    // workbook must never reach a mutation argument under ANY spelling.
+    const moneyShaped = /amount|total|currency|price|rate$|minorUnits/iu;
+    const offending = (args: object): string[] => Object.keys(args).filter((key) => moneyShaped.test(key));
+    expect(offending(assignment)).toEqual([]);
+    expect(offending(revision)).toEqual([]);
   });
 
   test('maps a structured backend failure to a message key without carrying raw prose', async () => {

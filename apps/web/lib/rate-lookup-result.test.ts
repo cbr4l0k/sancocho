@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   distinctRateLookupRequests,
   isRateLookupResult,
+  rateLookupCollectionState,
   rateLookupResultsToRates,
   type RateLookupRequest,
 } from './rate-lookup-result';
@@ -95,5 +96,30 @@ describe('rate result collection', () => {
       unitAmount: 810000,
       currency: 'COP',
     }]);
+  });
+
+  test('reports an errored lookup as error, never as complete', () => {
+    const requests: readonly RateLookupRequest[] = [
+      { key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' },
+      { key: 'two', providerId: 'provider-2', vehicleClassId: 'class-1', modality: 'route' },
+    ];
+    // An Error is not `undefined`, so a bare presence check would call this complete
+    // and the row would be written as unpriced.
+    expect(rateLookupCollectionState(requests, { one: resolved, two: new Error('boom') })).toBe('error');
+    expect(rateLookupCollectionState(requests, { one: resolved, two: undefined })).toBe('loading');
+    expect(rateLookupCollectionState(requests, {
+      one: resolved,
+      two: { kind: 'unpriceable', reason: 'noRateLine' },
+    })).toBe('complete');
+  });
+
+  test('accepts a resolved payload carrying a field this console does not know', () => {
+    // A backend addition must not silently degrade every row to unpriced.
+    const widened = { ...resolved, rateCardCurrencyNote: 'added later' };
+    expect(isRateLookupResult(widened)).toBe(true);
+    expect(rateLookupCollectionState(
+      [{ key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' }],
+      { one: widened },
+    )).toBe('complete');
   });
 });

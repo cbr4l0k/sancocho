@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  canConfirmImport,
   canSetImportRowAction,
   importSelectionCounts,
   initialImportRowAction,
+  importRowIsBlocked,
   importRowSkipReason,
   nextImportRowIndex,
   recordImportRowOutcome,
@@ -104,5 +106,27 @@ describe('import row decisions', () => {
       { row: {}, action: initialImportRowAction({ defaultAction: 'skip', problems: [] }, undefined) },
     ];
     expect(importSelectionCounts(rows)).toEqual({ services: 0, assignments: 0 });
+  });
+
+  test('a row whose rate lookup errored is blocked, not silently unpriced', () => {
+    const row = { defaultAction: 'create' as const, problems: [] };
+    const failure = new Error('rate lookup failed');
+    // Not knowing a row's rate is not the same as knowing it has none: an errored
+    // lookup must never be written as an unpriced Assignment.
+    expect(importRowIsBlocked(row, failure)).toBe(true);
+    expect(initialImportRowAction(row, failure)).toBe('skip');
+    expect(canSetImportRowAction(row, failure, 'create')).toBe(false);
+    expect(importRowSkipReason(row, failure)).toBe('blocked');
+    // An honest "no published rate" answer still imports, unpriced.
+    const noRate = { kind: 'unpriceable', reason: 'noRateLine' } as const;
+    expect(importRowIsBlocked(row, noRate)).toBe(false);
+    expect(initialImportRowAction(row, noRate)).toBe('create');
+  });
+
+  test('confirmation stays reachable when every row matched an existing Service', () => {
+    // All rows default to skip; the operator sets one to create. The panel must appear.
+    expect(canConfirmImport(undefined, { services: 1 })).toBe(true);
+    expect(canConfirmImport(undefined, { services: 0 })).toBe(false);
+    expect(canConfirmImport(startImportRun(3), { services: 1 })).toBe(false);
   });
 });

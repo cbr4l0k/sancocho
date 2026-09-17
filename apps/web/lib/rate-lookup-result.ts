@@ -45,19 +45,12 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasExactly(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value);
-  return actual.length === keys.length && keys.every((key) => actual.includes(key));
-}
-
 function isCurrency(value: unknown): value is Currency {
   return typeof value === 'string' && Object.hasOwn(currencyMembers, value);
 }
 
 function isCandidate(value: unknown): boolean {
-  if (!isRecord(value) || !hasExactly(value, [
-    'rateCardId', 'rateCardName', 'rateCardVersionId', 'unitAmount', 'currency',
-  ])) return false;
+  if (!isRecord(value)) return false;
   return typeof value.rateCardId === 'string' &&
     typeof value.rateCardName === 'string' &&
     typeof value.rateCardVersionId === 'string' &&
@@ -69,10 +62,7 @@ function isCandidate(value: unknown): boolean {
 export function isRateLookupResult(value: unknown): value is RateLookupResult {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   if (value.kind === 'resolved') {
-    return hasExactly(value, [
-      'kind', 'rateCardId', 'rateCardName', 'rateCardVersionId', 'rateLineId', 'unitAmount', 'currency',
-    ]) &&
-      typeof value.rateCardId === 'string' &&
+    return typeof value.rateCardId === 'string' &&
       typeof value.rateCardName === 'string' &&
       typeof value.rateCardVersionId === 'string' &&
       typeof value.rateLineId === 'string' &&
@@ -81,12 +71,25 @@ export function isRateLookupResult(value: unknown): value is RateLookupResult {
       isCurrency(value.currency);
   }
   if (value.kind === 'ambiguous') {
-    return hasExactly(value, ['kind', 'candidates']) &&
-      Array.isArray(value.candidates) && value.candidates.every(isCandidate);
+    return Array.isArray(value.candidates) && value.candidates.every(isCandidate);
   }
   return value.kind === 'unpriceable' &&
-    hasExactly(value, ['kind', 'reason']) &&
     (value.reason === 'noRateLine' || value.reason === 'rateCardLimitExceeded');
+}
+
+export type RateLookupCollectionState = 'loading' | 'error' | 'complete';
+
+export function rateLookupCollectionState(
+  requests: readonly RateLookupRequest[],
+  results: Readonly<Record<string, unknown>>,
+): RateLookupCollectionState {
+  let loading = false;
+  for (const request of requests) {
+    const result = results[request.key];
+    if (result instanceof Error || (result !== undefined && !isRateLookupResult(result))) return 'error';
+    if (result === undefined) loading = true;
+  }
+  return loading ? 'loading' : 'complete';
 }
 
 export function rateLookupResultsToRates(

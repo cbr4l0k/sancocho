@@ -3,7 +3,7 @@
 import { useMutation, usePaginatedQuery, useQueries, useQuery, type RequestForQueries } from 'convex/react';
 import type { FunctionArgs } from 'convex/server';
 import { useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { api } from '@priamo/convex/api';
 
@@ -18,6 +18,7 @@ import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { formatFieldValue } from '@/lib/field-value-format';
 import { importRow } from '@/lib/import-row';
 import {
+  canConfirmImport,
   canSetImportRowAction,
   importRowIsBlocked,
   importRowSkipReason,
@@ -36,6 +37,7 @@ import { moneyDisplay } from '@/lib/money';
 import {
   distinctRateLookupRequests,
   isRateLookupResult,
+  rateLookupCollectionState,
   rateLookupKey,
   rateLookupResultsToRates,
   type RateLookupResult,
@@ -45,6 +47,7 @@ import { readWorkbook, type WorkbookSheet } from '@/lib/workbook-file';
 import { mappingProblems, type ColumnTarget, type MappingProblem, type VersionField, type WorkbookMapping } from '@/lib/workbook-mapping';
 import {
   buildWorkbookPlan,
+  summarizePlan,
   type PlannedRow,
   type RowProblem,
   type WorkbookCatalogues,
@@ -193,7 +196,10 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
     return requests;
   })();
   const rawRateResults: Readonly<Record<string, unknown>> = useQueries(priceQueries);
-  const pricingComplete = rateRequests.every((request) => rawRateResults[request.key] !== undefined);
+  // `useQueries` yields an Error for a query that threw, and an Error is not
+  // `undefined` — so a bare presence check would let a failed lookup through as
+  // though pricing had succeeded, and the row would be written as unpriced.
+  const pricingState = rateLookupCollectionState(rateRequests, rawRateResults);
   const rates = rateLookupResultsToRates(rateRequests, rawRateResults);
   const plan = buildWorkbookPlan({ rows: dataRows, mapping, versionFields, catalogues: { ...catalogues, rates } });
 
@@ -419,8 +425,12 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
         </>
       )}
 
-      {!previewRequested || selectedVersionId === undefined || fields === undefined ? null : !pricingComplete ? (
-        <Panel><PanelBody><p className="text-sm text-ink-3">{t('pricing')}</p></PanelBody></Panel>
+      {!previewRequested || selectedVersionId === undefined || fields === undefined ? null : pricingState !== 'complete' ? (
+        <Panel><PanelBody>
+          <p className={pricingState === 'error' ? 'text-sm text-tone-stop' : 'text-sm text-ink-3'}>
+            {t(pricingState === 'error' ? 'pricingFailed' : 'pricing')}
+          </p>
+        </PanelBody></Panel>
       ) : (
         <Preview
           plan={plan}
@@ -480,7 +490,7 @@ function targetLabel(target: string, t: Translator): string {
 }
 
 function Preview({
-  plan,
+  plan: livePlan,
   eventId,
   serviceKindVersionId,
   fieldDefinitionIds,
@@ -525,6 +535,14 @@ function Preview({
   const [stopRequested, setStopRequested] = useState(false);
   const [running, setRunning] = useState(false);
   const [runState, setRunState] = useState<ImportRunState>();
+  /**
+   * `existingServices` is a live query over the very Event being written into, so
+   * without this the panel drifts from "Will create: 100" to "Already exists: 100"
+   * beside a report reading "Created: 100", and every created row grows a
+   * "matches an existing Service" note for the Service it just created.
+   */
+  const [frozenPlan, setFrozenPlan] = useState<WorkbookPlan>();
+  const plan = frozenPlan ?? livePlan;
   const [actions, setActions] = useState<ReadonlyMap<number, ImportRowAction>>(() => new Map(
     plan.rows.map((row) => [row.rowNumber, initialImportRowAction(row, rowRateResult(row, rateResults))]),
   ));
@@ -534,9 +552,28 @@ function Preview({
   }));
   const selectionCounts = importSelectionCounts(selections);
   const summary = runState === undefined ? undefined : runSummary(runState);
+  // Recomputed from the operator's current selections, so the panel agrees with the
+  // confirmation counts below it rather than describing the untouched defaults.
+  const planSummary = summarizePlan(
+    plan.rows,
+    (row) => actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults)),
+  );
+
+  /**
+   * A tab closed between `createService` and `createAssignment` leaves a Service with
+   * no Assignment AND no report row recording it — the one half-import the report
+   * cannot describe. There is no rollback, so a warning is the only guard available.
+   */
+  useEffect(() => {
+    if (!running) return undefined;
+    const warn = (event: BeforeUnloadEvent): void => { event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => { window.removeEventListener('beforeunload', warn); };
+  }, [running]);
 
   async function runImport(): Promise<void> {
     if (running || selectionCounts.services === 0) return;
+    setFrozenPlan(plan);
     const snapshot = selections.map((selection) => ({
       ...selection,
       rateResult: rowRateResult(selection.row, rateResults),
@@ -562,7 +599,10 @@ function Preview({
           { createService, createAssignment, createRevision, acceptRevision },
           {
             row: item.row,
-            rateResult: item.rateResult,
+            // A row whose lookup errored is always blocked, so it is skipped above and
+            // never reaches here; narrowing rather than asserting keeps that true by
+            // construction instead of by comment.
+            rateResult: item.rateResult instanceof Error ? undefined : item.rateResult,
             eventId,
             serviceKindVersionId,
             fieldDefinitionIds,
@@ -596,14 +636,15 @@ function Preview({
         <PanelBody>
           <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             <Metric label={t('willCreate')} value={plan.summary.willCreate} />
+            <Metric label={t('selectedForCreation')} value={planSummary.selectedForCreation} />
             <Metric label={t('alreadyExists')} value={plan.summary.alreadyExists} />
             <Metric label={t('blocked')} value={plan.summary.blockedByErrors} />
-            <Metric label={t('rateDiffers')} value={plan.summary.rateDiffers} />
-            <Metric label={t('unpriced')} value={plan.summary.willBeUnpriced} />
+            <Metric label={t('rateDiffers')} value={planSummary.rateDiffers} />
+            <Metric label={t('unpriced')} value={planSummary.willBeUnpriced} />
           </dl>
-          {plan.summary.currencies.length === 0 ? null : (
+          {planSummary.currencies.length === 0 ? null : (
             <ul className="space-y-2 border-t border-line pt-4 text-sm text-ink-2">
-              {plan.summary.currencies.map((figure) => (
+              {planSummary.currencies.map((figure) => (
                 <li key={figure.currency}>{t('currencyFigure', {
                   currency: figure.currency,
                   workbook: moneyText(locale, figure.workbookMinorUnits, figure.currency),
@@ -649,7 +690,7 @@ function Preview({
         </Table>
       </Panel>
 
-      {runState === undefined && selectionCounts.services > 0 && plan.rows.some((row) => row.defaultAction === 'create') ? (
+      {canConfirmImport(runState, selectionCounts) ? (
         <Panel emphasis="focal">
           <PanelHeader><div><PanelTitle>{t('confirmTitle')}</PanelTitle><PanelDescription>{t('confirmCounts', selectionCounts)}</PanelDescription></div></PanelHeader>
           <PanelBody><Button type="button" variant="primary" onClick={runImport}>{t('confirmImport')}</Button></PanelBody>
@@ -777,13 +818,24 @@ function PreviewRow({
         )}
       </TableCell>
       <TableCell>
-        {comparison?.currency === undefined || comparison.cardMinorUnits === undefined ? (
+        {comparison?.currency === undefined || comparison.cardUnitMinorUnits === undefined ? (
           <span className="text-ink-3">{rateOutcome(lookupResult, t)}</span>
         ) : (
           <div className="text-xs">
             <p>{t('workbookRate', { amount: moneyText(locale, comparison.workbookMinorUnits, comparison.currency) })}</p>
-            <p>{t('cardRate', { amount: moneyText(locale, comparison.cardMinorUnits, comparison.currency) })}</p>
-            {comparison.differs ? <p className="mt-1 text-tone-hold">{t('rateWarning')}</p> : null}
+            {/* Both figures, labelled: a `Valor` column beside a `Cant` column may hold
+                either, and the committed amount is always the line total. */}
+            <p>{t('cardUnitRate', { amount: moneyText(locale, comparison.cardUnitMinorUnits, comparison.currency) })}</p>
+            {comparison.cardLineMinorUnits === undefined ? null : (
+              <p>{t('cardLineTotal', {
+                amount: moneyText(locale, comparison.cardLineMinorUnits, comparison.currency),
+                quantity: comparison.quantity ?? 1,
+              })}</p>
+            )}
+            {comparison.differs
+              ? <p className="mt-1 text-tone-hold">{t('rateWarning')}</p>
+              : comparison.matches === undefined ? null
+                : <p className="mt-1 text-ink-3">{t(comparison.matches === 'unit' ? 'rateMatchesUnit' : 'rateMatchesLine')}</p>}
           </div>
         )}
       </TableCell>
@@ -815,9 +867,18 @@ function PreviewRow({
   );
 }
 
-function rowRateResult(row: PlannedRow, results: Readonly<Record<string, unknown>>): RateLookupResult | undefined {
+/**
+ * An errored lookup is returned as the Error itself rather than collapsed to
+ * `undefined`: `importRowIsBlocked` treats it as blocking, because not knowing a
+ * row's rate is not the same as knowing it has none.
+ */
+function rowRateResult(
+  row: PlannedRow,
+  results: Readonly<Record<string, unknown>>,
+): RateLookupResult | Error | undefined {
   if (row.rateLookup === undefined) return undefined;
   const value = results[rateLookupKey(row.rateLookup)];
+  if (value instanceof Error) return value;
   return isRateLookupResult(value) ? value : undefined;
 }
 

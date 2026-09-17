@@ -132,10 +132,53 @@ describe('workbook plan rows', () => {
     });
     expect(plan.rows[0]?.amountComparison).toEqual({
       workbookMinorUnits: 75_000_000,
-      cardMinorUnits: 81_000_000,
+      cardUnitMinorUnits: 81_000_000,
+      cardLineMinorUnits: 81_000_000,
+      quantity: 1,
       currency: 'COP',
       differs: true,
     });
+  });
+
+  test('compares a multi-quantity row against the line total the server will commit', () => {
+    const source = goodRow(2);
+    // Quantity 4 at the card's 810,000.00 COP unit rate commits 3,240,000.00 COP.
+    const row = { ...source, cells: [...source.cells.slice(0, 7), 4, 3_240_000, ...source.cells.slice(9)] };
+    const plan = buildWorkbookPlan({ rows: [row], mapping, versionFields: fields, catalogues });
+    expect(plan.rows[0]?.amountComparison).toEqual({
+      workbookMinorUnits: 324_000_000,
+      cardUnitMinorUnits: 81_000_000,
+      cardLineMinorUnits: 324_000_000,
+      quantity: 4,
+      currency: 'COP',
+      matches: 'line',
+      differs: false,
+    });
+    expect(plan.summary.rateDiffers).toBe(0);
+    expect(plan.summary.currencies).toEqual([
+      { currency: 'COP', workbookMinorUnits: 324_000_000, cardMinorUnits: 324_000_000 },
+    ]);
+  });
+
+  test('accepts a unit rate in the amount column without calling it a difference', () => {
+    const source = goodRow(2);
+    const row = { ...source, cells: [...source.cells.slice(0, 7), 4, 810_000, ...source.cells.slice(9)] };
+    const plan = buildWorkbookPlan({ rows: [row], mapping, versionFields: fields, catalogues });
+    expect(plan.rows[0]?.amountComparison?.matches).toBe('unit');
+    expect(plan.rows[0]?.amountComparison?.differs).toBe(false);
+    // The committed figure is still the line total, whatever the column meant.
+    expect(plan.summary.currencies).toEqual([
+      { currency: 'COP', workbookMinorUnits: 81_000_000, cardMinorUnits: 324_000_000 },
+    ]);
+  });
+
+  test('flags a row that matches neither the unit rate nor the line total', () => {
+    const source = goodRow(2);
+    const row = { ...source, cells: [...source.cells.slice(0, 7), 4, 990_000, ...source.cells.slice(9)] };
+    const plan = buildWorkbookPlan({ rows: [row], mapping, versionFields: fields, catalogues });
+    expect(plan.rows[0]?.amountComparison?.matches).toBeUndefined();
+    expect(plan.rows[0]?.amountComparison?.differs).toBe(true);
+    expect(plan.summary.rateDiffers).toBe(1);
   });
 
   test('lists unresolved catalogues and frozen select options separately with row numbers', () => {

@@ -414,8 +414,10 @@ export type MessageSchema = {
     loadMoreCatalogues: string;
     preview: string;
     pricing: string;
+    pricingFailed: string;
     summary: string;
     willCreate: string;
+    selectedForCreation: string;
     alreadyExists: string;
     blocked: string;
     rateDiffers: string;
@@ -431,7 +433,10 @@ export type MessageSchema = {
     notMapped: string;
     quantityValue: string;
     workbookRate: string;
-    cardRate: string;
+    cardUnitRate: string;
+    cardLineTotal: string;
+    rateMatchesUnit: string;
+    rateMatchesLine: string;
     rateWarning: string;
     createOutcome: string;
     skipOutcome: string;

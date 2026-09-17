@@ -35,20 +35,20 @@ export type ImportRunSummary = {
   halfImported: number;
 };
 
-export function importRowIsBlocked(row: Pick<PlannedRow, 'problems'>, rateResult: RateLookupResult | undefined): boolean {
-  return row.problems.length > 0 || rateResult?.kind === 'ambiguous';
+export function importRowIsBlocked(row: Pick<PlannedRow, 'problems'>, rateResult: RateLookupResult | Error | undefined): boolean {
+  return row.problems.length > 0 || rateResult instanceof Error || rateResult?.kind === 'ambiguous';
 }
 
 export function initialImportRowAction(
   row: Pick<PlannedRow, 'defaultAction' | 'problems'>,
-  rateResult: RateLookupResult | undefined,
+  rateResult: RateLookupResult | Error | undefined,
 ): ImportRowAction {
   return row.defaultAction === 'create' && !importRowIsBlocked(row, rateResult) ? 'create' : 'skip';
 }
 
 export function canSetImportRowAction(
   row: Pick<PlannedRow, 'problems'>,
-  rateResult: RateLookupResult | undefined,
+  rateResult: RateLookupResult | Error | undefined,
   action: ImportRowAction,
 ): boolean {
   return action === 'skip' || !importRowIsBlocked(row, rateResult);
@@ -56,7 +56,7 @@ export function canSetImportRowAction(
 
 export function importRowSkipReason(
   row: Pick<PlannedRow, 'problems' | 'existingServiceId'>,
-  rateResult: RateLookupResult | undefined,
+  rateResult: RateLookupResult | Error | undefined,
 ): ImportSkipReason {
   if (importRowIsBlocked(row, rateResult)) return 'blocked';
   return row.existingServiceId === undefined ? 'selected' : 'existingService';
@@ -76,6 +76,13 @@ export function importSelectionCounts(
     if (item.row.assignment !== undefined) assignments += 1;
   }
   return { services, assignments };
+}
+
+export function canConfirmImport(
+  runState: ImportRunState | undefined,
+  selectionCounts: { services: number },
+): boolean {
+  return runState === undefined && selectionCounts.services > 0;
 }
 
 export function startImportRun(totalRows: number): ImportRunState {

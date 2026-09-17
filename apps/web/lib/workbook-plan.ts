@@ -1,6 +1,6 @@
 import type { currencyValidator, rateModalityValidator } from '@priamo/convex/validators';
 
-import { addMinorUnits, parseMoneyInput } from './money';
+import { addMinorUnits, multiplyMinorUnits, parseMoneyInput } from './money';
 import { serviceFieldProblem } from './service-form-checks';
 import {
   cellToFieldValue,
@@ -70,10 +70,26 @@ export type PlannedAssignment = {
   unpricedReason?: 'noRate';
 };
 
+/**
+ * The workbook's amount column is display-only: the server resolves and stores the
+ * price from the published Rate Card Version (I10), so nothing here ever reaches a
+ * mutation argument.
+ *
+ * It carries BOTH the card's unit amount and the line total it commits
+ * (`unitAmount x quantity`, the same product `convex/assignments/costing.ts` stores),
+ * because a spreadsheet column headed `Valor` beside a `Cant` column is genuinely
+ * ambiguous and we must not guess which one the tenant meant. `matches` says which
+ * figure the cell agrees with, and `differs` is true only when it agrees with
+ * neither — so the screen never claims a discrepancy that isn't one. When quantity
+ * is 1 the two coincide and nothing is lost.
+ */
 export type AmountComparison = {
   workbookMinorUnits: number;
-  cardMinorUnits?: number;
+  cardUnitMinorUnits?: number;
+  cardLineMinorUnits?: number;
+  quantity?: number;
   currency?: Currency;
+  matches?: 'unit' | 'line';
   differs: boolean;
 };
 
@@ -115,7 +131,13 @@ export type CurrencyPlanFigure = {
 };
 
 export type PlanSummary = {
+  /**
+   * `willCreate`, `alreadyExists` and `blockedByErrors` partition every row: they
+   * describe the workbook against the Event and never move. `selectedForCreation`
+   * and everything below it follow the operator's current choices.
+   */
   willCreate: number;
+  selectedForCreation: number;
   alreadyExists: number;
   blockedByErrors: number;
   rateDiffers: number;
@@ -170,6 +192,14 @@ function readQuantity(cell: WorkbookCell | undefined): number | undefined {
   if (typeof cell !== 'string' || !/^\d+$/u.test(cell.trim())) return undefined;
   const value = Number(cell.trim());
   return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function safeLineTotal(unitAmount: number, quantity: number): number | undefined {
+  try {
+    return multiplyMinorUnits(unitAmount, quantity);
+  } catch {
+    return undefined;
+  }
 }
 
 function addUnresolved(
@@ -337,14 +367,29 @@ function buildRow(
           };
 
       if (workbookMinorUnits !== undefined) {
-        amountComparison = rate === undefined
-          ? { workbookMinorUnits, differs: false }
-          : {
-              workbookMinorUnits,
-              cardMinorUnits: rate.unitAmount,
-              currency: rate.currency,
-              differs: workbookMinorUnits !== rate.unitAmount,
-            };
+        if (rate === undefined) {
+          amountComparison = { workbookMinorUnits, differs: false };
+        } else {
+          // `multiplyMinorUnits` throws on overflow. One absurd row must not take the
+          // whole preview down with it, so an unrepresentable line total becomes that
+          // row's own problem and the remaining rows still plan.
+          const cardLineMinorUnits = safeLineTotal(rate.unitAmount, quantity);
+          if (cardLineMinorUnits === undefined) {
+            problems.push({ kind: 'workbookAmount', problem: 'lineTotalUnrepresentable' });
+          }
+          const matches = workbookMinorUnits === rate.unitAmount
+            ? 'unit'
+            : workbookMinorUnits === cardLineMinorUnits ? 'line' : undefined;
+          amountComparison = {
+            workbookMinorUnits,
+            cardUnitMinorUnits: rate.unitAmount,
+            ...(cardLineMinorUnits === undefined ? {} : { cardLineMinorUnits }),
+            quantity,
+            currency: rate.currency,
+            ...(matches === undefined ? {} : { matches }),
+            differs: matches === undefined,
+          };
+        }
       }
     }
   }
@@ -370,8 +415,18 @@ function buildRow(
   };
 }
 
-export function summarizePlan(rows: readonly PlannedRow[]): PlanSummary {
+/**
+ * `actionFor` lets the screen summarize what the operator has actually selected
+ * rather than the plan's defaults. Without it the panel keeps reporting 100 rows
+ * after 40 have been switched to skip, and disagrees with the confirmation counts
+ * shown a few centimetres below it.
+ */
+export function summarizePlan(
+  rows: readonly PlannedRow[],
+  actionFor: (row: PlannedRow) => 'create' | 'skip' = (row) => row.defaultAction,
+): PlanSummary {
   let willCreate = 0;
+  let selectedForCreation = 0;
   let alreadyExists = 0;
   let blockedByErrors = 0;
   let rateDiffers = 0;
@@ -381,18 +436,23 @@ export function summarizePlan(rows: readonly PlannedRow[]): PlanSummary {
     if (row.problems.length > 0) blockedByErrors += 1;
     else if (row.existingServiceId !== undefined) alreadyExists += 1;
     else willCreate += 1;
-    if (row.defaultAction === 'create' && row.amountComparison?.differs === true) rateDiffers += 1;
-    if (row.defaultAction === 'create' && row.assignment?.unpricedReason !== undefined) willBeUnpriced += 1;
+    const action = actionFor(row);
+    if (action === 'create') selectedForCreation += 1;
+    if (action === 'create' && row.amountComparison?.differs === true) rateDiffers += 1;
+    if (action === 'create' && row.assignment?.unpricedReason !== undefined) willBeUnpriced += 1;
     const comparison = row.amountComparison;
-    if (row.defaultAction !== 'create' || comparison?.currency === undefined || comparison.cardMinorUnits === undefined) continue;
+    if (action !== 'create' || comparison?.currency === undefined || comparison.cardLineMinorUnits === undefined) continue;
     const previous = currencies.get(comparison.currency) ?? { workbookMinorUnits: 0, cardMinorUnits: 0 };
     currencies.set(comparison.currency, {
       workbookMinorUnits: addMinorUnits(previous.workbookMinorUnits, comparison.workbookMinorUnits),
-      cardMinorUnits: addMinorUnits(previous.cardMinorUnits, comparison.cardMinorUnits),
+      // The committed figure is the LINE total, never the unit rate: a summary built
+      // from unit amounts understates the import by the quantity factor.
+      cardMinorUnits: addMinorUnits(previous.cardMinorUnits, comparison.cardLineMinorUnits),
     });
   }
   return {
     willCreate,
+    selectedForCreation,
     alreadyExists,
     blockedByErrors,
     rateDiffers,
