@@ -5,9 +5,17 @@ import {
   buildWorkbookPlan,
   summarizePlan,
   type PlannedRow,
+  type RateModality,
   type WorkbookCatalogues,
   type WorkbookRow,
 } from './workbook-plan';
+
+const backendRateModalities = {
+  transfer: true,
+  disposition: true,
+  route: true,
+  fixed: true,
+} as const satisfies Record<RateModality, true>;
 
 const mapping: WorkbookMapping = [
   { kind: 'serviceName' },
@@ -56,6 +64,18 @@ describe('workbook plan rows', () => {
     expect(plan.mappingProblems).toEqual([]);
     expect(plan.rows.map((row) => row.problems)).toEqual([[], []]);
     expect(plan.summary).toMatchObject({ willCreate: 2, alreadyExists: 0, blockedByErrors: 0 });
+  });
+
+  test('carries validated pricing inputs for one distinct-triple lookup pass', () => {
+    const source = goodRow(2);
+    const row = { ...source, cells: [...source.cells.slice(0, 7), 4, ...source.cells.slice(8)] };
+    const plan = buildWorkbookPlan({ rows: [row], mapping, versionFields: fields, catalogues });
+    expect(plan.rows[0]?.rateLookup).toEqual({
+      providerId: 'provider-1',
+      vehicleClassId: 'class-1',
+      modality: 'transfer',
+      quantity: 4,
+    });
   });
 
   test('keeps one bad cell local to its row', () => {
@@ -138,18 +158,41 @@ describe('workbook plan rows', () => {
     expect(plan.unresolvedOptions).toEqual([{ fieldDefinitionId: 'stage', label: 'Side', rows: [7] }]);
   });
 
-  test('rejects unknown code-owned modalities instead of creating one', () => {
-    const row = goodRow(2);
+  test('accepts every backend modality', () => {
+    const rows = Object.keys(backendRateModalities).map((modality, index) => {
+      const row = goodRow(index + 2);
+      return { ...row, cells: [...row.cells.slice(0, 6), modality, ...row.cells.slice(7)] };
+    });
+    const plan = buildWorkbookPlan({ rows, mapping, versionFields: fields, catalogues });
+    expect(plan.rows.map((row) => row.rateLookup?.modality)).toEqual([
+      'transfer',
+      'disposition',
+      'route',
+      'fixed',
+    ]);
+    expect(plan.rows.flatMap((row) => row.problems)).not.toContainEqual({
+      kind: 'assignment', target: 'modality', problem: 'unknownModality',
+    });
+  });
+
+  test('rejects unknown and non-string modalities instead of creating one', () => {
+    const invalidModalities = ['hourly', null, 42, new Date(0)];
+    const rows = invalidModalities.map((modality, index) => {
+      const row = goodRow(index + 2);
+      return { ...row, cells: [...row.cells.slice(0, 6), modality, ...row.cells.slice(7)] };
+    });
     const plan = buildWorkbookPlan({
-      rows: [{ ...row, cells: [...row.cells.slice(0, 6), 'hourly', ...row.cells.slice(7)] }],
+      rows,
       mapping,
       versionFields: fields,
       catalogues,
     });
-    expect(plan.rows[0]?.problems).toContainEqual({
-      kind: 'assignment', target: 'modality', problem: 'unknownModality',
-    });
-    expect(plan.rows[0]?.assignment).toBeUndefined();
+    for (const row of plan.rows) {
+      expect(row.problems).toContainEqual({
+        kind: 'assignment', target: 'modality', problem: 'unknownModality',
+      });
+      expect(row.assignment).toBeUndefined();
+    }
   });
 
   test('carries an unpriced assignment without turning the pricing gap into a row error', () => {

@@ -23,6 +23,13 @@ import { toServiceFieldValue, type ServiceFieldValue } from './field-value-form'
 export type RateModality = typeof rateModalityValidator.type;
 export type Currency = typeof currencyValidator.type;
 
+const rateModalityMembers = {
+  transfer: true,
+  disposition: true,
+  route: true,
+  fixed: true,
+} as const satisfies Record<RateModality, true>;
+
 export type WorkbookRow = { rowNumber: number; cells: readonly WorkbookCell[] };
 export type ExistingService = { id: string; name: string; startsAt: number };
 export type ResolvedRate = {
@@ -98,6 +105,7 @@ export type PlannedRow = {
   existingServiceId?: string;
   defaultAction: 'create' | 'skip';
   amountComparison?: AmountComparison;
+  rateLookup?: Pick<ResolvedRate, 'providerId' | 'vehicleClassId' | 'modality'> & { quantity: number };
 };
 
 export type CurrencyPlanFigure = {
@@ -147,11 +155,14 @@ function exactCatalogueMatch(cell: WorkbookCell | undefined, items: readonly Nam
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+function isRateModality(value: string): value is RateModality {
+  return Object.hasOwn(rateModalityMembers, value);
+}
+
 function readModality(cell: WorkbookCell | undefined): RateModality | undefined {
   if (typeof cell !== 'string') return undefined;
   const value = cell.trim();
-  if (value === 'transfer' || value === 'disposition' || value === 'route' || value === 'fixed') return value;
-  return undefined;
+  return isRateModality(value) ? value : undefined;
 }
 
 function readQuantity(cell: WorkbookCell | undefined): number | undefined {
@@ -267,6 +278,7 @@ function buildRow(
   const hasAssignment = mapping.some((target) => target.kind === 'provider');
   let assignment: PlannedAssignment | undefined;
   let amountComparison: AmountComparison | undefined;
+  let rateLookup: PlannedRow['rateLookup'];
   if (hasAssignment) {
     const providerCell = targetCell(row, mapping, 'provider');
     const classCell = targetCell(row, mapping, 'vehicleClass');
@@ -303,6 +315,7 @@ function buildRow(
     if (quantity === undefined) problems.push({ kind: 'assignment', target: 'quantity', problem: 'notPositiveInteger' });
 
     if (provider !== undefined && vehicleClass !== undefined && modality !== undefined && quantity !== undefined) {
+      rateLookup = { providerId: provider.id, vehicleClassId: vehicleClass.id, modality, quantity };
       const rate = catalogues.rates.find(
         (candidate) => candidate.providerId === provider.id &&
           candidate.vehicleClassId === vehicleClass.id && candidate.modality === modality,
@@ -353,6 +366,7 @@ function buildRow(
     ...(existing === undefined ? {} : { existingServiceId: existing.id }),
     defaultAction: blocked || existing !== undefined ? 'skip' : 'create',
     ...(amountComparison === undefined ? {} : { amountComparison }),
+    ...(rateLookup === undefined ? {} : { rateLookup }),
   };
 }
 

@@ -90,6 +90,9 @@ export function EventDetailSurface({ eventId }: { eventId: EventId }) {
         actions={
           canManage && !editing ? (
             <>
+              <Button render={<LocaleLink to={`/events/${eventId}/import`} />}>
+                {t('events.importWorkbook')}
+              </Button>
               <Button onClick={() => setEditing(true)}>{t('events.edit')}</Button>
               {nextStatuses[detail.event.status].map((status) => (
                 <Button key={status} onClick={() => transition(status)}>

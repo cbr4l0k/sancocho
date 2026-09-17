@@ -599,7 +599,7 @@ operational data, not configuration managed under settings.
 
 Locale is always the short URL segment (`es` or `en`). Entity details are
 deep-linkable beneath their own surface: `/es/projects/{id}`,
-`/es/events/{id}`, `/es/events/new`, `/es/services/{id}`, `/es/services/new`, `/es/settings/service-kinds/{id}`,
+`/es/events/{id}`, `/es/events/{id}/import`, `/es/events/new`, `/es/services/{id}`, `/es/services/new`, `/es/settings/service-kinds/{id}`,
 `/es/settings/service-kinds/{id}/draft`, `/es/settings/fields/{id}`, and
 `/es/settings/locations/{id}`. Detail screens inherit the same shell.
 
