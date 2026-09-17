@@ -343,6 +343,60 @@ a decision to stop rather than guess.
     for the same day key. A multi-timezone tenant needs a stored timezone and an ownership
     decision for it; this model has neither, so the console must not imply a shared tenant day.
 
+28. **A workbook import can be half-applied, and that is reported rather than prevented (#77).**
+    The importer writes one row at a time through the ordinary public mutations
+    (`createServiceFromServiceKind` → `createAssignment` → `createAssignmentRevision` →
+    `acceptAssignmentRevision`), exactly as the Assignment panel does, and there is no
+    rollback — so a row whose Service is created and whose Assignment then fails is left
+    half-imported. That outcome is carried as its own kind through
+    `lib/import-row.ts` → `lib/import-run.ts` → the report, distinct from both success and
+    failure, because somebody has to repair those rows by hand and the report is the only
+    thing that tells them which. A transactional bulk import would need a privileged write
+    path, which the issue and I11's reasoning both forbid. The one case the report cannot
+    describe is a tab closed mid-row; a `beforeunload` warning is the only guard available.
+29. **The import's duplicate handling is detection, not prevention (#77).** Nothing records
+    that a file was imported. The preview matches each row against the target Event's
+    existing Services by name and `startsAt` and defaults a match to *skip*. A digest or an
+    `importRuns` table would prevent a re-run — but the issue explicitly requires fixing a
+    sheet and running it again, which is exactly what prevention would forbid. The match is
+    therefore a heuristic by design, and is allowed to be, because the operator is looking
+    at the preview and deciding. `lib/workbook-plan.ts`.
+30. **The workbook's money column is compared, never imported (#77).** `createAssignmentRevision`
+    takes a Rate Line, not an amount, so a `Valor` cell has nowhere to go (I10). The preview
+    shows the card's unit rate *and* the line total it will commit
+    (`unitAmount × quantity`, the product `convex/assignments/costing.ts` stores), and flags
+    a row only when the cell matches neither — because a `Valor` column beside a `Cant`
+    column is genuinely ambiguous and guessing which it means is how a preview lies about
+    the figure it is there to check. `PlannedAssignment` carries no amount field at all, so
+    the cell is structurally unable to reach a mutation argument; `import-row.test.ts`
+    asserts the exact argument objects rather than screening key names, after a
+    spelling-based screen was found to pass `{ note: unitAmount }` straight through.
+31. **The import target is an Event, not a Project (#77).** The issue predates the Event
+    layer (#82) and says "map it to a target Project"; `createServiceFromServiceKind` takes
+    `eventId` and derives `projectId` server-side (I4), so a Project holds no Services
+    directly. The route is `/{locale}/events/{id}/import`.
+32. **#77 needed one backend addition despite being labelled `area:web`.**
+    `assignments.resolveProspectiveRate` prices a cell anchored on an **Event**, because
+    `resolveAssignmentRate` (#74) anchors on a `serviceId` that does not exist during a dry
+    run. It reuses the same pricing body, the same `readAssignmentPricing` intent and the
+    same planner floor; the label was widened to `area:convex` rather than dropping the
+    preview's rate reconciliation. `convex/assignments/rateLookup.ts`,
+    `docs/authorization.md`.
+33. **A missing select option cannot be created from the import screen (#77).** Unresolved
+    Locations, Providers, Vehicle Classes and Cost Centres are listed with a create remedy;
+    unresolved **select options** are listed separately with none, because the option list
+    lives in a field definition frozen into a published Service Kind Version (I2/I3) — adding
+    one means a new draft and a publish, after which rows would be created from a different
+    version than the one mapped. The remedy is to re-map or fix the sheet. Creating any of
+    the other four floors at `admin` while the import itself floors at `planner`, so the
+    list is shown to a planner with a remedy naming who can act, never hidden.
+34. **`apps/web` tests are pinned to `TZ=America/Bogota` (#77).** Not cosmetic.
+    `workbook-cells.ts` reads a parser `Date` with the UTC getters deliberately, and under a
+    UTC runner swapping them for the local getters passes every test — the guard was inert in
+    the environment where it ran. Only a non-zero offset distinguishes them, and `es-CO` is
+    the default locale, so Bogotá is both the honest zone and the one whose operators would
+    have seen every imported date shifted a day back. `apps/web/package.json`.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
