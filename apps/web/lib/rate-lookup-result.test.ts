@@ -4,6 +4,7 @@ import {
   distinctRateLookupRequests,
   isRateLookupResult,
   rateLookupCollectionState,
+  rateLookupQueryArgs,
   rateLookupResultsToRates,
   type RateLookupRequest,
 } from './rate-lookup-result';
@@ -128,5 +129,47 @@ describe('rate result collection', () => {
       [{ key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' }],
       { one: widened },
     )).toBe('complete');
+  });
+});
+
+describe('rate lookup query arguments', () => {
+  const requests: readonly RateLookupRequest[] = [
+    { key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' },
+    { key: 'two', providerId: 'provider-gone', vehicleClassId: 'class-1', modality: 'route' },
+    { key: 'three', providerId: 'provider-1', vehicleClassId: 'class-gone', modality: 'fixed' },
+  ];
+  const providerIds = new Map([['provider-1', 'branded-provider-1']]);
+  const vehicleClassIds = new Map([['class-1', 'branded-class-1']]);
+
+  test('names a request it cannot resolve instead of dropping it', () => {
+    // Dropping it leaves its key absent from the results for good, which
+    // `rateLookupCollectionState` reads as `'loading'` — the preview would show the
+    // pricing notice forever instead of the table.
+    expect(rateLookupQueryArgs(requests, providerIds, vehicleClassIds)).toEqual({
+      ready: [{
+        key: 'one',
+        providerId: 'branded-provider-1',
+        vehicleClassId: 'branded-class-1',
+        modality: 'transfer',
+      }],
+      missing: ['two', 'three'],
+    });
+  });
+
+  test('carries the catalogue ids, not the plan strings, for every resolvable request', () => {
+    expect(rateLookupQueryArgs(
+      [
+        { key: 'one', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'transfer' },
+        { key: 'two', providerId: 'provider-1', vehicleClassId: 'class-1', modality: 'disposition' },
+      ],
+      providerIds,
+      vehicleClassIds,
+    )).toEqual({
+      ready: [
+        { key: 'one', providerId: 'branded-provider-1', vehicleClassId: 'branded-class-1', modality: 'transfer' },
+        { key: 'two', providerId: 'branded-provider-1', vehicleClassId: 'branded-class-1', modality: 'disposition' },
+      ],
+      missing: [],
+    });
   });
 });

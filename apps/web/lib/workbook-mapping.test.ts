@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { mappingProblems, type VersionField, type WorkbookMapping } from './workbook-mapping';
+import {
+  mappingProblems,
+  targetFromValue,
+  targetValue,
+  type ColumnTarget,
+  type VersionField,
+  type WorkbookMapping,
+} from './workbook-mapping';
 
 const fields: readonly VersionField[] = [
   { fieldDefinitionId: 'required', required: true, config: { kind: 'text' } },
@@ -81,5 +88,48 @@ describe('workbook mapping validation', () => {
       { kind: 'ignored' },
     ];
     expect(mappingProblems(mapping, fields)).toEqual([]);
+  });
+});
+
+describe('column target select values', () => {
+  // Enumerated literally rather than iterated off `fixedTargets`: deriving the list
+  // from the code under test would make the round-trip assert nothing.
+  const fixed: readonly ColumnTarget[] = [
+    { kind: 'ignored' },
+    { kind: 'serviceName' },
+    { kind: 'startsAtDate' },
+    { kind: 'startsAtTime' },
+    { kind: 'endsAtDate' },
+    { kind: 'endsAtTime' },
+    { kind: 'provider' },
+    { kind: 'vehicleClass' },
+    { kind: 'modality' },
+    { kind: 'quantity' },
+    { kind: 'costCentre' },
+    { kind: 'workbookAmount' },
+  ];
+
+  test('round-trips every fixed target through its select value', () => {
+    for (const target of fixed) {
+      expect(targetFromValue(targetValue(target), ['passengers'])).toEqual(target);
+    }
+  });
+
+  test('round-trips a field target only while its field is on the selected version', () => {
+    expect(targetValue({ kind: 'field', fieldDefinitionId: 'passengers' })).toBe('field:passengers');
+    expect(targetFromValue('field:passengers', ['passengers', 'luggage'])).toEqual({
+      kind: 'field',
+      fieldDefinitionId: 'passengers',
+    });
+    // A field id from a version the operator has since switched away from.
+    expect(targetFromValue('field:passengers', ['luggage'])).toEqual({ kind: 'ignored' });
+  });
+
+  test('falls back to ignored for anything it does not recognize', () => {
+    expect(targetFromValue('provider ', ['passengers'])).toEqual({ kind: 'ignored' });
+    expect(targetFromValue('', ['passengers'])).toEqual({ kind: 'ignored' });
+    expect(targetFromValue('Provider', ['passengers'])).toEqual({ kind: 'ignored' });
+    expect(targetFromValue('field:', ['passengers'])).toEqual({ kind: 'ignored' });
+    expect(targetFromValue('toString', ['passengers'])).toEqual({ kind: 'ignored' });
   });
 });

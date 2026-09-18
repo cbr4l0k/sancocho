@@ -34,6 +34,42 @@ export function distinctRateLookupRequests(
   return [...distinct.values()];
 }
 
+export type RateLookupQueryArgs<TProviderId, TVehicleClassId> = {
+  readonly ready: readonly {
+    readonly key: string;
+    readonly providerId: TProviderId;
+    readonly vehicleClassId: TVehicleClassId;
+    readonly modality: RateLookupRequest['modality'];
+  }[];
+  readonly missing: readonly string[];
+};
+
+/**
+ * A plan carries plain strings, so the branded ids a query needs have to come back
+ * out of the catalogues. A request whose provider or vehicle class is not in the
+ * maps is reported rather than dropped: dropping it leaves its key absent from the
+ * results forever, `rateLookupCollectionState` reads that as `'loading'`, and the
+ * preview shows the pricing notice instead of the table for good.
+ */
+export function rateLookupQueryArgs<TProviderId extends string, TVehicleClassId extends string>(
+  requests: readonly RateLookupRequest[],
+  providerIds: ReadonlyMap<string, TProviderId>,
+  vehicleClassIds: ReadonlyMap<string, TVehicleClassId>,
+): RateLookupQueryArgs<TProviderId, TVehicleClassId> {
+  const ready: { key: string; providerId: TProviderId; vehicleClassId: TVehicleClassId; modality: RateLookupRequest['modality'] }[] = [];
+  const missing: string[] = [];
+  for (const request of requests) {
+    const providerId = providerIds.get(request.providerId);
+    const vehicleClassId = vehicleClassIds.get(request.vehicleClassId);
+    if (providerId === undefined || vehicleClassId === undefined) {
+      missing.push(request.key);
+      continue;
+    }
+    ready.push({ key: request.key, providerId, vehicleClassId, modality: request.modality });
+  }
+  return { ready, missing };
+}
+
 const currencyMembers = {
   COP: true,
   USD: true,

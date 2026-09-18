@@ -18,6 +18,12 @@ import { useCanonicalLocale } from '@/i18n/use-canonical-locale';
 import { formatFieldValue } from '@/lib/field-value-format';
 import { importRow } from '@/lib/import-row';
 import {
+  importSnapshot,
+  rateResultForWrite,
+  rowRateResult,
+  type ImportSnapshot,
+} from '@/lib/import-snapshot';
+import {
   canConfirmImport,
   canSetImportRowAction,
   importRowIsBlocked,
@@ -36,15 +42,22 @@ import {
 import { moneyDisplay } from '@/lib/money';
 import {
   distinctRateLookupRequests,
-  isRateLookupResult,
   rateLookupCollectionState,
-  rateLookupKey,
+  rateLookupQueryArgs,
   rateLookupResultsToRates,
   type RateLookupResult,
 } from '@/lib/rate-lookup-result';
 import { roleAtLeast } from '@/lib/roles';
 import { readWorkbook, type WorkbookSheet } from '@/lib/workbook-file';
-import { mappingProblems, type ColumnTarget, type MappingProblem, type VersionField, type WorkbookMapping } from '@/lib/workbook-mapping';
+import {
+  mappingProblems,
+  targetFromValue,
+  targetValue,
+  type ColumnTarget,
+  type MappingProblem,
+  type VersionField,
+  type WorkbookMapping,
+} from '@/lib/workbook-mapping';
 import {
   buildWorkbookPlan,
   summarizePlan,
@@ -67,21 +80,6 @@ const previewCellCount = 3;
 function cellText(cell: WorkbookRow['cells'][number] | undefined): string {
   if (cell === undefined || cell === null) return '';
   return String(cell);
-}
-
-function targetValue(target: ColumnTarget): string {
-  return target.kind === 'field' ? `field:${target.fieldDefinitionId}` : target.kind;
-}
-
-function targetFromValue(value: string, fieldDefinitionIds: readonly string[]): ColumnTarget {
-  const fieldDefinitionId = fieldDefinitionIds.find((id) => value === `field:${id}`);
-  if (fieldDefinitionId !== undefined) return { kind: 'field', fieldDefinitionId };
-  const fixed = [
-    'ignored', 'serviceName', 'startsAtDate', 'startsAtTime', 'endsAtDate', 'endsAtTime',
-    'provider', 'vehicleClass', 'modality', 'quantity', 'costCentre', 'workbookAmount',
-  ] as const;
-  const kind = fixed.find((candidate) => candidate === value);
-  return kind === undefined ? { kind: 'ignored' } : { kind };
 }
 
 export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
@@ -181,25 +179,25 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
   const mappingReady = mapping.length === columnCount && currentMappingProblems.length === 0;
   const basePlan = buildWorkbookPlan({ rows: dataRows, mapping, versionFields, catalogues });
   const rateRequests = previewRequested ? distinctRateLookupRequests(basePlan.rows) : [];
-  const priceQueries = (() => {
-    const requests: RequestForQueries = {};
-    if (!previewRequested || !canPreview) return requests;
-    for (const request of rateRequests) {
-      const provider = providers.results.find((item) => item._id === request.providerId);
-      const vehicleClass = vehicleClasses.results.find((item) => item._id === request.vehicleClassId);
-      if (provider === undefined || vehicleClass === undefined) continue;
-      requests[request.key] = {
-        query: api.assignments.queries.resolveProspectiveRate,
-        args: { eventId, providerId: provider._id, vehicleClassId: vehicleClass._id, modality: request.modality },
-      };
-    }
-    return requests;
-  })();
+  const providerIds = new Map(providers.results.map((item) => [String(item._id), item._id]));
+  const vehicleClassIds = new Map(vehicleClasses.results.map((item) => [String(item._id), item._id]));
+  const queryArgs = previewRequested && canPreview
+    ? rateLookupQueryArgs(rateRequests, providerIds, vehicleClassIds)
+    : { ready: [], missing: [] };
+  const priceQueries: RequestForQueries = Object.fromEntries(queryArgs.ready.map((entry) => [entry.key, {
+    query: api.assignments.queries.resolveProspectiveRate,
+    args: { eventId, providerId: entry.providerId, vehicleClassId: entry.vehicleClassId, modality: entry.modality },
+  }]));
   const rawRateResults: Readonly<Record<string, unknown>> = useQueries(priceQueries);
   // `useQueries` yields an Error for a query that threw, and an Error is not
   // `undefined` — so a bare presence check would let a failed lookup through as
   // though pricing had succeeded, and the row would be written as unpriced.
-  const pricingState = rateLookupCollectionState(rateRequests, rawRateResults);
+  //
+  // A request whose catalogue entry is missing is a failure, not a pending query:
+  // nothing will ever fill its key, so calling it `'loading'` hangs the preview.
+  const pricingState = queryArgs.missing.length > 0
+    ? 'error'
+    : rateLookupCollectionState(rateRequests, rawRateResults);
   const rates = rateLookupResultsToRates(rateRequests, rawRateResults);
   const plan = buildWorkbookPlan({ rows: dataRows, mapping, versionFields, catalogues: { ...catalogues, rates } });
 
@@ -437,8 +435,8 @@ export function WorkbookImportSurface({ eventId }: { eventId: EventId }) {
           eventId={eventId}
           serviceKindVersionId={selectedVersionId}
           fieldDefinitionIds={new Map(fields.map((item) => [String(item.fieldDefinitionId), item.fieldDefinitionId]))}
-          providerIds={new Map(providers.results.map((item) => [String(item._id), item._id]))}
-          vehicleClassIds={new Map(vehicleClasses.results.map((item) => [String(item._id), item._id]))}
+          providerIds={providerIds}
+          vehicleClassIds={vehicleClassIds}
           costCentreIds={new Map(costCentres.results.map((item) => [String(item._id), item._id]))}
           onRunningChange={setImportRunning}
           fieldLabels={fieldLabels}
@@ -535,28 +533,32 @@ function Preview({
   const [stopRequested, setStopRequested] = useState(false);
   const [running, setRunning] = useState(false);
   const [runState, setRunState] = useState<ImportRunState>();
-  /**
-   * `existingServices` is a live query over the very Event being written into, so
-   * without this the panel drifts from "Will create: 100" to "Already exists: 100"
-   * beside a report reading "Created: 100", and every created row grows a
-   * "matches an existing Service" note for the Service it just created.
-   */
-  const [frozenPlan, setFrozenPlan] = useState<WorkbookPlan>();
-  const plan = frozenPlan ?? livePlan;
   const [actions, setActions] = useState<ReadonlyMap<number, ImportRowAction>>(() => new Map(
-    plan.rows.map((row) => [row.rowNumber, initialImportRowAction(row, rowRateResult(row, rateResults))]),
+    livePlan.rows.map((row) => [row.rowNumber, initialImportRowAction(row, rowRateResult(row, rateResults))]),
   ));
-  const selections = plan.rows.map((row) => ({
-    row,
-    action: actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults)),
-  }));
-  const selectionCounts = importSelectionCounts(selections);
+  /**
+   * One snapshot pins the rows AND their rates. `existingServices` is a live query
+   * over the very Event being written into, so without the freeze the panel drifts
+   * from "Will create: 100" to "Already exists: 100" beside a report reading
+   * "Created: 100", and every created row grows a "matches an existing Service" note
+   * for the Service it just created.
+   */
+  const liveSnapshot = importSnapshot(
+    livePlan,
+    (row) => rowRateResult(row, rateResults),
+    (row) => actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults)),
+  );
+  const [frozen, setFrozen] = useState<ImportSnapshot>();
+  const view = frozen ?? liveSnapshot;
+  const plan = view.plan;
+  const itemsByRow = new Map(view.items.map((item) => [item.row.rowNumber, item]));
+  const selectionCounts = importSelectionCounts(view.items);
   const summary = runState === undefined ? undefined : runSummary(runState);
   // Recomputed from the operator's current selections, so the panel agrees with the
   // confirmation counts below it rather than describing the untouched defaults.
   const planSummary = summarizePlan(
     plan.rows,
-    (row) => actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults)),
+    (row) => itemsByRow.get(row.rowNumber)?.action ?? row.defaultAction,
   );
 
   /**
@@ -573,16 +575,13 @@ function Preview({
 
   async function runImport(): Promise<void> {
     if (running || selectionCounts.services === 0) return;
-    setFrozenPlan(plan);
-    const snapshot = selections.map((selection) => ({
-      ...selection,
-      rateResult: rowRateResult(selection.row, rateResults),
-    }));
+    setFrozen(view);
+    const items = view.items;
     stopRequestedRef.current = false;
     setStopRequested(false);
     setRunning(true);
     onRunningChange(true);
-    let nextState = startImportRun(snapshot.length);
+    let nextState = startImportRun(items.length);
     setRunState(nextState);
     let nextIndex = nextImportRowIndex(nextState);
     while (nextIndex !== undefined) {
@@ -591,7 +590,7 @@ function Preview({
         setRunState(nextState);
         break;
       }
-      const item = snapshot[nextIndex];
+      const item = items[nextIndex];
       if (item === undefined) break;
       const outcome: ImportRowOutcome = item.action === 'skip'
         ? { kind: 'skipped', rowNumber: item.row.rowNumber, reason: importRowSkipReason(item.row, item.rateResult) }
@@ -599,10 +598,7 @@ function Preview({
           { createService, createAssignment, createRevision, acceptRevision },
           {
             row: item.row,
-            // A row whose lookup errored is always blocked, so it is skipped above and
-            // never reaches here; narrowing rather than asserting keeps that true by
-            // construction instead of by comment.
-            rateResult: item.rateResult instanceof Error ? undefined : item.rateResult,
+            rateResult: rateResultForWrite(item.rateResult),
             eventId,
             serviceKindVersionId,
             fieldDefinitionIds,
@@ -625,7 +621,8 @@ function Preview({
   }
 
   function updateAction(row: PlannedRow, action: ImportRowAction): void {
-    if (runState !== undefined || !canSetImportRowAction(row, rowRateResult(row, rateResults), action)) return;
+    const item = itemsByRow.get(row.rowNumber);
+    if (runState !== undefined || item === undefined || !canSetImportRowAction(row, item.rateResult, action)) return;
     setActions((current) => new Map(current).set(row.rowNumber, action));
   }
 
@@ -667,23 +664,23 @@ function Preview({
             <TableHeaderCell>{t('outcome')}</TableHeaderCell>
           </TableRow></TableHead>
           <TableBody>
-            {plan.rows.map((row) => (
+            {view.items.map((item, index) => (
               <PreviewRow
-                key={row.rowNumber}
-                row={row}
+                key={item.row.rowNumber}
+                row={item.row}
                 fieldLabels={fieldLabels}
                 providerNames={providerNames}
                 vehicleClassNames={vehicleClassNames}
                 costCentreNames={costCentreNames}
                 locationNames={locationNames}
                 versionFields={versionFields}
-                rateResult={row.rateLookup === undefined ? undefined : rateResults[rateLookupKey(row.rateLookup)]}
+                rateResult={item.rateResult}
                 locale={locale}
-                action={actions.get(row.rowNumber) ?? initialImportRowAction(row, rowRateResult(row, rateResults))}
+                action={item.action}
                 actionLocked={runState !== undefined}
-                outcome={runState?.outcomes.find((outcome) => outcome.rowNumber === row.rowNumber)}
-                current={running && runState?.outcomes.length === plan.rows.findIndex((candidate) => candidate.rowNumber === row.rowNumber)}
-                onAction={(action) => updateAction(row, action)}
+                outcome={runState?.outcomes.find((outcome) => outcome.rowNumber === item.row.rowNumber)}
+                current={running && runState?.outcomes.length === index}
+                onAction={(action) => updateAction(item.row, action)}
               />
             ))}
           </TableBody>
@@ -775,7 +772,7 @@ function PreviewRow({
   costCentreNames: ReadonlyMap<string, string>;
   locationNames: ReadonlyMap<string, string>;
   versionFields: readonly VersionField[];
-  rateResult: unknown;
+  rateResult: RateLookupResult | Error | undefined;
   locale: ReturnType<typeof useCanonicalLocale>;
   action: ImportRowAction;
   actionLocked: boolean;
@@ -785,9 +782,11 @@ function PreviewRow({
 }) {
   const t = useTranslations('workbookImport');
   const rootT = useTranslations();
-  const lookupResult = isRateLookupResult(rateResult) ? rateResult : undefined;
+  const lookupResult = rateResultForWrite(rateResult);
   const comparison = row.amountComparison;
-  const blocked = importRowIsBlocked(row, lookupResult);
+  // The raw value, not the narrowed one: an errored lookup blocks the row, and
+  // offering "create" for it contradicts `canSetImportRowAction`.
+  const blocked = importRowIsBlocked(row, rateResult);
   return (
     <TableRow>
       <TableRowHeaderCell className="font-mono text-xs tabular-nums">{row.rowNumber}</TableRowHeaderCell>
@@ -865,21 +864,6 @@ function PreviewRow({
       </TableCell>
     </TableRow>
   );
-}
-
-/**
- * An errored lookup is returned as the Error itself rather than collapsed to
- * `undefined`: `importRowIsBlocked` treats it as blocking, because not knowing a
- * row's rate is not the same as knowing it has none.
- */
-function rowRateResult(
-  row: PlannedRow,
-  results: Readonly<Record<string, unknown>>,
-): RateLookupResult | Error | undefined {
-  if (row.rateLookup === undefined) return undefined;
-  const value = results[rateLookupKey(row.rateLookup)];
-  if (value instanceof Error) return value;
-  return isRateLookupResult(value) ? value : undefined;
 }
 
 function outcomeTone(outcome: ImportRowOutcome): string {

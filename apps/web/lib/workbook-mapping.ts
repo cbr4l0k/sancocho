@@ -34,9 +34,47 @@ export type MappingProblem =
   | { kind: 'partialAssignment'; missing: readonly ('provider' | 'vehicleClass' | 'modality' | 'quantity')[] }
   | { kind: 'workbookAmountWithoutAssignment' };
 
+/**
+ * Exhaustive over every non-`field` arm, so adding a `ColumnTarget` kind is a `tsc`
+ * failure here rather than a select option that silently maps to `{kind:'ignored'}`.
+ */
+const fixedTargets = {
+  ignored: true,
+  serviceName: true,
+  startsAtDate: true,
+  startsAtTime: true,
+  endsAtDate: true,
+  endsAtTime: true,
+  provider: true,
+  vehicleClass: true,
+  modality: true,
+  quantity: true,
+  costCentre: true,
+  workbookAmount: true,
+} as const satisfies Record<Exclude<ColumnTarget['kind'], 'field'>, true>;
+
+function isFixedTargetKind(value: string): value is Exclude<ColumnTarget['kind'], 'field'> {
+  return Object.hasOwn(fixedTargets, value);
+}
+
+/** The select option value for a column target; `targetFromValue` is its inverse. */
+export function targetValue(target: ColumnTarget): string {
+  return target.kind === 'field' ? `field:${target.fieldDefinitionId}` : target.kind;
+}
+
+/**
+ * Anything not recognised becomes `ignored`: a field id no longer on the selected
+ * version, or a value this build does not know, must not be mapped to a column.
+ */
+export function targetFromValue(value: string, fieldDefinitionIds: readonly string[]): ColumnTarget {
+  const fieldDefinitionId = fieldDefinitionIds.find((id) => value === `field:${id}`);
+  if (fieldDefinitionId !== undefined) return { kind: 'field', fieldDefinitionId };
+  return isFixedTargetKind(value) ? { kind: value } : { kind: 'ignored' };
+}
+
 function targetKey(target: ColumnTarget): string | undefined {
   if (target.kind === 'ignored') return undefined;
-  return target.kind === 'field' ? `field:${target.fieldDefinitionId}` : target.kind;
+  return targetValue(target);
 }
 
 export function mappingProblems(
