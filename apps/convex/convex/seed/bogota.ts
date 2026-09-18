@@ -10,6 +10,7 @@ import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { createProject } from '../projects/model';
 import { provisionStarterServiceKinds } from '../serviceKinds/builtins';
+import { provisionStarterVehicleClasses } from '../vehicles/builtins';
 import type { serviceFieldValueValidator } from '../validators';
 import { resolveSeedOwnerContext } from './identity';
 
@@ -217,10 +218,17 @@ export const seedBogotaOperations = internalMutation({
 
     const { organization, seeded } = await resolveSeedOwnerContext(ctx, args.organizationSlug);
 
-    // The catalogue and starter serviceKinds are prerequisites, and both are
-    // idempotent, so this doubles as the repair path after a reset.
+    // The catalogue, starter serviceKinds and starter Vehicle Classes are
+    // prerequisites, and all three are idempotent, so this doubles as the repair
+    // path after a reset.
+    //
+    // Vehicle Classes are here because `resetTenantOperations` now sweeps that
+    // table: starter classes are otherwise provisioned only at organization
+    // creation, which a reset never re-runs, so without this a reset-then-reseed
+    // would leave this tenant permanently without a catalogue.
     const fieldIds = await ensureBuiltinFieldDefinitions(ctx);
     await provisionStarterServiceKinds(seeded, organization._id, fieldIds);
+    await provisionStarterVehicleClasses(seeded, organization._id);
 
     const locationIds = new Map<LocationKey, Id<'locations'>>();
     for (const location of locations) {

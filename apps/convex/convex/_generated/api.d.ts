@@ -69,6 +69,7 @@ import type * as seed_bogota from "../seed/bogota.js";
 import type * as seed_cordillera from "../seed/cordillera.js";
 import type * as seed_identity from "../seed/identity.js";
 import type * as seed_mutations from "../seed/mutations.js";
+import type * as seed_providerOrganization from "../seed/providerOrganization.js";
 import type * as seed_reset from "../seed/reset.js";
 import type * as serviceKinds_builtins from "../serviceKinds/builtins.js";
 import type * as serviceKinds_fields_model from "../serviceKinds/fields/model.js";
@@ -156,6 +157,7 @@ declare const fullApi: ApiFromModules<{
   "seed/cordillera": typeof seed_cordillera;
   "seed/identity": typeof seed_identity;
   "seed/mutations": typeof seed_mutations;
+  "seed/providerOrganization": typeof seed_providerOrganization;
   "seed/reset": typeof seed_reset;
   "serviceKinds/builtins": typeof serviceKinds_builtins;
   "serviceKinds/fields/model": typeof serviceKinds_fields_model;
