@@ -472,6 +472,25 @@ a decision to stop rather than guess.
     have different status vocabularies and one control cannot honestly narrow both.
     `docs/export.md` §Filters.
 
+43. **The export audit log records the blessed path, not every bulk read (#36).** The
+    `export.requested` gate floors at admin, but every query the walk drives floors at plain
+    membership — `listOrganizationServices`, `listProjects`, `listLocations` and the rest all
+    admit a viewer, because they are the screens. A member who may read them can drive them
+    with any Convex client and assemble a byte-identical workbook without writing an audit
+    row. Closing that would mean raising the per-query floors and making the Services screen
+    admin-only, which trades a working surface for a log entry. Found by the invariant
+    audit of `1f33235`, which correctly called the original wording in `docs/export.md` an
+    overclaim; the doc now says exactly what the floor covers. `docs/export.md` §Authority.
+
+44. **A public audit write can be repeated without a corresponding state change (#36).**
+    Every other audit row is a side effect of a real domain write, so its volume is bounded
+    by data actually being created. `recordExportRequest` is not: an admin can call it in a
+    loop and append rows indefinitely, pushing genuine history off the newest-first pages an
+    owner reads. Self-tenant and admin-only, nothing forgeable — the caller names no action,
+    actor, entity or metadata key. There is no rate limiting anywhere in this backend, so a
+    collapse-duplicates rule here would be the first of its kind and belongs with that
+    decision rather than ahead of it. `apps/convex/convex/audit/mutations.ts`.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

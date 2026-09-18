@@ -235,6 +235,7 @@ export function ExportSurface() {
                 </li>
               ))}
             </Sheets>
+            <p className="text-sm text-ink-2">{t('export.projectScopeNotice')}</p>
             <p className="text-sm text-ink-2">{t('export.verbatimNotice')}</p>
             <Progress progress={progress} />
             {failure === null ? null : <Failure progress={progress} message={failure} />}

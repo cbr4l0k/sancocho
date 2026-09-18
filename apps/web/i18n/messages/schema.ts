@@ -968,6 +968,7 @@ export type MessageSchema = {
     filtersTitle: string;
     allProjects: string;
     projectFilter: string;
+    projectScopeNotice: string;
     generate: string;
     generating: string;
     progress: string;

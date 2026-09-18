@@ -58,7 +58,15 @@ export function recordAuditEvent(
   return ctx.db.insert('auditEvents', { ...event, metadata: sanitizeAuditMetadata(event.metadata) });
 }
 
-/** Member-only authorization gate and start marker for a bulk tenant export. */
+/**
+ * Member-only authorization gate and start marker for a bulk tenant export.
+ *
+ * The floor is admin because an export is qualitatively unlike the screens it draws from.
+ * Note precisely what that floor governs: the RECORDED export path. Every query the walk
+ * drives enforces its own chain, and most of them floor at plain membership, so this is
+ * not a claim that a viewer cannot assemble the same rows by other means — see
+ * docs/export.md "What the floor does and does not cover".
+ */
 export async function recordExportRequest(
   ctx: MutationCtx,
   args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; sheets: ExportSheet[] },
@@ -70,6 +78,15 @@ export async function recordExportRequest(
       return notFoundOrInaccessible();
     }
   }
+  // These two reuse `auditMetadataInvalid` deliberately: they are unreachable from the
+  // console, which sends a constant sheet set, so they exist to keep a hand-made call from
+  // writing a row that misdescribes what was extracted. A dedicated code would add
+  // vocabulary for a message no operator can provoke.
+  //
+  // There is deliberately no separate length bound. `sheets` is already closed to the
+  // union's members by the validator, so any array longer than the union is necessarily
+  // duplicated and the check below refuses it — a length guard could never refuse an input
+  // this one does not, which is to say no test could tell it from dead code.
   if (args.sheets.length === 0) {
     return invalidInput('auditMetadataInvalid', 'An export must request at least one sheet');
   }

@@ -36,6 +36,28 @@ generic not-found every other member-only read gives it (I9).
 The console hides the affordance below `admin` through `lib/roles.ts`. That is
 presentation only and never the check that holds (I1).
 
+### What the floor does and does not cover
+
+Be precise about what that admin floor buys, because it is easy to overstate.
+
+It governs the **recorded export path**: the blessed action, the one that writes an audit
+row and the one the console offers. It is not a claim that the underlying data is
+admin-only. Every query the walk drives enforces its own chain, and most of them floor at
+plain membership — `listProjects`, `listMembers`, `listLocations`, `listCostCentres`,
+`listServiceKinds`, `listOrganizationEvents` and `listOrganizationServices` all admit a
+viewer. A member who may read those queries can drive them with any Convex client and
+assemble a byte-identical workbook **without producing an `export.requested` row**.
+
+So the audit log records the exports that went through the product, not every bulk read of
+the tenant. Closing that gap means raising the per-query floors — making the Services
+screen admin-only — which trades a real working surface for a log entry, and is not a
+trade this product should make. What the floor and the log genuinely give is a named,
+attributable, member-only way to take the whole record out, and a refusal for anyone below
+admin who asks the product for one.
+
+The tenant boundary is unaffected either way: nothing here lets a caller read what their
+own chain does not already admit, and a Provider Principal reaches none of it.
+
 ## The audit event
 
 **Yes, an export records one**, through a new public mutation in the `audit` domain with
@@ -55,6 +77,17 @@ public "record this" path today, so this is a genuinely new shape and stays narr
   string reaches the log. The status narrowing is deliberately not recorded: Events and
   Services have different status vocabularies, and one metadata key holding either would
   say something ambiguous about which list it narrowed.
+- **`projectId` narrows the Events and Services sheets only.** Projects, Locations, Service
+  Kinds — and the Cost Centres and member roster the Events sheet resolves its names
+  from — are organization-wide in every export, because they are the configuration the
+  operational rows point at and a Project-shaped slice of them would be missing names its
+  own rows need. A reader of the log must not take a row carrying `projectId` to mean that
+  only that Project left the tenant. The console says the same thing under the filter, so
+  the operator is not misled either.
+- The sheet list is bounded by the union itself: `sheets` is closed to the union's members
+  and may not repeat, so it can never name more than the five sheets that exist. There is
+  no separate length guard, because any longer array is necessarily a repeated one and such
+  a guard could refuse nothing the duplicate rule does not.
 
 It is emitted **before the walk, not after**, which is why the action says `requested`
 rather than `generated`. The mutation is also the export's single authorization gate, and
@@ -199,6 +232,12 @@ controls the displayed decimals; the stored number stays the true value.
 The export scope is the **current Organization**, narrowed optionally by **Project** —
 the one filter `listOrganizationEvents` and `listOrganizationServices` both accept and
 both mean the same thing by.
+
+That narrowing applies to **those two sheets only**. The configuration sheets stay whole:
+a Service in the chosen Project points at a Service Kind, a Location and a Cost Centre,
+and slicing those catalogues by Project would leave the operational rows referring to
+names the file does not contain. The screen states this under the filter rather than
+leaving the operator to discover it in the file.
 
 **Status is deliberately not offered.** Events and Services have different status
 vocabularies, so a single control would either narrow one sheet and not the other or

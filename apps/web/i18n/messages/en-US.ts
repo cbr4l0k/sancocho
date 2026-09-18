@@ -1104,6 +1104,8 @@ const enUS = {
     filtersTitle: 'Scope',
     allProjects: 'All projects',
     projectFilter: 'Project',
+    projectScopeNotice:
+      'The project filters the Events and Services sheets. The configuration catalogues export whole, because the operational rows refer to them.',
     generate: 'Generate file',
     generating: 'Generating…',
     progress: 'Reading {sheet}: {count, plural, =0 {no rows} one {# row} other {# rows}}',

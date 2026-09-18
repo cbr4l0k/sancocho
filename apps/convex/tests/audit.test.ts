@@ -173,6 +173,27 @@ test('an empty export sheet list is invalid and writes no audit row', async () =
   expect(await countAuditEvents(t)).toBe(before);
 });
 
+test('the whole sheet set records, and anything longer than it cannot help but repeat', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-whole-set-owner');
+  const before = await countAuditEvents(t);
+
+  // The console's own call: every sheet, exactly once. This is the case the duplicate
+  // check must NOT refuse, and without it the ordinary export would be rejected.
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events', 'services', 'projects', 'serviceKinds', 'locations'],
+  })).resolves.toBeNull();
+  expect(await countAuditEvents(t)).toBe(before + 1);
+
+  // `sheets` is closed to the union's members, so a longer array is necessarily a repeated
+  // one — which is why the duplicate rule is the whole bound and no length guard exists.
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events', 'services', 'projects', 'serviceKinds', 'locations', 'events'],
+  })).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
+  expect(await countAuditEvents(t)).toBe(before + 1);
+});
+
 test('a duplicate export sheet is invalid and writes no audit row', async () => {
   const { t, owner, organizationId } = await exportFixture('audit-export-duplicate-owner');
   const before = await countAuditEvents(t);
