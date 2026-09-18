@@ -532,18 +532,30 @@ a decision to stop rather than guess.
     audit of the Assignment layer. `apps/convex/convex/seed/cordillera.ts`,
     `apps/convex/tests/seed-supply.test.ts`.
 
-49. **One surviving mutant, and it is equivalent (#98).** The cancelled Assignments' write-off is
-    derived from the accepted revision's stored `lineTotal` rather than from the Service's
-    `notExecutedAmount` workbook column, so that "the whole agreed amount went unexecuted" is true by
-    construction rather than by coincidence. Re-injecting the column-derived version **survived all
-    652 tests**: with quantity 1 on every seeded row and the workbook figure equal to the Rate Card
-    cell, the two expressions produce identical values today. No test can separate them without
-    seeding data that diverges, and asserting which expression the source uses would test the
-    implementation rather than the behaviour. Recorded rather than papered over: the change removes a
-    real fragility (a divergent column would either under-report a cancellation or push
-    `assignmentNet` negative and roll the entire seed back), and the day the data diverges the mutant
-    stops being equivalent. The other six mutants injected each killed a named test.
-    `apps/convex/convex/seed/cordillera.ts`.
+49. **Every seeded row priced a single vehicle, which made the multiplier untestable (#98).** The
+    cancelled Assignments' write-off is derived from the accepted revision's stored `lineTotal`
+    rather than from the Service's `notExecutedAmount` workbook column, so that "the whole agreed
+    amount went unexecuted" is true by construction. Re-injecting the column-derived version at first
+    **survived the entire suite**: with `vehicleQuantity` 1 on all 90 rows and the workbook figure
+    equal to the Rate Card cell, the two expressions were numerically identical. The same blindness
+    hid something larger — `lineTotal` is `unitAmount × quantity`, and with quantity 1 everywhere no
+    test could tell a correct line total from one that ignored the count entirely.
+
+    Fixed in the data rather than the assertion: one cancelled row (Jarabe de Palo's show leg) now
+    prices **two** vehicles, which the workbook does for real rows. The mutant now dies on a literal
+    that already existed, committed moves to 4 633 000 000 and the write-off to 206 000 000 minor
+    units, and the multiplier finally has a row that exercises it. Found by the test-coverage audit.
+    `apps/convex/convex/seed/cordillera.ts`, `apps/convex/tests/seed-supply.test.ts`.
+
+50. **The dev reset wipes the provider organizations' starter catalogues and only the coordinator's
+    are rebuilt (#98).** `resetTenantOperations` scans deployment-wide, so it also clears the
+    `vehicleClasses` and starter Service Kinds of the two provider-side Organizations that
+    `seedProviderOrganizations` creates — and only the coordinator tenant is re-provisioned on a
+    reseed, leaving those two with empty catalogues. Harmless today: a Provider principal reads the
+    coordinator's projection through `listProviderDispatchDay` and never its own catalogue, so the
+    portal is unaffected. Recorded rather than fixed because the honest fix is for the provider seed
+    to re-provision what it created, and that is only worth doing when a provider-side configuration
+    surface exists to need it. `apps/convex/convex/seed/reset.ts`.
 
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization

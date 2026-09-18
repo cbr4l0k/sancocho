@@ -30,11 +30,28 @@ const venueName = 'Parque Simón Bolívar — Cordillera';
 const festivalDayFrom = Date.UTC(2026, 8, 12, 5, 0, 0);
 const festivalDayTo = Date.UTC(2026, 8, 13, 5, 0, 0);
 
-const committedAcceptedLineTotal = 4_552_000_000;
+const committedAcceptedLineTotal = 4_633_000_000;
 const acceptedRevisionCount = 82;
-const cancelledWriteOffTotal = 125_000_000;
+const cancelledWriteOffTotal = 206_000_000;
 const cancelledAssignmentCount = 3;
 const expectedCheckpointCount = 95;
+const expectedCheckpointKindCounts: Record<Doc<'assignmentCheckpoints'>['kind'], number> = {
+  arrivedAtOrigin: 39,
+  departedOrigin: 39,
+  arrivedAtDestination: 17,
+};
+const expectedVehicleClassCount = 15;
+const expectedRateLineCount = 19;
+const expectedAdditionalChargesMinorUnits = 7_000_000;
+const expectedAdditionalDetailCount = 2;
+const festivalDayAssignmentTotal = 33;
+const festivalDayUnassigned = 1;
+const starterCargoVanNote = 'Enclosed load bay; palletised freight';
+const starterCargoTruckNote = 'Truck bed; heavy or oversized freight';
+const altiplanoSlug = 'rutas-altiplano';
+const ownerEmail = 'owner@example.com';
+const andesContactEmail = 'operaciones@transportesandes.invalid';
+const altiplanoContactEmail = 'despacho@rutasaltiplano.invalid';
 const h1TransferMinorUnits = 18_500_000;
 const h1DispositionMinorUnits = 64_000_000;
 const sprinterDispositionMinorUnits = 81_000_000;
@@ -77,7 +94,7 @@ async function tenant(t: SchemaTest) {
     issuer,
     subject: 'cordillera-owner',
     name: 'Owner',
-    email: 'owner@example.com',
+    email: ownerEmail,
     emailVerified: true,
   });
   await client.mutation(ensureUser, {});
@@ -126,17 +143,27 @@ test('accepted Assignment Revisions store the workbook committed total in COP mi
     expect(accepted).toHaveLength(acceptedRevisionCount);
 
     let committed = 0;
+    // Exactly one seeded row prices more than a single vehicle. Without it the
+    // multiplier is untestable: with quantity 1 everywhere `lineTotal` and
+    // `unitAmount` are indistinguishable, so a `lineTotal` that ignored the
+    // count entirely would satisfy every assertion in this file.
+    const multiVehicle: Doc<'assignmentRevisions'>[] = [];
     for (const revision of accepted) {
       expect(revision.currency).toBe('COP');
       expect(revision.revisionNumber).toBe(1);
-      expect(revision.quantity).toBe(1);
       expect(revision.lineTotal).toBe(revision.unitAmount * revision.quantity);
+      if (revision.quantity === 2) multiVehicle.push(revision);
       const rateLine = await ctx.db.get(revision.rateLineId);
       if (rateLine === null) throw new Error('Expected the Rate Line behind an accepted revision');
       expect(rateLine.organizationId).toBe(organizationId);
       expect(revision.unitAmount).toBe(rateLine.unitAmount);
       committed += revision.lineTotal;
     }
+    expect(multiVehicle).toHaveLength(1);
+    const twoVehicles = multiVehicle[0];
+    if (twoVehicles === undefined) throw new Error('Expected the seeded two-vehicle revision');
+    expect(twoVehicles.lineTotal).toBe(162_000_000);
+    expect(twoVehicles.unitAmount).toBe(81_000_000);
     expect(committed).toBe(committedAcceptedLineTotal);
   });
 }, 30_000);
@@ -179,7 +206,7 @@ test('published Andes rate lines store H1 transfer, H1 disposition and Sprinter 
   });
 }, 30_000);
 
-test('cancelled Assignments write off the accepted revision lineTotal and sum to 125000000', async () => {
+test('cancelled Assignments write off the accepted revision lineTotal and sum to 206000000', async () => {
   const t = convexTest(schema, modules);
   const { project } = await seedCoordinator(t);
 
@@ -287,6 +314,8 @@ test('re-running the Cordillera seed does not duplicate commercial rows', async 
   expect(before).toMatchObject({
     providers: 2,
     rateCards: 2,
+    rateLines: expectedRateLineCount,
+    vehicleClasses: expectedVehicleClassCount,
     costCentres: 6,
     fleetVehicles: 8,
     assignments: 90,
@@ -310,12 +339,17 @@ test('re-running the Cordillera seed does not duplicate commercial rows', async 
 test('resetTenantOperations leaves no assignment rows and no audit pointing at a deleted entity', async () => {
   const t = convexTest(schema, modules);
   await seedCoordinator(t);
+  await t.mutation(seedProviderOrganizations, { organizationSlug: slug });
   await t.mutation(resetTenantOperations, {});
 
   await t.run(async (ctx) => {
     expect(await ctx.db.query('assignments').collect()).toHaveLength(0);
     expect(await ctx.db.query('assignmentRevisions').collect()).toHaveLength(0);
     expect(await ctx.db.query('assignmentCheckpoints').collect()).toHaveLength(0);
+    expect(await ctx.db.query('providerAccessGrants').collect()).toHaveLength(0);
+    const claimInvitations = (await ctx.db.query('organizationInvitations').collect())
+      .filter((invitation) => invitation.kind === 'providerClaim');
+    expect(claimInvitations).toHaveLength(0);
 
     const remainingIds = new Set<string>();
     for (const row of [
@@ -345,13 +379,20 @@ test('resetTenantOperations leaves no assignment rows and no audit pointing at a
       remainingIds.add(String(row._id));
     }
     const audits = await ctx.db.query('auditEvents').collect();
+    expect(audits.length).toBeGreaterThan(0);
+    const survivingHistory: ReadonlySet<Doc<'auditEvents'>['entityType']> = new Set([
+      'organization',
+      'membership',
+      'project',
+    ]);
     for (const audit of audits) {
       expect(remainingIds.has(audit.entityId), `${audit.entityType} ${audit.entityId} must still resolve`).toBe(true);
+      expect(survivingHistory.has(audit.entityType), `${audit.entityType} must be organization, membership or project history`).toBe(true);
     }
   });
-}, 40_000);
+}, 50_000);
 
-test('dispatchDayReadiness on 12 September 2026 reports a non-zero unassigned', async () => {
+test('dispatchDayReadiness on 12 September 2026 reports 33 total and 1 unassigned', async () => {
   const t = convexTest(schema, modules);
   const { client, project } = await seedCoordinator(t);
   const readiness = await client.query(dispatchDayReadiness, {
@@ -359,24 +400,62 @@ test('dispatchDayReadiness on 12 September 2026 reports a non-zero unassigned', 
     from: festivalDayFrom,
     to: festivalDayTo,
   });
-  expect(readiness.unassigned).toBeGreaterThan(0);
+  expect(readiness.total).toBe(festivalDayAssignmentTotal);
+  expect(readiness.unassigned).toBe(festivalDayUnassigned);
+  expect(readiness.complete).toBe(true);
 }, 30_000);
 
 test('the provider arm resolves for Transportes Andes and refuses Rutas del Altiplano', async () => {
   const t = convexTest(schema, modules);
-  const { project } = await seedCoordinator(t);
+  const { organizationId, project } = await seedCoordinator(t);
   await t.mutation(seedProviderOrganizations, { organizationSlug: slug });
+
+  await t.run(async (ctx) => {
+    const providers = await ctx.db.query('providers').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
+    const altiplanoProvider = providers.find((provider) => provider.name === altiplanoProviderName);
+    if (altiplanoProvider === undefined) throw new Error('Expected Rutas del Altiplano SAS');
+    expect(altiplanoProvider.linkedOrganizationId).toBeDefined();
+
+    const altiplanoOrg = await ctx.db
+      .query('organizations')
+      .withIndex('by_slug', (q) => q.eq('slug', altiplanoSlug))
+      .unique();
+    if (altiplanoOrg === null) throw new Error('Expected the Rutas del Altiplano organization');
+    expect(altiplanoProvider.linkedOrganizationId).toBe(altiplanoOrg._id);
+
+    const invitations = await ctx.db.query('organizationInvitations').collect();
+    const altiplanoClaims = invitations.filter(
+      (invitation) => invitation.kind === 'providerClaim' && invitation.providerId === altiplanoProvider._id,
+    );
+    expect(altiplanoClaims).toHaveLength(1);
+    const altiplanoClaim = altiplanoClaims[0];
+    if (altiplanoClaim === undefined) throw new Error('Expected the Rutas del Altiplano providerClaim invitation');
+    expect(altiplanoClaim.status).toBe('accepted');
+
+    const altiplanoGrants = (await ctx.db.query('providerAccessGrants').collect())
+      .filter((grant) => grant.providerId === altiplanoProvider._id);
+    expect(altiplanoGrants).toHaveLength(0);
+
+    const users = await ctx.db.query('users').collect();
+    expect(users).toHaveLength(3);
+    const emails: string[] = [];
+    for (const user of users) {
+      if (user.email === undefined) throw new Error('Expected every seeded user to carry an email');
+      emails.push(user.email);
+    }
+    expect([...emails].sort()).toEqual([altiplanoContactEmail, andesContactEmail, ownerEmail]);
+  });
 
   const andes = t.withIdentity({
     issuer: providerSeedIssuer,
     subject: 'provider-organization:transportes-andes',
-    email: 'operaciones@transportesandes.invalid',
+    email: andesContactEmail,
     emailVerified: true,
   });
   const altiplano = t.withIdentity({
     issuer: providerSeedIssuer,
     subject: 'provider-organization:rutas-altiplano',
-    email: 'despacho@rutasaltiplano.invalid',
+    email: altiplanoContactEmail,
     emailVerified: true,
   });
   const dispatchArgs = {
@@ -394,6 +473,9 @@ test('the provider arm resolves for Transportes Andes and refuses Rutas del Alti
   });
 
   await t.run(async (ctx) => {
+    const providers = await ctx.db.query('providers').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
+    const andesProvider = providers.find((provider) => provider.name === andesProviderName);
+    if (andesProvider === undefined) throw new Error('Expected Transportes Andes SAS');
     const assignments = await ctx.db.query('assignments').withIndex('by_project_position', (q) => q.eq('projectId', project._id)).collect();
     const countered: Doc<'assignmentRevisions'>[] = [];
     for (const assignment of assignments) {
@@ -405,6 +487,10 @@ test('the provider arm resolves for Transportes Andes and refuses Rutas del Alti
     expect(countered).toHaveLength(1);
     const counter = countered[0];
     if (counter === undefined) throw new Error('Expected the seeded Provider counter');
+    expect(counter.quantity).toBe(2);
+    expect(counter.revisionNumber).toBe(2);
+    expect(counter.lineTotal).toBe(counter.unitAmount * 2);
+    expect(counter.proposedOnBehalfOfProviderId).toBe(andesProvider._id);
     const assignment = await ctx.db.get(counter.assignmentId);
     if (assignment === null) throw new Error('Expected the Assignment belonging to the counter');
     expect(assignment.executionStatus).toBe('unassigned');
@@ -419,6 +505,11 @@ test('the provider arm resolves for Transportes Andes and refuses Rutas del Alti
 test('workbook cargo classes resolve to the starter rows and the Event carries the festival budget', async () => {
   const t = convexTest(schema, modules);
   const { organizationId, project } = await seedCoordinator(t);
+  // Sweeping vehicleClasses is only safe because the Cordillera seed re-provisions
+  // the starter catalogue. Org creation already planted those rows; reset is
+  // what makes this seed call the thing that restores them.
+  await t.mutation(resetTenantOperations, {});
+  await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
 
   await t.run(async (ctx) => {
     const classes = await ctx.db.query('vehicleClasses').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
@@ -426,6 +517,13 @@ test('workbook cargo classes resolve to the starter rows and the Event carries t
     const cargoTruck = classes.filter((vehicleClass) => normalizeSearchText(vehicleClass.name) === 'cargo truck');
     expect(cargoVan).toHaveLength(1);
     expect(cargoTruck).toHaveLength(1);
+    const cargoVanRow = cargoVan[0];
+    const cargoTruckRow = cargoTruck[0];
+    if (cargoVanRow === undefined || cargoTruckRow === undefined) {
+      throw new Error('Expected the starter cargo vehicle classes');
+    }
+    expect(cargoVanRow.cargoCapacityNote).toBe(starterCargoVanNote);
+    expect(cargoTruckRow.cargoCapacityNote).toBe(starterCargoTruckNote);
 
     const events = await ctx.db.query('events').withIndex('by_project_startsAt', (q) => q.eq('projectId', project._id)).collect();
     expect(events).toHaveLength(1);
@@ -446,7 +544,7 @@ test('workbook cargo classes resolve to the starter rows and the Event carries t
     if (owner === undefined) throw new Error('Expected the seeding owner membership');
     expect(event.accountableUserId).toBe(owner.userId);
   });
-}, 30_000);
+}, 50_000);
 
 test('the seed writes 95 assignment checkpoints', async () => {
   // Expected to fail from roughly September 2027: recordAssignmentCheckpoint
@@ -462,5 +560,58 @@ test('the seed writes 95 assignment checkpoints', async () => {
     const checkpoints = (await ctx.db.query('assignmentCheckpoints').collect())
       .filter((checkpoint) => checkpoint.organizationId === organizationId);
     expect(checkpoints).toHaveLength(expectedCheckpointCount);
+    const byKind: Record<Doc<'assignmentCheckpoints'>['kind'], number> = {
+      arrivedAtOrigin: 0,
+      departedOrigin: 0,
+      arrivedAtDestination: 0,
+    };
+    for (const checkpoint of checkpoints) {
+      byKind[checkpoint.kind] += 1;
+    }
+    expect(byKind).toEqual(expectedCheckpointKindCounts);
+  });
+}, 30_000);
+
+test('seedProviderOrganizations is a no-op on a second run', async () => {
+  const t = convexTest(schema, modules);
+  const { organizationId } = await seedCoordinator(t);
+  await t.mutation(seedProviderOrganizations, { organizationSlug: slug });
+  await expect(t.mutation(seedProviderOrganizations, { organizationSlug: slug })).resolves.toEqual({
+    organizations: 0,
+    claims: 0,
+    grants: 0,
+    counteredRevisions: 0,
+  });
+
+  await t.run(async (ctx) => {
+    const providers = await ctx.db.query('providers').withIndex('by_org', (q) => q.eq('organizationId', organizationId)).collect();
+    expect(providers).toHaveLength(2);
+    for (const provider of providers) {
+      expect(provider.linkedOrganizationId).toBeDefined();
+    }
+    expect(await ctx.db.query('providerAccessGrants').collect()).toHaveLength(1);
+    const acceptedClaims = (await ctx.db.query('organizationInvitations').collect())
+      .filter((invitation) => invitation.kind === 'providerClaim' && invitation.status === 'accepted');
+    expect(acceptedClaims).toHaveLength(2);
+    const countered = (await ctx.db.query('assignmentRevisions').collect())
+      .filter((revision) => revision.organizationId === organizationId && revision.proposedOnBehalfOfProviderId !== undefined);
+    expect(countered).toHaveLength(1);
+  });
+}, 50_000);
+
+test('two Assignments store additionalCharges summing to 7000000 minor units', async () => {
+  const t = convexTest(schema, modules);
+  const { project } = await seedCoordinator(t);
+
+  await t.run(async (ctx) => {
+    const assignments = await ctx.db.query('assignments').withIndex('by_project_position', (q) => q.eq('projectId', project._id)).collect();
+    let additionalCharges = 0;
+    let additionalDetailCount = 0;
+    for (const assignment of assignments) {
+      if (assignment.additionalCharges !== undefined) additionalCharges += assignment.additionalCharges;
+      if (assignment.additionalDetail !== undefined) additionalDetailCount += 1;
+    }
+    expect(additionalCharges).toBe(expectedAdditionalChargesMinorUnits);
+    expect(additionalDetailCount).toBe(expectedAdditionalDetailCount);
   });
 }, 30_000);

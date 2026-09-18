@@ -416,6 +416,14 @@ type ArtistChain = {
   key: string; artist: string; stage: Stage; hotel: LocationKey; vehicle: Vehicle; transferRate: number; dispositionRate: number;
   passengers: number; arrival: readonly [number, number, number]; show: readonly [number, number, number]; departure: readonly [number, number, number];
   party?: 'a' | 'b' | 'c' | 'bc' | 'inv'; hotelNote?: string;
+  /**
+   * Vehicles on the SHOW leg. Every other seeded row is a single vehicle, which
+   * made the whole demonstration blind to its own multiplier: `lineTotal` is
+   * `unitAmount × quantity`, and with quantity 1 everywhere the two are
+   * indistinguishable, so nothing could tell a correct line total from one that
+   * ignored the count. The workbook prices multi-vehicle rows, so one is seeded.
+   */
+  showVehicles?: number;
 };
 
 const artistChains: readonly ArtistChain[] = [
@@ -431,7 +439,7 @@ const artistChains: readonly ArtistChain[] = [
   { key: 'poligamia', artist: 'Poligamia', stage: 'stage4', hotel: 'bhLaQuinta', vehicle: 'duster', transferRate: 95000, dispositionRate: 525000, passengers: 4, arrival: [11, 15, 0], show: [12, 15, 45], departure: [13, 15, 0] },
   { key: 'virus', artist: 'Virus', stage: 'stage4', hotel: 'marriottBogota', vehicle: 'sprinter', transferRate: 220000, dispositionRate: 810000, passengers: 12, arrival: [11, 11, 50], show: [12, 17, 30], departure: [13, 14, 0] },
   { key: 'lido', artist: 'Lido Pimienta', stage: 'stage4', hotel: 'bhLaQuinta', vehicle: 'sprinter', transferRate: 220000, dispositionRate: 810000, passengers: 12, arrival: [11, 16, 0], show: [12, 20, 15], departure: [13, 16, 0] },
-  { key: 'jarabe', artist: 'Jarabe de Palo', stage: 'stage4', hotel: 'grandHyatt', vehicle: 'sprinter', transferRate: 220000, dispositionRate: 810000, passengers: 12, arrival: [12, 13, 0], show: [13, 6, 45], departure: [14, 8, 0], hotelNote: 'Hotel TBC en la hoja; se usa Grand Hyatt Bogotá como hotel plausible.' },
+  { key: 'jarabe', artist: 'Jarabe de Palo', stage: 'stage4', hotel: 'grandHyatt', vehicle: 'sprinter', transferRate: 220000, dispositionRate: 810000, passengers: 12, showVehicles: 2, arrival: [12, 13, 0], show: [13, 6, 45], departure: [14, 8, 0], hotelNote: 'Hotel TBC en la hoja; se usa Grand Hyatt Bogotá como hotel plausible.' },
   { key: 'diamante', artist: 'Diamante Eléctrico', stage: 'stage4', hotel: 'grandHyatt', vehicle: 'duster', transferRate: 95000, dispositionRate: 525000, passengers: 4, party: 'b', arrival: [12, 14, 0], show: [13, 8, 30], departure: [14, 12, 0], hotelNote: 'HOTEL/TBC en la hoja; se usa Grand Hyatt Bogotá como hotel plausible.' },
   { key: 'amigos', artist: 'Los Amigos Invisibles', stage: 'stage4', hotel: 'wyndham', vehicle: 'sprinter', transferRate: 220000, dispositionRate: 810000, passengers: 12, party: 'a', arrival: [12, 15, 0], show: [13, 19, 45], departure: [14, 13, 0], hotelNote: 'HOTEL/TBC en la hoja; se usa Wyndham Bogotá Art como hotel plausible.' },
 ];
@@ -456,7 +464,6 @@ function artistServices(): Service[] {
       { key: 'stageName', value: select(artist.stage) },
       { key: 'billingParty', value: select('paramo') },
       { key: 'vehicleClass', value: select(artist.vehicle) },
-      { key: 'vehicleQuantity', value: number(1) },
       { key: 'passengerCount', value: number(artist.passengers) },
       ...(artist.party === undefined ? [] : [{ key: 'partyGroup' as const, value: select(artist.party) }]),
     ];
@@ -468,7 +475,7 @@ function artistServices(): Service[] {
       name: `Llegada aeropuerto — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.arrival),
       endsAt: at([artist.arrival[0], artist.arrival[1] + 1, artist.arrival[2]]), status: arrivalStatus,
       pickup: 'eldoradoT1', destination: artist.hotel,
-      values: [...base, { key: 'serviceModality', value: select('trayecto') }, { key: 'unitRate', value: number(artist.transferRate) },
+      values: [...base, { key: 'vehicleQuantity', value: number(1) }, { key: 'serviceModality', value: select('trayecto') }, { key: 'unitRate', value: number(artist.transferRate) },
         { key: 'terminal', value: text('T1 — Llegadas internacionales') },
         ...(arrivalStatus === 'cancelled' ? [{ key: 'notExecutedAmount' as const, value: number(artist.transferRate) }] : []),
         ...(artist.hotelNote === undefined && arrivalStatus !== 'cancelled' ? [] : [{ key: 'notes' as const, value: longText([artist.hotelNote, arrivalStatus === 'cancelled' ? 'Servicio no ejecutado, registrado en la columna NO EJECUTADOS.' : undefined].filter((note) => note !== undefined).join(' ')) }]),
@@ -479,7 +486,7 @@ function artistServices(): Service[] {
       name: `Disponibilidad show — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.show),
       endsAt: at([artist.show[0], artist.show[1] + 12, artist.show[2]]), status: showStatus,
       pickup: artist.hotel, destination: 'simonBolivar',
-      values: [...base, { key: 'serviceModality', value: select('disponibilidad12h') }, { key: 'unitRate', value: number(artist.dispositionRate) },
+      values: [...base, { key: 'vehicleQuantity', value: number(artist.showVehicles ?? 1) }, { key: 'serviceModality', value: select('disponibilidad12h') }, { key: 'unitRate', value: number(artist.dispositionRate) },
         { key: 'callTime', value: time(`${String(artist.show[1]).padStart(2, '0')}:${String(artist.show[2]).padStart(2, '0')}`) },
         ...(showStatus === 'cancelled' ? [{ key: 'notExecutedAmount' as const, value: number(artist.dispositionRate) }] : []),
         ...(artist.hotelNote === undefined && showStatus !== 'cancelled' ? [] : [{ key: 'notes' as const, value: longText([artist.hotelNote, showStatus === 'cancelled' ? 'Disponibilidad no ejecutada, registrada en la columna NO EJECUTADOS.' : undefined].filter((note) => note !== undefined).join(' ')) }]),
@@ -490,7 +497,7 @@ function artistServices(): Service[] {
       name: `Salida aeropuerto — ${artist.artist} (${vehicleLabel(artist.vehicle)})`, startsAt: at(artist.departure),
       endsAt: at([artist.departure[0], artist.departure[1] + 1, artist.departure[2]]), status: departureStatus,
       pickup: artist.hotel, destination: 'eldoradoT1',
-      values: [...base, { key: 'serviceModality', value: select('trayecto') }, { key: 'unitRate', value: number(artist.transferRate) },
+      values: [...base, { key: 'vehicleQuantity', value: number(1) }, { key: 'serviceModality', value: select('trayecto') }, { key: 'unitRate', value: number(artist.transferRate) },
         { key: 'terminal', value: text('T1 — Salidas') },
         ...(departureStatus === 'cancelled' ? [{ key: 'notExecutedAmount' as const, value: number(artist.transferRate) }] : []),
         ...(artist.hotelNote === undefined && departureStatus !== 'cancelled' ? [] : [{ key: 'notes' as const, value: longText([artist.hotelNote, departureStatus === 'cancelled' ? 'Salida no ejecutada, registrada en la columna NO EJECUTADOS.' : undefined].filter((note) => note !== undefined).join(' ')) }]),
