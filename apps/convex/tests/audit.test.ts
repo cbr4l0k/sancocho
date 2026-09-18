@@ -20,6 +20,7 @@ const addServiceKindField = api.serviceKinds.fields.mutations.addServiceKindFiel
 const createServiceFromServiceKind = api.services.mutations.createServiceFromServiceKind;
 const changeServiceStatus = api.services.mutations.changeServiceStatus;
 const updateServiceFields = api.services.mutations.updateServiceFields;
+const recordExportRequest = api.audit.mutations.recordExportRequest;
 const listOrganizationAuditEvents = api.audit.queries.listOrganizationAuditEvents;
 const listEntityAuditEvents = api.audit.queries.listEntityAuditEvents;
 
@@ -68,6 +69,138 @@ async function operationalFixture() {
 function countAuditEvents(t: ReturnType<typeof convexTest>) {
   return t.run(async (ctx) => (await ctx.db.query('auditEvents').collect()).length);
 }
+
+async function exportFixture(subject: string) {
+  const t = convexTest(schema, modules);
+  const owner = await provision(t, subject);
+  const organizationId = await owner.client.mutation(createOrganization, { name: subject, slug: subject });
+  const projectId = await owner.client.mutation(createProject, { organizationId, name: 'Export project' });
+  return { t, owner, organizationId, projectId };
+}
+
+test('an owner records exactly one organization export request with the caller as actor', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-owner');
+  const before = await countAuditEvents(t);
+
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events', 'services', 'locations'],
+  })).resolves.toBeNull();
+
+  expect(await countAuditEvents(t)).toBe(before + 1);
+  const exportRows = await t.run(async (ctx) => (await ctx.db
+    .query('auditEvents')
+    .withIndex('by_org', (q) => q.eq('organizationId', organizationId))
+    .collect()).filter((row) => row.action === 'export.requested'));
+  expect(exportRows).toHaveLength(1);
+  const [row] = exportRows;
+  expect(row).toMatchObject({
+    action: 'export.requested',
+    entityType: 'organization',
+    entityId: organizationId,
+    actorUserId: owner.userId,
+    metadata: { sheets: 'events, services, locations' },
+  });
+  expect(row).not.toHaveProperty('onBehalfOfProviderId');
+});
+
+test('a planner cannot request an export and the refusal writes no audit row', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-planner-owner');
+  const planner = await provision(t, 'audit-export-planner');
+  await owner.client.mutation(addMember, { organizationId, userId: planner.userId, role: 'planner' });
+  const before = await countAuditEvents(t);
+
+  await expect(planner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events'],
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('a viewer cannot request an export and the refusal writes no audit row', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-viewer-owner');
+  const viewer = await provision(t, 'audit-export-viewer');
+  await owner.client.mutation(addMember, { organizationId, userId: viewer.userId, role: 'viewer' });
+  const before = await countAuditEvents(t);
+
+  await expect(viewer.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events'],
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('a signed-in user without membership cannot request an export or write an audit row', async () => {
+  const { t, organizationId } = await exportFixture('audit-export-member-owner');
+  const stranger = await provision(t, 'audit-export-no-membership');
+  const before = await countAuditEvents(t);
+
+  await expect(stranger.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['events'],
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('an export project must belong to the requested organization and failure writes no audit row', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-project-owner');
+  const otherOrganizationId = await owner.client.mutation(createOrganization, {
+    name: 'Other export organization',
+    slug: 'audit-export-project-other',
+  });
+  const otherProjectId = await owner.client.mutation(createProject, {
+    organizationId: otherOrganizationId,
+    name: 'Other export project',
+  });
+  const before = await countAuditEvents(t);
+
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    projectId: otherProjectId,
+    sheets: ['projects'],
+  })).rejects.toMatchObject({ data: { code: inaccessible } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('an empty export sheet list is invalid and writes no audit row', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-empty-owner');
+  const before = await countAuditEvents(t);
+
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: [],
+  })).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('a duplicate export sheet is invalid and writes no audit row', async () => {
+  const { t, owner, organizationId } = await exportFixture('audit-export-duplicate-owner');
+  const before = await countAuditEvents(t);
+
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    sheets: ['services', 'services'],
+  })).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
+  expect(await countAuditEvents(t)).toBe(before);
+});
+
+test('a project-scoped export records that project in metadata', async () => {
+  const { t, owner, organizationId, projectId } = await exportFixture('audit-export-scoped-owner');
+
+  await expect(owner.client.mutation(recordExportRequest, {
+    organizationId,
+    projectId,
+    sheets: ['events', 'services'],
+  })).resolves.toBeNull();
+
+  const rows = await t.run(async (ctx) => ctx.db
+    .query('auditEvents')
+    .withIndex('by_org', (q) => q.eq('organizationId', organizationId))
+    .collect());
+  const exportRows = rows.filter((row) => row.action === 'export.requested');
+  expect(exportRows).toHaveLength(1);
+  expect(exportRows[0]?.metadata).toEqual({ sheets: 'events, services', projectId });
+});
 
 test('writes a newest-first operational audit log and filters entity history', async () => {
   const { owner, organizationId, projectId, serviceId } = await operationalFixture();

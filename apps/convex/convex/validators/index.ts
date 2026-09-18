@@ -915,6 +915,19 @@ export const serviceFieldValueValidator = v.union(
   v.object({ kind: v.literal('location'), locationId: v.id('locations') }),
 );
 
+/**
+ * Commercial sheets (assignments, assignmentRevisions, providers, rateCards)
+ * join this union when they ship. It stays closed so an export can never name
+ * a sheet the log does not know.
+ */
+export const exportSheetValidator = v.union(
+  v.literal('events'),
+  v.literal('services'),
+  v.literal('projects'),
+  v.literal('serviceKinds'),
+  v.literal('locations'),
+);
+
 /** Code-owned audit vocabulary (extended by each domain issue); never free strings (I8). */
 export const auditActionValidator = v.union(
   v.literal('organization.created'),
@@ -1005,6 +1018,10 @@ export const auditActionValidator = v.union(
   v.literal('invitation.created'),
   v.literal('invitation.revoked'),
   v.literal('invitation.accepted'),
+  // The only action not produced by a domain write: records an authorized bulk
+  // extraction of tenant data beginning, before the walk, because this mutation
+  // is also the export's authorization gate.
+  v.literal('export.requested'),
 );
 
 /**
@@ -1070,6 +1087,7 @@ export const auditMetadataKeys = [
   'assignmentId',
   'serviceKindVersionId',
   'role',
+  'sheets',
   'slug',
   'sourceServiceId',
   'status',

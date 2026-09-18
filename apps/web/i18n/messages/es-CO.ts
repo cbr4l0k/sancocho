@@ -1332,6 +1332,7 @@ const esCO = {
       invitation_created: 'Invitación creada',
       invitation_revoked: 'Invitación revocada',
       invitation_accepted: 'Invitación aceptada',
+      export_requested: 'Exportación solicitada',
     },
   },
   table: {

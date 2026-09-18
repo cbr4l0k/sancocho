@@ -1325,6 +1325,7 @@ const enUS = {
       invitation_created: 'Invitation created',
       invitation_revoked: 'Invitation revoked',
       invitation_accepted: 'Invitation accepted',
+      export_requested: 'Export requested',
     },
   },
   table: {

@@ -15,6 +15,7 @@ import type * as assignments_mutations from "../assignments/mutations.js";
 import type * as assignments_queries from "../assignments/queries.js";
 import type * as assignments_rateLookup from "../assignments/rateLookup.js";
 import type * as audit_model from "../audit/model.js";
+import type * as audit_mutations from "../audit/mutations.js";
 import type * as audit_queries from "../audit/queries.js";
 import type * as auth_model from "../auth/model.js";
 import type * as auth_mutations from "../auth/mutations.js";
@@ -101,6 +102,7 @@ declare const fullApi: ApiFromModules<{
   "assignments/queries": typeof assignments_queries;
   "assignments/rateLookup": typeof assignments_rateLookup;
   "audit/model": typeof audit_model;
+  "audit/mutations": typeof audit_mutations;
   "audit/queries": typeof audit_queries;
   "auth/model": typeof auth_model;
   "auth/mutations": typeof auth_mutations;

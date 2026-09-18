@@ -3,7 +3,9 @@ import type { PaginationOptions, PaginationResult } from 'convex/server';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { requireOrganizationRole } from '../lib/access';
-import { invalidInput } from '../lib/errors';
+import { invalidInput, notFoundOrInaccessible } from '../lib/errors';
+import { organizationConfigurationRole } from '../lib/roles';
+import { requireProjectAccess } from '../projects/model';
 import {
   auditMetadataKeySet,
   auditMetadataSummaryKeySet,
@@ -13,11 +15,13 @@ import {
   type auditActionValidator,
   type auditEntityTypeValidator,
   type auditMetadataValidator,
+  type exportSheetValidator,
 } from '../validators';
 
 type AuditAction = typeof auditActionValidator.type;
 type AuditEntityType = typeof auditEntityTypeValidator.type;
 type AuditMetadataValue = typeof auditMetadataValidator.type[string];
+type ExportSheet = typeof exportSheetValidator.type;
 
 /**
  * Writers name their keys from the code-owned allowlist, so the compiler is the
@@ -52,6 +56,37 @@ export function recordAuditEvent(
   },
 ) {
   return ctx.db.insert('auditEvents', { ...event, metadata: sanitizeAuditMetadata(event.metadata) });
+}
+
+/** Member-only authorization gate and start marker for a bulk tenant export. */
+export async function recordExportRequest(
+  ctx: MutationCtx,
+  args: { organizationId: Id<'organizations'>; projectId?: Id<'projects'>; sheets: ExportSheet[] },
+): Promise<void> {
+  const access = await requireOrganizationRole(ctx, args.organizationId, organizationConfigurationRole);
+  if (args.projectId !== undefined) {
+    const { project } = await requireProjectAccess(ctx, args.projectId, organizationConfigurationRole);
+    if (project.organizationId !== args.organizationId) {
+      return notFoundOrInaccessible();
+    }
+  }
+  if (args.sheets.length === 0) {
+    return invalidInput('auditMetadataInvalid', 'An export must request at least one sheet');
+  }
+  if (new Set(args.sheets).size !== args.sheets.length) {
+    return invalidInput('auditMetadataInvalid', 'An export cannot request the same sheet more than once');
+  }
+  await recordAuditEvent(ctx, {
+    organizationId: args.organizationId,
+    actorUserId: access.user._id,
+    action: 'export.requested',
+    entityType: 'organization',
+    entityId: args.organizationId,
+    metadata: {
+      sheets: args.sheets.join(', '),
+      ...(args.projectId === undefined ? {} : { projectId: args.projectId }),
+    },
+  });
 }
 
 /** Administrative visibility only: owners and admins can read audit history. */

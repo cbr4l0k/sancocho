@@ -49,9 +49,12 @@ public "record this" path today, so this is a genuinely new shape and stays narr
   Principal, never supplied.
 - `entityType` is `organization` and `entityId` is that organization's id: an export has
   no other subject.
-- Metadata is the **requested scope** — `projectId` and `status` when the operator
-  narrowed by them, and the sheet set — drawn from closed unions and validated ids. No
-  free-form string reaches the log.
+- Metadata is the **requested scope**: the sheet set, drawn from a closed union of sheet
+  names, and `projectId` when the operator narrowed by one — validated as an id and proved
+  to belong to that organization, not merely accepted alongside it (I4). No free-form
+  string reaches the log. The status narrowing is deliberately not recorded: Events and
+  Services have different status vocabularies, and one metadata key holding either would
+  say something ambiguous about which list it narrowed.
 
 It is emitted **before the walk, not after**, which is why the action says `requested`
 rather than `generated`. The mutation is also the export's single authorization gate, and
