@@ -164,3 +164,43 @@ test('composeInstant uses the local wall clock pair', () => {
   expect(composeInstant(46277, 0.4305555555555556)).toBe(new Date(2026, 8, 12, 10, 20).getTime());
   expect(composeInstant('12/09/2026', '10:20')).toBe('ambiguousDate');
 });
+
+/*
+ * Which problem a blocked cell reports is not cosmetic: `ambiguousDate` tells the
+ * operator to widen the column or format it as a real date, `notADate` tells them the
+ * cell is junk, and `empty` tells them the pair is simply incomplete. The row is
+ * blocked either way, so only these assertions keep the message honest.
+ */
+test('composeInstant reports an incomplete pair as empty, not as an unreadable date', () => {
+  expect(composeInstant(null, '10:20')).toBe('empty');
+  expect(composeInstant('', '10:20')).toBe('empty');
+  expect(composeInstant('   ', '10:20')).toBe('empty');
+  expect(composeInstant('2026-09-12', null)).toBe('empty');
+  expect(composeInstant('2026-09-12', '  ')).toBe('empty');
+  expect(composeInstant(null, null)).toBe('empty');
+});
+
+test('routes a date cell inside the 1900 leap-day window to ambiguousDate', () => {
+  expect(cellToFieldValue(60, { kind: 'date' })).toEqual({ ok: false, problem: 'ambiguousDate' });
+  expect(cellToFieldValue(0, { kind: 'date' })).toEqual({ ok: false, problem: 'ambiguousDate' });
+  expect(cellToFieldValue(61, { kind: 'date' })).toEqual({
+    ok: true,
+    value: { kind: 'date', value: '1900-03-01' },
+  });
+});
+
+test('routes a datetime cell inside the 1900 leap-day window to ambiguousDate', () => {
+  expect(cellToFieldValue(60, { kind: 'datetime' })).toEqual({ ok: false, problem: 'ambiguousDate' });
+  expect(cellToFieldValue(0, { kind: 'datetime' })).toEqual({ ok: false, problem: 'ambiguousDate' });
+  expect(cellToFieldValue(46277.430555555555, { kind: 'datetime' })).toEqual({
+    ok: true,
+    value: { kind: 'datetime', date: '2026-09-12', time: '10:20' },
+  });
+});
+
+test('keeps a serial outside that window unreadable rather than ambiguous', () => {
+  expect(cellToFieldValue(-1, { kind: 'date' })).toEqual({ ok: false, problem: 'notADate' });
+  expect(cellToFieldValue(30.5, { kind: 'date' })).toEqual({ ok: false, problem: 'notADate' });
+  expect(cellToFieldValue(-1, { kind: 'datetime' })).toEqual({ ok: false, problem: 'notADate' });
+  expect(cellToFieldValue(30.5, { kind: 'datetime' })).toEqual({ ok: false, problem: 'notADate' });
+});

@@ -402,6 +402,63 @@ describe('workbook plan rows', () => {
       expect(row.defaultAction).toBe('skip');
     }
   });
+
+  /*
+   * `assignmentOmission` decides which absence the screen reports. A workbook with no
+   * assignment columns is complete as it stands; one whose Provider cell could not be
+   * matched is a repairable configuration gap. Collapsing the two tells an operator
+   * their Provider column is not mapped when it is.
+   */
+  test('separates an assignment the workbook never mapped from one its cells blocked', () => {
+    const unresolvable = { ...goodRow(2), cells: [...goodRow(2).cells] };
+    unresolvable.cells[4] = 'Transportes Que No Existe';
+    const blocked = buildWorkbookPlan({
+      rows: [unresolvable], mapping, versionFields: fields, catalogues,
+    }).rows[0];
+    expect(blocked?.assignment).toBeUndefined();
+    expect(blocked?.assignmentOmission).toBe('blocked');
+    expect(blocked?.problems).toContainEqual({
+      kind: 'assignment', target: 'provider', problem: 'unresolvedReference',
+    });
+
+    const serviceOnlyMapping: WorkbookMapping = [
+      { kind: 'serviceName' },
+      { kind: 'startsAtDate' },
+      { kind: 'startsAtTime' },
+      { kind: 'field', fieldDefinitionId: 'passengers' },
+    ];
+    const notMapped = buildWorkbookPlan({
+      rows: [{ rowNumber: 2, cells: ['Servicio', 46277, 0.4305555555555556, 12] }],
+      mapping: serviceOnlyMapping,
+      versionFields: fields,
+      catalogues,
+    }).rows[0];
+    expect(notMapped?.problems).toEqual([]);
+    expect(notMapped?.assignment).toBeUndefined();
+    expect(notMapped?.assignmentOmission).toBe('notMapped');
+  });
+
+  test('marks every row of an invalid mapping with the mapping problem itself', () => {
+    const duplicated: WorkbookMapping = [
+      { kind: 'serviceName' },
+      { kind: 'serviceName' },
+      { kind: 'startsAtDate' },
+      { kind: 'startsAtTime' },
+      { kind: 'field', fieldDefinitionId: 'passengers' },
+    ];
+    const plan = buildWorkbookPlan({
+      rows: [{ rowNumber: 2, cells: ['Servicio', 'Servicio', 46277, 0.4305555555555556, 12] }],
+      mapping: duplicated,
+      versionFields: fields,
+      catalogues,
+    });
+    expect(plan.mappingProblems).toEqual([
+      { kind: 'duplicateTarget', target: 'serviceName', columns: [0, 1] },
+    ]);
+    // The row is otherwise clean, so this is the mapping problem and nothing else.
+    expect(plan.rows[0]?.problems).toEqual([{ kind: 'mappingInvalid' }]);
+    expect(plan.rows[0]?.defaultAction).toBe('skip');
+  });
 });
 
 describe('plan summary', () => {
