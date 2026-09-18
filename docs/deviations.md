@@ -397,6 +397,30 @@ a decision to stop rather than guess.
     the default locale, so Bogotá is both the honest zone and the one whose operators would
     have seen every imported date shifted a day back. `apps/web/package.json`.
 
+35. **The import preview materializes the target Event's whole Service set (#99).** Duplicate
+    detection asks whether a row's (name, startsAt) already exists, which is a whole-set
+    question, so the preview drains `listEventServices` to `Exhausted` at 200/page. The
+    backend query is paginated and I6 is satisfied — this is the console choosing to exhaust
+    it. The alternative is a per-row backend existence lookup, which is N queries for N rows
+    and a new public function; it was measured against one Event's Services, a bounded
+    operational unit, and accepted. Revisit if an Event ever carries more Services than a
+    browser should hold at once. `components/import/workbook-import-surface.tsx`.
+36. **Rate lookups open one live subscription per distinct triple, uncapped (#99).** `useQueries`
+    subscribes once per distinct (provider, vehicle class, modality) present in the sheet. The
+    bound is the tenant's catalogue cross-product, **not** the file: a 10,000-row sheet naming
+    three providers and two vehicle classes opens at most 24 subscriptions, while a wide
+    catalogue — 20 providers, 15 classes, 4 modalities — could open 1,200. The fix when it
+    bites is a batched plural `resolveProspectiveRates`, which is a new backend function and so
+    outside #99's scope. Recorded rather than fixed blind, because the failure is a wide
+    catalogue and no such tenant exists yet. `components/import/workbook-import-surface.tsx`.
+37. **A rate request whose catalogue entry vanished now fails the preview instead of hanging it (#99).**
+    The plan carries plain strings, so the branded ids a query needs are read back out of the
+    catalogues. That lookup could previously `continue` past a miss; the request's key was then
+    never written into the results, `rateLookupCollectionState` read the gap as `'loading'`, and
+    the preview showed the pricing notice in place of the table permanently. It is unreachable
+    today — requests and the lookup derive from the same render's arrays — but a miss is now
+    named rather than dropped and surfaces as a pricing failure. `lib/rate-lookup-result.ts`.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
