@@ -40,6 +40,7 @@ import {
   type ExportSheetName,
 } from '@/lib/export-sheets';
 import { errorMessageKey, presentConvexError } from '@/lib/convex-errors';
+import { parseExportWindow, withinExportWindow } from '@/lib/export-window';
 import { roleAtLeast } from '@/lib/roles';
 import { serviceFieldColumns } from '@/lib/service-columns';
 
@@ -72,6 +73,8 @@ export function ExportSurface() {
   const { currentOrganization } = useCurrentOrganization();
   const organizationId = currentOrganization?.organization._id;
   const [projectId, setProjectId] = useState<ProjectId | ''>('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [progress, setProgress] = useState<ExportProgress>({ kind: 'idle' });
   const [failure, setFailure] = useState<string | null>(null);
   const recordExportRequest = useMutation(api.audit.mutations.recordExportRequest);
@@ -100,6 +103,7 @@ export function ExportSurface() {
   async function generate(): Promise<void> {
     if (organizationId === undefined) return;
     const scope = projectId === '' ? {} : { projectId };
+    const exportWindow = parseExportWindow(fromDate, toDate);
     setFailure(null);
     let sheet: ExportSheetName | undefined;
     try {
@@ -224,11 +228,23 @@ export function ExportSurface() {
         }
         return toExportableRateCard(card, exportableVersions, providerNames);
       });
+      // The window narrows the file, not the walk: no organization-scoped query
+      // accepts from/to. Events and Services drop by startsAt after they are
+      // read; the assignment fan-out then follows the Services that remain.
+      // Configuration catalogues stay whole — a Service still names a Location
+      // that must be in the file. The audit row does not record the window:
+      // everything was still read out of the tenant.
+      const exportedEvents = eventRows.filter((event) =>
+        withinExportWindow(event.startsAt, exportWindow),
+      );
+      const exportedServices = serviceRows.filter((row) =>
+        withinExportWindow(row.service.startsAt, exportWindow),
+      );
       sheet = 'assignments';
       setProgress({ kind: 'reading', sheet: 'assignments', rows: 0 });
       let assignmentCount = 0;
       const assignmentWalks = (
-        await mapInBatches(serviceRows, walkConcurrency, async (serviceRow) => {
+        await mapInBatches(exportedServices, walkConcurrency, async (serviceRow) => {
           const rows = await client.query(api.assignments.queries.listServiceAssignmentRows, {
             serviceId: serviceRow.service._id,
           });
@@ -282,10 +298,10 @@ export function ExportSurface() {
         ),
       };
 
-      const columns = serviceFieldColumns(serviceRows);
+      const columns = serviceFieldColumns(exportedServices);
       const sheets: readonly ExportSheetData[] = [
-        eventsSheet(eventRows, lookups, t),
-        servicesSheet(serviceRows, columns, lookups, t),
+        eventsSheet(exportedEvents, lookups, t),
+        servicesSheet(exportedServices, columns, lookups, t),
         assignmentsSheet(
           assignmentWalks.map((walk) => walk.exportable),
           lookups,
@@ -350,6 +366,26 @@ export function ExportSurface() {
                   ))}
                 </select>
               </label>
+              <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+                {t('export.windowFrom')}
+                <input
+                  type="date"
+                  className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+                  value={fromDate}
+                  disabled={running}
+                  onChange={(event) => setFromDate(event.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-micro font-semibold uppercase tracking-[0.09em] text-ink-2">
+                {t('export.windowTo')}
+                <input
+                  type="date"
+                  className="h-[38px] rounded-input border border-line bg-ground-2 px-3 text-sm normal-case tracking-normal"
+                  value={toDate}
+                  disabled={running}
+                  onChange={(event) => setToDate(event.target.value)}
+                />
+              </label>
               <Button variant="primary" disabled={running} onClick={() => void generate()}>
                 {running ? t('export.generating') : t('export.generate')}
               </Button>
@@ -362,6 +398,7 @@ export function ExportSurface() {
               ))}
             </Sheets>
             <p className="text-sm text-ink-2">{t('export.projectScopeNotice')}</p>
+            <p className="text-sm text-ink-2">{t('export.windowNotice')}</p>
             <p className="text-sm text-ink-2">{t('export.verbatimNotice')}</p>
             <Progress progress={progress} />
             {failure === null ? null : <Failure progress={progress} message={failure} />}

@@ -1141,6 +1141,10 @@ const esCO = {
     projectFilter: 'Proyecto',
     projectScopeNotice:
       'El proyecto filtra las hojas de Eventos y Servicios. Los catálogos de configuración se exportan completos, porque las filas operativas remiten a ellos.',
+    windowFrom: 'Desde',
+    windowTo: 'Hasta',
+    windowNotice:
+      'La ventana filtra Eventos y Servicios por fecha de inicio; los catálogos de configuración se exportan completos.',
     generate: 'Generar archivo',
     generating: 'Generando…',
     progress: 'Leyendo {sheet}: {count, plural, =0 {sin filas} one {# fila} other {# filas}}',

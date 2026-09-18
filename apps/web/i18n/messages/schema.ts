@@ -992,6 +992,9 @@ export type MessageSchema = {
     allProjects: string;
     projectFilter: string;
     projectScopeNotice: string;
+    windowFrom: string;
+    windowTo: string;
+    windowNotice: string;
     generate: string;
     generating: string;
     progress: string;

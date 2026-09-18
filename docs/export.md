@@ -256,30 +256,43 @@ controls the displayed decimals; the stored number stays the true value.
 
 ## Filters
 
-The export scope is the **current Organization**, narrowed optionally by **Project** —
-the one filter `listOrganizationEvents` and `listOrganizationServices` both accept and
-both mean the same thing by.
+The export scope is the **current Organization**, narrowed optionally by **Project** and
+by a **date window**.
 
-That narrowing applies to **those two sheets only**. The configuration sheets stay whole:
-a Service in the chosen Project points at a Service Kind, a Location and a Cost Centre,
-and slicing those catalogues by Project would leave the operational rows referring to
-names the file does not contain. The screen states this under the filter rather than
-leaving the operator to discover it in the file.
+The Project filter is the one `listOrganizationEvents` and `listOrganizationServices`
+both accept and both mean the same thing by. That narrowing applies to **those two
+sheets only**. The configuration sheets stay whole: a Service in the chosen Project
+points at a Service Kind, a Location and a Cost Centre, and slicing those catalogues by
+Project would leave the operational rows referring to names the file does not contain.
+The screen states this under the filter rather than leaving the operator to discover it
+in the file.
+
+**The date window filters Events and Services by `startsAt`.** It is inclusive at both
+ends, and the operator means whole days in their own zone: `from` is the local start of
+that day and `to` is its last millisecond. The Assignment and Assignment Revision sheets
+follow the Services that survive, so filtering the Services array before the per-Service
+assignment fan-out is enough — everything downstream follows.
+
+No organization-scoped backend query accepts `from`/`to`, so a window can only narrow the
+**file**, never the walk. The pages still come out of the tenant in full; the filter
+drops rows after they have been read. Pushing the window into the backend would mean new
+indexes on two domains.
+
+The configuration sheets — Projects, Service Kinds, Locations, Providers, Rate Cards —
+are **not** filtered by the window, for the same reason they are not filtered by Project.
+Dropping a Location because its calendar date is out of range would leave Services
+referring to a name the file does not contain.
+
+**The audit row does not record the window.** The window removes rows from the file but
+everything was still read out of the tenant, so recording it would make the row claim
+less left than actually did. `projectId` is recorded because it actually narrows the
+fetch.
 
 **Status is deliberately not offered.** Events and Services have different status
 vocabularies, so a single control would either narrow one sheet and not the other or
 silently mean two different things per sheet. It is the same reason the audit row does not
 record a status. A per-sheet status filter is a bigger control than this screen should
 grow before anyone has asked for it.
-
-**The date window is not built in this cut.** #36 asked for filters matching the "list or
-statistics" filters, but the statistics subsystem was deleted by #93 and its issues (#70,
-#76) closed as descoped, so the clause has no referent; and no organization-scoped query
-accepts `from` or `to`, which means a window can only narrow the file, never the walk. It
-belongs with the commercial sheets in the second cut, where a window over Assignment
-revisions would actually reduce how much the browser reads. Pushing it into the backend
-means new indexes on two domains and belongs to whatever rebuilds statistics against the
-reshaped model.
 
 ## Localization
 

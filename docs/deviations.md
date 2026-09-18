@@ -468,14 +468,11 @@ a decision to stop rather than guess.
     rather than `failed`, and that `writeXlsxFile` is handed the sheets in the declared
     order. `apps/web` still has no component-test harness. `components/export/export-surface.tsx`.
 
-42. **The export's date window is deferred to the commercial cut (#36).** #36's scope asks
-    for Project and date-window filters "matching the corresponding list/statistics
-    filters". Project ships; the window does not. No organization-scoped query accepts
-    `from`/`to`, so a window can only narrow the file after the walk, not the walk itself —
-    which is worth building where it would actually reduce reads, alongside the
-    Assignment-revision sheets. Status is not offered at all, because Events and Services
-    have different status vocabularies and one control cannot honestly narrow both.
-    `docs/export.md` §Filters.
+42. **The export's date window narrows the file, not the read (#36).** No
+    organization-scoped query accepts `from`/`to`, so a window can only drop Events and
+    Services from the file after the walk, never reduce what the browser fetches. The
+    audit row does not record it for the same reason: everything was still read out of
+    the tenant. `docs/export.md` §Filters, `apps/web/lib/export-window.ts`.
 
 43. **The export audit log records the blessed path, not every bulk read (#36).** The
     `export.requested` gate floors at admin, but every query the walk drives floors at plain

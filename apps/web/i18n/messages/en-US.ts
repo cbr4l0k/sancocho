@@ -1133,6 +1133,10 @@ const enUS = {
     projectFilter: 'Project',
     projectScopeNotice:
       'The project filters the Events and Services sheets. The configuration catalogues export whole, because the operational rows refer to them.',
+    windowFrom: 'From',
+    windowTo: 'To',
+    windowNotice:
+      'The window filters Events and Services by start date; the configuration catalogues export whole.',
     generate: 'Generate file',
     generating: 'Generating…',
     progress: 'Reading {sheet}: {count, plural, =0 {no rows} one {# row} other {# rows}}',
