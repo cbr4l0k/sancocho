@@ -435,6 +435,41 @@ a decision to stop rather than guess.
     adding one is a decision in its own right rather than something to fold into #99.
     Recorded so the extraction is not mistaken for full coverage of the screen.
 
+39. **The export walks one `getServiceKind` per Service Kind, in parallel (#36).** The
+    Service Kinds sheet needs each Kind's versions, and the only read that returns them is
+    `getServiceKind(serviceKindId)`. The export therefore fans out one point read per Kind
+    in the organization and awaits them together. The bound is the Kind catalogue — a
+    configuration set an administrator curates by hand, not a growing operational one — so
+    it is small by construction today. The fix when it bites is a paginated
+    `listServiceKindVersions`, which is a new backend function and outside this cut.
+    `components/export/export-surface.tsx`.
+
+40. **Cost centres and members are drained for lookups, without progress (#36).** Neither is
+    a sheet; both exist only so an Event's Cost Centre and accountable person export as
+    names rather than ids. They are walked with the same paginated queries and the same
+    `drainPages`, but the progress line does not name them, so a slow walk there looks like
+    a stall. Naming them would mean showing the operator two sets they did not ask to
+    export. Revisit if either ever grows past a page or two.
+    `components/export/export-surface.tsx`.
+
+41. **The export's own wiring is untested, as deviation 38 describes for the import (#36).**
+    Every rule is in `lib/` with mutation-tested coverage: the cell types and zone rules,
+    the union columns and their headers, each sheet's shape, and the page walk. What no test
+    reaches is the component that calls them — that `recordExportRequest` runs BEFORE the
+    first page is read (the whole argument for an `export.requested` action), that the
+    lookup maps are built from the walks that precede them, that a refusal sets `refused`
+    rather than `failed`, and that `writeXlsxFile` is handed the sheets in the declared
+    order. `apps/web` still has no component-test harness. `components/export/export-surface.tsx`.
+
+42. **The export's date window is deferred to the commercial cut (#36).** #36's scope asks
+    for Project and date-window filters "matching the corresponding list/statistics
+    filters". Project ships; the window does not. No organization-scoped query accepts
+    `from`/`to`, so a window can only narrow the file after the walk, not the walk itself —
+    which is worth building where it would actually reduce reads, alongside the
+    Assignment-revision sheets. Status is not offered at all, because Events and Services
+    have different status vocabularies and one control cannot honestly narrow both.
+    `docs/export.md` §Filters.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.

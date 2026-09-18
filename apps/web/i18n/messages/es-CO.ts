@@ -1068,6 +1068,7 @@ const esCO = {
       providers: 'Proveedores',
       fleet: 'Flota',
       rateCards: 'Tarifarios',
+      export: 'Exportar',
     },
     adminOnlyTitle: 'Solo administradores',
     adminOnlyBody:

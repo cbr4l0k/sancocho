@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { drainPages, exportIsRunning, type ExportPage } from './export-run';
+import { drainPages, exportIsRunning, failedSheet, type ExportPage } from './export-run';
 
 function pagedReader(pages: readonly (readonly string[])[]): {
   read: (cursor: string | null) => Promise<ExportPage<string>>;
@@ -79,5 +79,15 @@ describe('export progress', () => {
     // A failed export is finished, not running: the button has to come back so the
     // operator can retry it.
     expect(exportIsRunning({ kind: 'failed', sheet: 'services' })).toBe(false);
+    expect(exportIsRunning({ kind: 'refused' })).toBe(false);
+  });
+
+  test('names the sheet a stopped walk died on, and names none when the gate refused', () => {
+    expect(failedSheet({ kind: 'failed', sheet: 'services' })).toBe('services');
+    // The gate runs before the first page. Blaming a sheet here would tell the operator
+    // their Events read broke when what happened is that they may not export at all.
+    expect(failedSheet({ kind: 'refused' })).toBeUndefined();
+    expect(failedSheet({ kind: 'reading', sheet: 'events', rows: 3 })).toBeUndefined();
+    expect(failedSheet({ kind: 'done', rows: 3 })).toBeUndefined();
   });
 });

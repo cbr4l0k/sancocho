@@ -1061,6 +1061,7 @@ const enUS = {
       providers: 'Providers',
       fleet: 'Fleet',
       rateCards: 'Rate Cards',
+      export: 'Export',
     },
     adminOnlyTitle: 'Administrators only',
     adminOnlyBody: 'Ask an owner or administrator of this organization to change its configuration.',

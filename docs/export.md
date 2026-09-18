@@ -196,17 +196,24 @@ controls the displayed decimals; the stored number stays the true value.
 
 ## Filters
 
-The export scope is the **current Organization**, plus the same narrowings the list
-surfaces offer: **Project** and **status**, matching `listOrganizationEvents` and
-`listOrganizationServices` exactly.
+The export scope is the **current Organization**, narrowed optionally by **Project** —
+the one filter `listOrganizationEvents` and `listOrganizationServices` both accept and
+both mean the same thing by.
 
-There is no backend date window to match. #36 asked for filters matching the "list or
+**Status is deliberately not offered.** Events and Services have different status
+vocabularies, so a single control would either narrow one sheet and not the other or
+silently mean two different things per sheet. It is the same reason the audit row does not
+record a status. A per-sheet status filter is a bigger control than this screen should
+grow before anyone has asked for it.
+
+**The date window is not built in this cut.** #36 asked for filters matching the "list or
 statistics" filters, but the statistics subsystem was deleted by #93 and its issues (#70,
-#76) closed as descoped; no organization-scoped query accepts `from` or `to`. A date
-window is therefore applied **client-side to the rows already walked**, and it is
-documented in the UI as narrowing the file rather than the fetch. Pushing a window into
-the backend means new indexes on two domains and belongs to whatever rebuilds statistics
-against the reshaped model.
+#76) closed as descoped, so the clause has no referent; and no organization-scoped query
+accepts `from` or `to`, which means a window can only narrow the file, never the walk. It
+belongs with the commercial sheets in the second cut, where a window over Assignment
+revisions would actually reduce how much the browser reads. Pushing it into the backend
+means new indexes on two domains and belongs to whatever rebuilds statistics against the
+reshaped model.
 
 ## Localization
 

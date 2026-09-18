@@ -931,6 +931,7 @@ export type MessageSchema = {
       providers: string;
       fleet: string;
       rateCards: string;
+      export: string;
     };
     adminOnlyTitle: string;
     adminOnlyBody: string;

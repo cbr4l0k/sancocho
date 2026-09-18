@@ -47,14 +47,25 @@ export async function drainPages<Row>(
  * `failed` names the sheet the walk stopped on, because "the export failed" tells an
  * operator nothing they can act on, and no file is written in that state — a partial
  * workbook that looks complete is the one outcome worth preventing.
+ *
+ * `refused` is deliberately NOT a `failed` carrying a sheet. The gate runs before the
+ * first page is read, so there is no sheet it stopped on; reporting one would tell the
+ * operator their Events read broke when what actually happened is that they may not
+ * export at all.
  */
 export type ExportProgress =
   | { readonly kind: 'idle' }
   | { readonly kind: 'reading'; readonly sheet: ExportSheetName; readonly rows: number }
   | { readonly kind: 'writing'; readonly rows: number }
   | { readonly kind: 'done'; readonly rows: number }
-  | { readonly kind: 'failed'; readonly sheet: ExportSheetName };
+  | { readonly kind: 'failed'; readonly sheet: ExportSheetName }
+  | { readonly kind: 'refused' };
 
 export function exportIsRunning(progress: ExportProgress): boolean {
   return progress.kind === 'reading' || progress.kind === 'writing';
+}
+
+/** The sheet a stopped export names, or nothing when it never got as far as a sheet. */
+export function failedSheet(progress: ExportProgress): ExportSheetName | undefined {
+  return progress.kind === 'failed' ? progress.sheet : undefined;
 }

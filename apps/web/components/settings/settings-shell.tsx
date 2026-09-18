@@ -40,6 +40,10 @@ const sections = [
   // Every public Rate Card read and resolution path uses `organizationConfigurationRole`,
   // which `lib/roles.ts` defines as admin; this section mirrors that real backend floor.
   { to: '/settings/rate-cards', labelKey: 'settings.sections.rateCards', adminOnly: true },
+  // Export is floored at admin for the whole action, not per sheet: it is a bulk
+  // extraction of the tenant including the Rate Card catalogue, and `recordExportRequest`
+  // proves that floor server-side. See docs/export.md "Authority".
+  { to: '/settings/export', labelKey: 'settings.sections.export', adminOnly: true },
 ] as const;
 
 export function SettingsShell({ children }: { children: ReactNode }) {
