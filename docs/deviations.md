@@ -449,7 +449,9 @@ a decision to stop rather than guess.
     names rather than ids. They are walked with the same paginated queries and the same
     `drainPages`, but the progress line does not name them, so a slow walk there looks like
     a stall. Naming them would mean showing the operator two sets they did not ask to
-    export. Revisit if either ever grows past a page or two.
+    export. A failure in either is reported against the **Events** sheet, the sheet that
+    cannot be written without them, rather than against whichever walk happened to precede
+    them. Revisit if either ever grows past a page or two.
     `components/export/export-surface.tsx`.
 
 41. **The export's own wiring is untested, as deviation 38 describes for the import (#36).**

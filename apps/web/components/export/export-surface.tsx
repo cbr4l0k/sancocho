@@ -105,6 +105,11 @@ export function ExportSurface() {
           paginationOpts: { numItems: pageSize, cursor },
         }),
       );
+      // Cost Centres and members are not sheets; they are walked so an Event's Cost Centre
+      // and accountable person export as names rather than ids. A failure here is reported
+      // against the Events sheet, which is the sheet that cannot be written without them —
+      // blaming the Locations walk that happens to precede them would be a lie.
+      sheet = 'events';
       const costCentreRows = await drainPages((cursor) =>
         client.query(api.costCentres.queries.listCostCentres, {
           organizationId,
