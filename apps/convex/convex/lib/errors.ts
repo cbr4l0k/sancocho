@@ -179,6 +179,8 @@ export const errorCodes = [
   'seedCostCentreMissing',
   'seedServiceKindMissing',
   'seedServiceKindVersionMissing',
+  'seedRateLineMissing',
+  'seedRateCardVersionMissing',
   'seedServiceMissing',
   'seedFieldConflict',
   'seedServiceKindConflict',

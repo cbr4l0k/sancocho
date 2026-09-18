@@ -1,9 +1,18 @@
 import { v } from 'convex/values';
 
 import type { Id } from '../_generated/dataModel';
+import { internalMutation } from '../_generated/server';
+import type { ExecutionStatus } from '../assignments/execution';
+import {
+  acceptAssignmentRevision,
+  createAssignment,
+  createAssignmentRevision,
+  recordAssignmentAdjustments,
+  recordAssignmentCheckpoint,
+  transitionAssignmentExecution,
+} from '../assignments/model';
 import { createCostCentre } from '../costCentres/model';
 import { createEvent } from '../events/model';
-import { internalMutation } from '../_generated/server';
 import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { createFieldDefinition, sameFieldConfig } from '../fields/model';
@@ -38,11 +47,11 @@ import { resolveSeedOwnerContext } from './identity';
  * Cordillera 2026 ground-transport workbook inside an existing organization.
  * Organization fields, serviceKinds, Vehicle Classes, Cost Centres, Providers,
  * Rate Cards, and Fleet Vehicles are independently idempotent by indexed key.
- * Locations are reused by name. Events, Services, and relationships are a
- * clean-slate demonstration set: once the named project contains any Service, a
- * re-run still provisions the keyed catalogue (so a tenant seeded before this
- * catalogue existed cannot stay without it) and then skips those three sets
- * instead of duplicating them.
+ * Locations are reused by name. Events, Services, relationships, and
+ * Assignments are a clean-slate demonstration set: once the named project
+ * contains any Service, a re-run still provisions the keyed catalogue (so a
+ * tenant seeded before this catalogue existed cannot stay without it) and then
+ * skips those operational sets instead of duplicating them.
  *
  * The mutation runs as the organization's own owner, so every write passes the
  * ordinary domain authorization, role, ownership, validation, audit, and
@@ -249,6 +258,21 @@ type Service = {
   values: readonly FieldValue[];
 };
 
+function isValueKind<K extends Value['kind']>(value: Value, kind: K): value is Extract<Value, { kind: K }> {
+  return value.kind === kind;
+}
+
+/** Pulls one Service field value and narrows it by `kind`; no assertion. */
+function serviceFieldValue<K extends Value['kind']>(
+  values: readonly FieldValue[],
+  key: FieldKey,
+  kind: K,
+): Extract<Value, { kind: K }> | undefined {
+  const entry = values.find((field) => field.key === key);
+  if (entry === undefined || !isValueKind(entry.value, kind)) return undefined;
+  return entry.value;
+}
+
 type Vehicle = 'h1' | 'sprinter' | 'sprinter18' | 'gamaMedia' | 'suvGamaMedia' | 'suvConvencional' | 'duster' | 'cargoVan' | 'cargoTruck';
 type Stage = 'stage3' | 'stage4';
 
@@ -349,14 +373,28 @@ const altiplanoFleet: readonly { plate: string; classKey: string; label: string 
   { plate: crewPlates[1], classKey: 'h1', label: `H1 Altiplano · ${crewPlates[1]}` },
 ];
 
-function operationalValues(status: ServiceStatus, index: number): readonly FieldValue[] {
+/**
+ * `fleet` selects which supplier's plates a Service's captured `vehiclePlate`
+ * column draws from, and it is not cosmetic. Execution resolves that plate to a
+ * Fleet Vehicle, and `assertAssignableFleetVehicle` requires the vehicle to
+ * belong to the ASSIGNMENT's provider. Crew shuttles are Rutas del Altiplano's
+ * work, so drawing their plates from the Andes list would have the demo assert
+ * that one firm ran the route in a competitor's van — and would leave
+ * Altiplano's own two vehicles seeded but never dispatched.
+ */
+function operationalValues(
+  status: ServiceStatus,
+  index: number,
+  fleet: 'andes' | 'altiplano' = 'andes',
+): readonly FieldValue[] {
   if (status === 'draft' || status === 'planned') return [];
   const slot = index % driverNames.length;
+  const pool = fleet === 'altiplano' ? crewPlates : plates;
   return [
     { key: 'supplierStatus', value: select(status === 'completed' ? 'ejecutado' : status === 'cancelled' ? 'noEjecutado' : 'confirmado') },
     { key: 'driverName', value: text(driverNames[slot] ?? 'Carlos Rincón') },
     { key: 'driverPhone', value: text(driverPhones[slot] ?? '310 5550101') },
-    { key: 'vehiclePlate', value: text(plates[slot] ?? 'KLM482') },
+    { key: 'vehiclePlate', value: text(pool[index % pool.length] ?? plates[slot] ?? 'KLM482') },
   ];
 }
 
@@ -584,7 +622,7 @@ function crewServices(): Service[] {
       values: [...commonValues({ billing: 'equipo', vehicle: 'h1', modality: row.modality, rate: 640000 }),
         { key: 'callTime', value: time(`${String(row.hour).padStart(2, '0')}:00`) },
         { key: 'notes', value: longText(row.modality === 'ruta' ? 'Diferentes puntos de la ciudad con destino al venue.' : 'Vehículo de equipo a disposición del festival.') },
-        ...operationalValues(row.status, index + 70)] };
+        ...operationalValues(row.status, index + 70, 'altiplano')] };
   });
 }
 
@@ -595,8 +633,14 @@ const coordinationServices: readonly Service[] = [
   { seedKey: 'coord-airport', serviceKindKey: 'festivalCoordination', name: 'Coordinación aeropuerto', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'eldoradoT1', values: [
     { key: 'stageName', value: select('general') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('disponibilidad12h') },
     { key: 'vehicleQuantity', value: number(1) }, { key: 'unitRate', value: number(0) }, { key: 'callTime', value: time('07:00') },
-    { key: 'contactPerson', value: text('Andrés Villalba — 317 5550107') }, { key: 'supplierStatus', value: select('confirmado') },
-    { key: 'driverName', value: text('Andrés Villalba') }, { key: 'driverPhone', value: text('317 5550107') },
+    // No driver, no plate and a PENDING supplier status, unlike every other
+    // operational row. This is the one Service the seed deliberately leaves with
+    // an Assignment and no accepted terms (its `unitRate` is 0, so pricing it
+    // from the Coordinador cell would contradict the workbook), and it is what
+    // makes `dispatchDayReadiness` report a non-zero `unassigned` on 12
+    // September. Claiming a confirmed driver here would have the Service
+    // contradict its own Assignment.
+    { key: 'contactPerson', value: text('Andrés Villalba — 317 5550107') }, { key: 'supplierStatus', value: select('pendiente') },
   ] },
   { seedKey: 'coord-venue-stage3', serviceKindKey: 'festivalCoordination', name: 'Coordinación venue AM — Stage 3', startsAt: bogota(2026, 9, 12, 7, 0), endsAt: bogota(2026, 9, 12, 19, 0), status: 'active', destination: 'simonBolivar', values: [
     { key: 'stageName', value: select('stage3') }, { key: 'billingParty', value: select('paramo') }, { key: 'serviceModality', value: select('disponibilidad12h') },
@@ -655,6 +699,7 @@ export const seedCordilleraOperations = internalMutation({
     services: v.number(), relationships: v.number(), projectName: v.string(),
     vehicleClasses: v.number(), costCentres: v.number(), providers: v.number(),
     rateCards: v.number(), fleetVehicles: v.number(),
+    assignments: v.number(), assignmentRevisions: v.number(), assignmentCheckpoints: v.number(),
   }),
   handler: async (ctx, args) => {
     assertSeedingEnabled();
@@ -855,12 +900,18 @@ export const seedCordilleraOperations = internalMutation({
       providerId: Id<'providers'>,
       name: string,
       lines: readonly RateLineSeed[],
-    ): Promise<void> {
+    ): Promise<Id<'rateCardVersions'>> {
       const cards = await ctx.db
         .query('rateCards')
         .withIndex('by_org_provider', (q) => q.eq('organizationId', organization._id).eq('providerId', providerId))
         .collect();
-      if (cards.some((card) => card.name === name)) return;
+      const existing = cards.find((card) => card.name === name);
+      if (existing !== undefined) {
+        if (existing.currentPublishedVersionId === undefined) {
+          return invalidInput('seedServiceKindVersionMissing', `Seed rate card has no published version: ${name}`);
+        }
+        return existing.currentPublishedVersionId;
+      }
       const rateCardId = await createRateCard(seeded, {
         organizationId: organization._id,
         providerId,
@@ -876,22 +927,23 @@ export const seedCordilleraOperations = internalMutation({
         });
       }
       await publishRateCardVersion(seeded, versionId);
+      return versionId;
     }
-    await ensurePublishedRateCard(andesProviderId, 'Tarifario Cordillera 2026', andesRateLines);
-    await ensurePublishedRateCard(altiplanoProviderId, 'Tarifario rutas de equipo 2026', altiplanoRateLines);
+    const andesRateCardVersionId = await ensurePublishedRateCard(andesProviderId, 'Tarifario Cordillera 2026', andesRateLines);
+    const altiplanoRateCardVersionId = await ensurePublishedRateCard(altiplanoProviderId, 'Tarifario rutas de equipo 2026', altiplanoRateLines);
 
     async function ensureFleetVehicle(
       providerId: Id<'providers'>,
       vehicle: { plate: string; classKey: string; label: string },
-    ): Promise<void> {
+    ): Promise<Id<'fleetVehicles'>> {
       const existing = await ctx.db
         .query('fleetVehicles')
         .withIndex('by_org_plateKey', (q) =>
           q.eq('organizationId', organization._id).eq('plateKey', normalizePlate(vehicle.plate)),
         )
         .first();
-      if (existing !== null) return;
-      await createFleetVehicle(seeded, {
+      if (existing !== null) return existing._id;
+      return createFleetVehicle(seeded, {
         organizationId: organization._id,
         providerId,
         vehicleClassId: requireVehicleClass(vehicle.classKey),
@@ -899,8 +951,14 @@ export const seedCordilleraOperations = internalMutation({
         label: vehicle.label,
       });
     }
-    for (const vehicle of andesFleet) await ensureFleetVehicle(andesProviderId, vehicle);
-    for (const vehicle of altiplanoFleet) await ensureFleetVehicle(altiplanoProviderId, vehicle);
+    const andesFleetByPlate = new Map<string, Id<'fleetVehicles'>>();
+    for (const vehicle of andesFleet) {
+      andesFleetByPlate.set(normalizePlate(vehicle.plate), await ensureFleetVehicle(andesProviderId, vehicle));
+    }
+    const altiplanoFleetByPlate = new Map<string, Id<'fleetVehicles'>>();
+    for (const vehicle of altiplanoFleet) {
+      altiplanoFleetByPlate.set(normalizePlate(vehicle.plate), await ensureFleetVehicle(altiplanoProviderId, vehicle));
+    }
 
     const result = {
       fieldDefinitions: fieldDefinitions.length,
@@ -914,6 +972,11 @@ export const seedCordilleraOperations = internalMutation({
       providers: 2,
       rateCards: 2,
       fleetVehicles: andesFleet.length + altiplanoFleet.length,
+      // A re-run that already holds Services never writes operational rows, so
+      // these stay zero rather than restating the intended catalogue size.
+      assignments: 0,
+      assignmentRevisions: 0,
+      assignmentCheckpoints: 0,
     };
 
     // Clean-slate guard stays AFTER the keyed catalogue and BEFORE everything
@@ -1017,11 +1080,265 @@ export const seedCordilleraOperations = internalMutation({
     for (const relationship of relationships) {
       await createRelationship(seeded, { sourceServiceId: requireService(relationship.source), targetServiceId: requireService(relationship.target), type: relationship.type });
     }
-    for (const service of services) {
-      const serviceId = requireService(service.seedKey);
-      for (const status of transitionsTo(service.status)) await changeServiceStatus(seeded, { serviceId, status });
+
+    async function requireRateLine(
+      rateCardVersionId: Id<'rateCardVersions'>,
+      vehicleClassId: Id<'vehicleClasses'>,
+      modality: RateModality,
+    ): Promise<Id<'rateLines'>> {
+      const line = await ctx.db
+        .query('rateLines')
+        .withIndex('by_version_class_modality', (q) =>
+          q.eq('rateCardVersionId', rateCardVersionId).eq('vehicleClassId', vehicleClassId).eq('modality', modality),
+        )
+        .unique();
+      if (line === null) {
+        return invalidInput('seedRateLineMissing', 'Seed rate line is missing for the assignment class and modality');
+      }
+      return line._id;
     }
 
-    return result;
+    function assignmentProviderId(service: Service): Id<'providers'> {
+      return service.serviceKindKey === 'festivalCrewShuttle' ? altiplanoProviderId : andesProviderId;
+    }
+
+    function assignmentModality(service: Service): RateModality {
+      const optionId = serviceFieldValue(service.values, 'serviceModality', 'select')?.optionId;
+      if (optionId === 'trayecto' || optionId === 'disponibilidad12h' || optionId === 'ruta') {
+        return rateModalityBySelectId[optionId];
+      }
+      return invalidInput('seedServiceMissing', `Seed service has no rate modality: ${service.seedKey}`);
+    }
+
+    // Step 3 — Assignments and their terms, authored while every Service is
+    // still a writable `draft`. `createAssignment` and `createAssignmentRevision`
+    // both call `assertServiceWritable`, which refuses a completed or cancelled
+    // Service, so this must precede the status-advance loop below.
+    const assignmentIds = new Map<string, Id<'assignments'>>();
+    let assignmentsWritten = 0;
+    let revisionsWritten = 0;
+    let checkpointsWritten = 0;
+
+    for (const service of services) {
+      const providerId = assignmentProviderId(service);
+      const billingKey = serviceFieldValue(service.values, 'billingParty', 'select')?.optionId;
+      if (billingKey === undefined) return invalidInput('seedCostCentreMissing', `Seed service has no billing party: ${service.seedKey}`);
+      const assignmentId = await createAssignment(seeded, {
+        serviceId: requireService(service.seedKey),
+        providerId,
+        costCentreId: requireCostCentre(billingKey),
+        position: 0,
+      });
+      assignmentIds.set(service.seedKey, assignmentId);
+      assignmentsWritten += 1;
+
+      // coord-airport carries unitRate 0, but Coordinador disposition prices at
+      // 490 000. Pricing it from the Rate Card would contradict the captured
+      // figure. An Assignment with no accepted terms costs nothing, which is
+      // right for an uncharged internal row, and is what makes
+      // dispatchDayReadiness report a non-zero unassigned on 12 September.
+      if (service.seedKey === 'coord-airport' || service.status === 'draft') continue;
+
+      const vehicleClassKey = serviceFieldValue(service.values, 'vehicleClass', 'select')?.optionId ?? 'coordinador';
+      const quantity = serviceFieldValue(service.values, 'vehicleQuantity', 'number')?.value;
+      if (quantity === undefined) return invalidInput('seedServiceMissing', `Seed service has no vehicle quantity: ${service.seedKey}`);
+      const modality = assignmentModality(service);
+      const rateCardVersionId = providerId === altiplanoProviderId ? altiplanoRateCardVersionId : andesRateCardVersionId;
+      const vehicleClassId = requireVehicleClass(vehicleClassKey);
+      const revisionId = await createAssignmentRevision(seeded, {
+        assignmentId,
+        vehicleClassId,
+        modality,
+        quantity,
+        rateCardVersionId,
+        rateLineId: await requireRateLine(rateCardVersionId, vehicleClassId, modality),
+      });
+      revisionsWritten += 1;
+
+      // A `planned` Service's terms are proposed and left unaccepted, so the
+      // Assignment stays `unassigned` with live terms on the table. The
+      // COUNTER to one of these is authored by `seed/providerOrganization.ts`:
+      // `counterAssignmentRevision` refuses any principal but the Provider arm,
+      // so it cannot be written from here, where every call is the owner's.
+      if (service.status === 'planned') continue;
+
+      await acceptAssignmentRevision(seeded, revisionId);
+    }
+
+    // Existing status-advance loop. Load-bearing: assignments were authored
+    // while Services were still writable drafts. Completed Services stop at
+    // `active` here: non-terminal execution transitions call
+    // assertServiceWritable, which refuses `completed`, and `dispatched`
+    // additionally requires the Service to be at least confirmed. Step 5
+    // dispatches while the Service is still `active`, then closes it out.
+    for (const service of services) {
+      const serviceId = requireService(service.seedKey);
+      const advanceTarget = service.status === 'completed' ? 'active' : service.status;
+      for (const status of transitionsTo(advanceTarget)) await changeServiceStatus(seeded, { serviceId, status });
+    }
+
+    function executionVehicle(
+      service: Service,
+      providerId: Id<'providers'>,
+    ): { fleetVehicleId: Id<'fleetVehicles'> } | { vehiclePlateOverride: string } {
+      const plate = serviceFieldValue(service.values, 'vehiclePlate', 'text')?.value;
+      // Each Service's captured plate is looked up in ITS OWN provider's fleet,
+      // because `assertAssignableFleetVehicle` refuses a vehicle belonging to
+      // anyone else. `operationalValues` draws crew plates from `crewPlates`
+      // precisely so this resolves rather than falling through to an override.
+      //
+      // The override branch survives for `festivalCoordination`, which carries no
+      // plate at all — a coordinator is a person, not a fleet vehicle, and
+      // execution still demands exactly one vehicle source. That is the honest
+      // use of an override, and the only one this seed now has.
+      const fleet = providerId === altiplanoProviderId ? altiplanoFleetByPlate : andesFleetByPlate;
+      if (plate !== undefined) {
+        const fleetVehicleId = fleet.get(normalizePlate(plate));
+        if (fleetVehicleId !== undefined) return { fleetVehicleId };
+        return { vehiclePlateOverride: plate };
+      }
+      return { vehiclePlateOverride: 'COORDINADOR' };
+    }
+
+    function executionPath(status: ServiceStatus): readonly ExecutionStatus[] {
+      if (status === 'confirmed') return ['assigned', 'confirmed'];
+      if (status === 'active') return ['assigned', 'confirmed', 'dispatched'];
+      if (status === 'completed') return ['assigned', 'confirmed', 'dispatched', 'completed'];
+      if (status === 'cancelled') return ['notExecuted'];
+      return [];
+    }
+
+    // Step 5 — execution transitions, checkpoints, and adjustments. Services
+    // now hold their real status, so `dispatched` finds a confirmed Service
+    // and the terminals (`completed`, `notExecuted`) are reachable.
+    //
+    // `checkpointWindowMs` mirrors the bound `recordAssignmentCheckpoint`
+    // enforces; see the comment on the skip below for why this is a flag rather
+    // than an error.
+    const checkpointWindowMs = 365 * 24 * 60 * 60 * 1000;
+    const seedNow = Date.now();
+    const festivalStartsAt = Math.min(...services.map((service) => service.startsAt));
+    const festivalEndsAt = Math.max(...services.map((service) => service.endsAt ?? service.startsAt));
+    const checkpointsAreInWindow =
+      festivalStartsAt - 12 * 60 * 1000 >= seedNow - checkpointWindowMs && festivalEndsAt <= seedNow + checkpointWindowMs;
+    for (const service of services) {
+      const assignmentId = assignmentIds.get(service.seedKey);
+      if (assignmentId === undefined) return invalidInput('seedServiceMissing', `Seed assignment is missing: ${service.seedKey}`);
+      const skipExecution = service.seedKey === 'coord-airport' || service.status === 'draft' || service.status === 'planned';
+      if (!skipExecution) {
+        const providerId = assignmentProviderId(service);
+        const vehicle = executionVehicle(service, providerId);
+        for (const status of executionPath(service.status)) {
+          if (status === 'assigned') {
+            await transitionAssignmentExecution(seeded, { assignmentId, status, ...vehicle });
+            continue;
+          }
+          if (status === 'confirmed') {
+            const driverName = serviceFieldValue(service.values, 'driverName', 'text')?.value;
+            if (driverName === undefined) {
+              return invalidInput('seedServiceMissing', `Confirmed execution requires a driver on ${service.seedKey}`);
+            }
+            const driverPhone = serviceFieldValue(service.values, 'driverPhone', 'text')?.value;
+            await transitionAssignmentExecution(seeded, {
+              assignmentId,
+              status,
+              driverName,
+              ...(driverPhone === undefined ? {} : { driverPhone }),
+            });
+            continue;
+          }
+          if (status === 'notExecuted') {
+            await transitionAssignmentExecution(seeded, {
+              assignmentId,
+              status,
+              notExecutedReason: 'Cancelado por cambio de itinerario del artista; el servicio no se ejecutó.',
+            });
+            continue;
+          }
+          if (status === 'completed') {
+            await changeServiceStatus(seeded, { serviceId: requireService(service.seedKey), status: 'completed' });
+          }
+          await transitionAssignmentExecution(seeded, { assignmentId, status });
+        }
+      }
+
+      // `recordAssignmentCheckpoint` refuses an `occurredAt` more than a year
+      // from now, because `by_assignment_occurredAt` is the only ordering these
+      // rows have and an unbounded stamp would pin one to the top or bottom of
+      // every page forever. This seed's festival is a FIXED calendar week
+      // (September 2026), so the two rules expire against each other: from
+      // roughly September 2027 every checkpoint below would be refused and the
+      // whole seed would roll back — a calendar-triggered failure whose message
+      // names a timestamp, nowhere near the year literals that caused it.
+      //
+      // Checkpoints are observations, never status (the execution machine is the
+      // single source of truth), so omitting them degrades the demo without
+      // breaking it. That keeps the seed working forever; the accompanying test
+      // asserts checkpoints are still being written, so the day this starts
+      // skipping is a named test failure telling someone to re-anchor the
+      // festival dates, rather than a broken seed.
+      if (!checkpointsAreInWindow) continue;
+
+      if (service.status === 'active' && service.seedKey !== 'coord-airport') {
+        await recordAssignmentCheckpoint(seeded, {
+          assignmentId, kind: 'arrivedAtOrigin', occurredAt: service.startsAt - 12 * 60 * 1000, note: 'Llegada al origen.',
+        });
+        await recordAssignmentCheckpoint(seeded, {
+          assignmentId, kind: 'departedOrigin', occurredAt: service.startsAt, note: 'Salida del origen.',
+        });
+        checkpointsWritten += 2;
+      } else if (service.status === 'completed') {
+        await recordAssignmentCheckpoint(seeded, {
+          assignmentId, kind: 'arrivedAtOrigin', occurredAt: service.startsAt - 12 * 60 * 1000, note: 'Llegada al origen.',
+        });
+        await recordAssignmentCheckpoint(seeded, {
+          assignmentId, kind: 'departedOrigin', occurredAt: service.startsAt, note: 'Salida del origen.',
+        });
+        await recordAssignmentCheckpoint(seeded, {
+          assignmentId, kind: 'arrivedAtDestination', occurredAt: service.endsAt ?? service.startsAt, note: 'Llegada al destino.',
+        });
+        checkpointsWritten += 3;
+      }
+
+      if (service.status === 'cancelled') {
+        // Read the write-off off the ACCEPTED REVISION rather than the Service's
+        // own `notExecutedAmount` column. The two agree today only because every
+        // row has quantity 1 and the workbook figure equals the Rate Card cell;
+        // the moment one diverges, the field would either under-report the
+        // cancellation or push `assignmentNet` negative and roll the whole seed
+        // back with an error naming money rather than the offending row.
+        // Deriving it makes "the entire agreed amount went unexecuted" true by
+        // construction. This reads the stored figure and never recomputes it (I10).
+        const assignment = await ctx.db.get(assignmentId);
+        const currentRevisionId = assignment?.currentRevisionId;
+        if (currentRevisionId === undefined) {
+          return invalidInput('seedServiceMissing', `Cancelled service has no accepted terms: ${service.seedKey}`);
+        }
+        const revision = await ctx.db.get(currentRevisionId);
+        if (revision === null) return invalidInput('seedServiceMissing', `Cancelled service revision is missing: ${service.seedKey}`);
+        await recordAssignmentAdjustments(seeded, { assignmentId, notExecutedAmount: revision.lineTotal });
+      }
+      if (service.seedKey === 'latin-arrival') {
+        await recordAssignmentAdjustments(seeded, {
+          assignmentId,
+          additionalCharges: copPesosToMinorUnits(50000),
+          additionalDetail: 'Tiempo de espera en El Dorado T1, 45 minutos.',
+        });
+      }
+      if (service.seedKey === 'ocesa-11-a') {
+        await recordAssignmentAdjustments(seeded, {
+          assignmentId,
+          additionalCharges: copPesosToMinorUnits(20000),
+          additionalDetail: 'Parada adicional en la oficina de Páramo Presenta.',
+        });
+      }
+    }
+
+    return {
+      ...result,
+      assignments: assignmentsWritten,
+      assignmentRevisions: revisionsWritten,
+      assignmentCheckpoints: checkpointsWritten,
+    };
   },
 });

@@ -40,6 +40,7 @@ test('the Cordillera seed writes the real operating vocabulary and all seven ope
   expect(result).toEqual({
     fieldDefinitions: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37, projectName,
     vehicleClasses: 10, costCentres: 6, providers: 2, rateCards: 2, fleetVehicles: 8,
+    assignments: 90, assignmentRevisions: 88, assignmentCheckpoints: 95,
   });
 
   await t.run(async (ctx) => {

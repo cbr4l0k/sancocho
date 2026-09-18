@@ -297,6 +297,8 @@ const errorCodeMessageKeys: Record<ErrorCode, ConvexErrorMessageKey> = {
   seedCostCentreMissing: 'errors.generic',
   seedServiceKindMissing: 'errors.generic',
   seedServiceKindVersionMissing: 'errors.generic',
+  seedRateLineMissing: 'errors.generic',
+  seedRateCardVersionMissing: 'errors.generic',
   seedServiceMissing: 'errors.generic',
   seedFieldConflict: 'errors.generic',
   seedServiceKindConflict: 'errors.generic',
