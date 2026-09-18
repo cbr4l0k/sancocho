@@ -424,6 +424,17 @@ a decision to stop rather than guess.
     today — requests and the lookup derive from the same render's arrays — but a miss is now
     named rather than dropped and surfaces as a pricing failure. `lib/rate-lookup-result.ts`.
 
+38. **`apps/web` has no component tests, so the import's wiring is untested by construction (#99).**
+    #99 moved three rules out of `workbook-import-surface.tsx` into `lib/`, where mutation
+    testing can reach them. What stays untestable is the wiring that calls them: `frozen ??
+    liveSnapshot` and the `setFrozen` on confirm (the freeze itself), the routing of
+    `rateLookupQueryArgs`' `missing` into a `'error'` pricing state, and `PreviewRow`
+    passing the raw rather than the narrowed rate to `importRowIsBlocked`. Each extracted
+    rule is now pinned on both arms; whether the component reaches for it is not. All 44
+    test files are `lib/` and `i18n/` — there is no component-test harness in the repo, and
+    adding one is a decision in its own right rather than something to fold into #99.
+    Recorded so the extraction is not mistaken for full coverage of the screen.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
