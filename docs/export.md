@@ -26,12 +26,23 @@ export hands them the tenant in a file that leaves the product — and the membe
 already governs the commercial catalogue is the honest floor for that. And a single floor
 gives the gate one place to be, one place to test, and one answer to give.
 
-**A Provider Principal cannot reach any of it.** Not by a narrower check, but because the
-Provider arm is not an organization membership at all: every query above resolves through
-`requireOrganizationMembership` or `requireOrganizationRole`, both of which refuse a
-Principal holding only a scoped grant, and the export adds no path that skips them.
-A Provider sees no export affordance and, if it forged the call, receives the same
-generic not-found every other member-only read gives it (I9).
+**A Provider Principal cannot export.** It sees no affordance and, if it forged the gate
+call, receives the same generic not-found every other member-only read gives it (I9).
+
+The precise reason matters, because the obvious one is not quite true. Most of what the
+walk reads resolves through `requireOrganizationMembership` or `requireOrganizationRole`,
+which refuse a Principal holding only a scoped grant. But one source does not:
+`listAssignmentRevisions` gates on `readAssignment`, an intent the Provider arm holds, and
+returns that firm's own narrowed projection of its own Assignment's revisions
+(`assignments/model.ts`). That is correct and deliberate — it is what the Provider portal
+reads.
+
+What makes the export member-only is therefore two things, not one. The gate refuses a
+Provider outright. And the Assignments sheet's source, `listServiceAssignmentRows`,
+**refuses the Provider arm explicitly** rather than projecting it, so a Provider can never
+enumerate the Assignments it would need in order to walk any revisions at all. The Provider
+arm's own reads remain exactly as wide as `docs/provider-access.md` says; none of them is
+an export.
 
 The console hides the affordance below `admin` through `lib/roles.ts`. That is
 presentation only and never the check that holds (I1).

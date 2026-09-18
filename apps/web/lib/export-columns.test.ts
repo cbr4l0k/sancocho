@@ -114,4 +114,19 @@ describe('service field cells', () => {
       { kind: 'empty' },
     ]);
   });
+
+  test('orders two fields that share a label and a position by key, in either arrival order', () => {
+    // Position and label both tie, so the remaining comparison is the key. Without it
+    // the column set would follow whichever row arrived first, and the colliding
+    // headers would follow it. docs/export.md promises both determinism and
+    // collision-disambiguation of those headers.
+    const alpha = { key: 'alpha_notes', label: 'Notas', position: 0 };
+    const zeta = { key: 'zeta_notes', label: 'Notas', position: 0 };
+    const fromAlphaFirst = serviceFieldColumns([{ fields: [alpha] }, { fields: [zeta] }]);
+    const fromZetaFirst = serviceFieldColumns([{ fields: [zeta] }, { fields: [alpha] }]);
+    expect(fromAlphaFirst.map((column) => column.key)).toEqual(['alpha_notes', 'zeta_notes']);
+    expect(fromZetaFirst.map((column) => column.key)).toEqual(['alpha_notes', 'zeta_notes']);
+    expect(exportFieldHeaders(fromAlphaFirst)).toEqual(['Notas (alpha_notes)', 'Notas (zeta_notes)']);
+    expect(exportFieldHeaders(fromZetaFirst)).toEqual(['Notas (alpha_notes)', 'Notas (zeta_notes)']);
+  });
 });

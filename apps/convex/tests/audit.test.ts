@@ -173,23 +173,38 @@ test('an empty export sheet list is invalid and writes no audit row', async () =
   expect(await countAuditEvents(t)).toBe(before);
 });
 
-test('the whole sheet set records, and anything longer than it cannot help but repeat', async () => {
+test('the console\'s own nine-sheet call records, and a repeat inside it is refused', async () => {
   const { t, owner, organizationId } = await exportFixture('audit-export-whole-set-owner');
   const before = await countAuditEvents(t);
 
-  // The console's own call: every sheet, exactly once. This is the case the duplicate
-  // check must NOT refuse, and without it the ordinary export would be rejected.
-  await expect(owner.client.mutation(recordExportRequest, {
-    organizationId,
-    sheets: ['events', 'services', 'projects', 'serviceKinds', 'locations'],
-  })).resolves.toBeNull();
+  // Exactly what `export-surface.tsx` sends: all nine sheets, each once. This is the case
+  // the duplicate check must NOT refuse, and it names every literal so a sheet added to
+  // the union without being accepted here fails loudly rather than silently.
+  const everySheet = [
+    'events',
+    'services',
+    'assignments',
+    'assignmentRevisions',
+    'projects',
+    'serviceKinds',
+    'locations',
+    'providers',
+    'rateCards',
+  ] as const;
+  await expect(owner.client.mutation(recordExportRequest, { organizationId, sheets: [...everySheet] }))
+    .resolves.toBeNull();
   expect(await countAuditEvents(t)).toBe(before + 1);
+  const row = await t.run(async (ctx) => (await ctx.db
+    .query('auditEvents')
+    .withIndex('by_org', (q) => q.eq('organizationId', organizationId))
+    .collect()).find((candidate) => candidate.action === 'export.requested'));
+  expect(row?.metadata).toEqual({ sheets: everySheet.join(', ') });
 
-  // `sheets` is closed to the union's members, so a longer array is necessarily a repeated
-  // one — which is why the duplicate rule is the whole bound and no length guard exists.
+  // The duplicate rule is the whole bound: no length guard exists, because a repeat is the
+  // only way an array can misdescribe what was extracted.
   await expect(owner.client.mutation(recordExportRequest, {
     organizationId,
-    sheets: ['events', 'services', 'projects', 'serviceKinds', 'locations', 'events'],
+    sheets: [...everySheet, 'events'],
   })).rejects.toMatchObject({ data: { code: 'auditMetadataInvalid' } });
   expect(await countAuditEvents(t)).toBe(before + 1);
 });

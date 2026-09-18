@@ -12,7 +12,14 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel';
 import { toSheetCell } from '@/lib/export-cells';
-import { drainPages, exportIsRunning, failedSheet, type ExportProgress } from '@/lib/export-run';
+import {
+  drainPages,
+  exportFileName,
+  exportIsRunning,
+  failedSheet,
+  mapInBatches,
+  type ExportProgress,
+} from '@/lib/export-run';
 import {
   assignmentRevisionsSheet,
   assignmentsSheet,
@@ -195,7 +202,7 @@ export function ExportSurface() {
         }),
       );
       let rateCardProgress = rateCardRows.length;
-      const exportableRateCards = await mapInBatches(rateCardRows, async (card) => {
+      const exportableRateCards = await mapInBatches(rateCardRows, walkConcurrency, async (card) => {
         const versions = await drainPages((cursor) =>
           client.query(api.rateCards.queries.listRateCardVersions, {
             rateCardId: card._id,
@@ -221,7 +228,7 @@ export function ExportSurface() {
       setProgress({ kind: 'reading', sheet: 'assignments', rows: 0 });
       let assignmentCount = 0;
       const assignmentWalks = (
-        await mapInBatches(serviceRows, async (serviceRow) => {
+        await mapInBatches(serviceRows, walkConcurrency, async (serviceRow) => {
           const rows = await client.query(api.assignments.queries.listServiceAssignmentRows, {
             serviceId: serviceRow.service._id,
           });
@@ -239,7 +246,7 @@ export function ExportSurface() {
       setProgress({ kind: 'reading', sheet: 'assignmentRevisions', rows: 0 });
       let revisionCount = 0;
       const exportableRevisions = (
-        await mapInBatches(assignmentWalks, async (walk) => {
+        await mapInBatches(assignmentWalks, walkConcurrency, async (walk) => {
           let seen = 0;
           const revisions = await drainPages(
             (cursor) =>
@@ -302,7 +309,7 @@ export function ExportSurface() {
       const { default: writeXlsxFile } = await import('write-excel-file/browser');
       await writeXlsxFile(
         sheets.map((data) => ({ data: sheetCells(data).map((row) => row.map(toSheetCell)), sheet: data.name })),
-      ).toFile(fileName(organizationName));
+      ).toFile(exportFileName(organizationName, new Date()));
       setProgress({ kind: 'done', rows });
     } catch (error) {
       // No file is written in this state: a partial workbook that looks complete is the
@@ -415,29 +422,6 @@ function Progress({ progress }: { progress: ExportProgress }) {
   );
 }
 
-/** `priamo-<organization>-<date>.xlsx`, with the organization's own name kept verbatim. */
-function fileName(organizationName: string): string {
-  const today = new Date();
-  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return `priamo-${organizationName.trim().replace(/\s+/gu, '-').toLowerCase()}-${date}.xlsx`;
-}
-
-/**
- * The assignment and revision walks are N+1: there is no organization- or
- * project-scoped revision index (docs/export.md "Sheets"). Cap in-flight
- * queries so a large tenant does not open thousands of requests at once.
- */
-async function mapInBatches<Item, Result>(
-  items: readonly Item[],
-  mapper: (item: Item) => Promise<Result>,
-): Promise<Result[]> {
-  const results: Result[] = [];
-  for (let offset = 0; offset < items.length; offset += walkConcurrency) {
-    const batch = items.slice(offset, offset + walkConcurrency);
-    results.push(...(await Promise.all(batch.map((item) => mapper(item)))));
-  }
-  return results;
-}
 
 type ProviderRow = FunctionReturnType<typeof api.providers.queries.listProviders>['page'][number];
 type RateCardRow = FunctionReturnType<typeof api.rateCards.queries.listRateCards>['page'][number];

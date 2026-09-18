@@ -133,6 +133,19 @@ function lookupCell(id: string | undefined, names: ReadonlyMap<string, string>):
   return id === undefined ? empty : textCell(names.get(id));
 }
 
+/**
+ * A currency is written only beside an amount that was actually written.
+ *
+ * `moneyCell` refuses an amount it cannot represent exactly, so a sheet that wrote the
+ * currency unconditionally could leave `COP` sitting in a row whose amount columns are
+ * blank — which is the one thing `lib/money.ts` says must never happen: a currency
+ * separated from the amount it belongs to reads as a fact about nothing.
+ */
+function currencyCell(currency: Currency | undefined, ...amounts: readonly ExportCell[]): ExportCell {
+  if (currency === undefined) return empty;
+  return amounts.some((amount) => amount.kind === 'number') ? { kind: 'text', value: currency } : empty;
+}
+
 function numberCell(value: number | undefined): ExportCell {
   return value === undefined ? empty : { kind: 'number', value };
 }
@@ -171,6 +184,28 @@ const eventColumns = [
   'export.columns.accountable',
 ] as const satisfies readonly ColumnKey[];
 
+function budgetCells(event: ExportableEvent): readonly [ExportCell, ExportCell] {
+  const amount =
+    event.budgetAmount === undefined || event.budgetCurrency === undefined
+      ? empty
+      : moneyCell(event.budgetAmount, event.budgetCurrency);
+  return [amount, currencyCell(event.budgetCurrency, amount)];
+}
+
+/**
+ * Unit amount, line total and the currency they are both in — as one unit, so the currency
+ * can never outlive the amounts. An Assignment with no accepted revision writes all three
+ * blank: nothing has been agreed, and a `0` in a money column is a price.
+ */
+function moneyTriple(
+  revision: { readonly unitAmount: number; readonly lineTotal: number; readonly currency: Currency } | null,
+): readonly [ExportCell, ExportCell, ExportCell] {
+  if (revision === null) return [empty, empty, empty];
+  const unit = moneyCell(revision.unitAmount, revision.currency);
+  const total = moneyCell(revision.lineTotal, revision.currency);
+  return [unit, total, currencyCell(revision.currency, unit, total)];
+}
+
 export function eventsSheet(
   events: readonly ExportableEvent[],
   lookups: ExportLookups,
@@ -188,10 +223,7 @@ export function eventsSheet(
       lookupCell(event.venueLocationId, lookups.locationNames),
       lookupCell(event.clientCostCentreId, lookups.costCentreNames),
       // A budget with no currency is not money, so it is not written as an amount.
-      event.budgetAmount === undefined || event.budgetCurrency === undefined
-        ? empty
-        : moneyCell(event.budgetAmount, event.budgetCurrency),
-      textCell(event.budgetCurrency),
+      ...budgetCells(event),
       lookupCell(event.accountableUserId, lookups.userNames),
     ]),
   };
@@ -560,9 +592,7 @@ export function assignmentsSheet(
         // An assignment with no accepted revision has no agreed money. Zeros
         // here would state a price the record does not carry.
         revision === null ? empty : numberCell(revision.quantity),
-        revision === null ? empty : moneyCell(revision.unitAmount, revision.currency),
-        revision === null ? empty : moneyCell(revision.lineTotal, revision.currency),
-        revision === null ? empty : textCell(revision.currency),
+        ...moneyTriple(revision),
         { kind: 'text', value: translate(executionStatusTokens[assignment.executionStatus].labelKey) },
         textCell(assignment.driverName),
         textCell(assignment.vehiclePlateOverride),
@@ -619,9 +649,7 @@ export function assignmentRevisionsSheet(
       { kind: 'number', value: revision.revisionNumber },
       { kind: 'text', value: translate(assignmentRevisionStatusTokens[revision.status].labelKey) },
       numberCell(revision.quantity),
-      moneyCell(revision.unitAmount, revision.currency),
-      moneyCell(revision.lineTotal, revision.currency),
-      textCell(revision.currency),
+      ...moneyTriple(revision),
       optionalInstantCell(revision.acceptedAt),
       textCell(revision.declinedReason),
     ]),

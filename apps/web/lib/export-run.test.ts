@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { drainPages, exportIsRunning, failedSheet, type ExportPage } from './export-run';
+import {
+  drainPages,
+  exportFileName,
+  exportIsRunning,
+  failedSheet,
+  mapInBatches,
+  type ExportPage,
+} from './export-run';
 
 function pagedReader(pages: readonly (readonly string[])[]): {
   read: (cursor: string | null) => Promise<ExportPage<string>>;
@@ -67,6 +74,62 @@ describe('walking a paginated query', () => {
     await expect(drainPages(read)).rejects.toThrow();
     // Two reads: the first records the cursor, the second sees it repeat and stops.
     expect(reads).toBe(2);
+  });
+});
+
+describe('mapping in batches', () => {
+  test('maps every item exactly once and keeps input order across full batches', async () => {
+    // Eight items at concurrency 4 is an exact multiple; nine is one past it. A slice
+    // that is one short drops the last item of every batch, and pushing batches at the
+    // front instead of the back would reverse them.
+    const map = async (item: number) => `n${item}`;
+    expect(await mapInBatches([0, 1, 2, 3, 4, 5, 6, 7], 4, map)).toEqual([
+      'n0',
+      'n1',
+      'n2',
+      'n3',
+      'n4',
+      'n5',
+      'n6',
+      'n7',
+    ]);
+    expect(await mapInBatches([0, 1, 2, 3, 4, 5, 6, 7, 8], 4, map)).toEqual([
+      'n0',
+      'n1',
+      'n2',
+      'n3',
+      'n4',
+      'n5',
+      'n6',
+      'n7',
+      'n8',
+    ]);
+  });
+
+  test('refuses a concurrency of zero', async () => {
+    await expect(mapInBatches(['a'], 0, async (item) => item)).rejects.toThrow(RangeError);
+  });
+});
+
+describe('export file name', () => {
+  // 20:00 in Bogotá is 01:00 UTC the next calendar day. The UTC date would stamp
+  // every evening export as tomorrow.
+  const tonight = new Date(2026, 8, 18, 20, 0);
+
+  test('sanitizes the organization name so it cannot form a path', () => {
+    expect(exportFileName('Andes / Bogotá', tonight)).toBe('priamo-andes-bogota-2026-09-18.xlsx');
+    expect(exportFileName('Andes\\Bogotá', tonight)).toBe('priamo-andes-bogota-2026-09-18.xlsx');
+    expect(exportFileName('Op. 2026/27', tonight)).toBe('priamo-op-2026-27-2026-09-18.xlsx');
+    expect(exportFileName('--Andes--', tonight)).toBe('priamo-andes-2026-09-18.xlsx');
+  });
+
+  test('falls back when the name sanitizes to nothing, so the file is never priamo--<date>', () => {
+    expect(exportFileName('///', tonight)).toBe('priamo-export-2026-09-18.xlsx');
+    expect(exportFileName('', tonight)).toBe('priamo-export-2026-09-18.xlsx');
+  });
+
+  test('stamps the local calendar date, not the UTC date', () => {
+    expect(exportFileName('Andes', tonight)).toBe('priamo-andes-2026-09-18.xlsx');
   });
 });
 

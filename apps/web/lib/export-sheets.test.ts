@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
+import enUS from '@/i18n/messages/en-US';
+import esCO from '@/i18n/messages/es-CO';
+
 import type { ExportCell } from './export-cells';
 import {
   assignmentRevisionsSheet,
@@ -110,6 +113,25 @@ describe('events sheet', () => {
     expect(sheet.rows[0]?.[7]).toEqual({ kind: 'empty' });
     expect(sheet.rows[0]?.[8]).toEqual({ kind: 'empty' });
   });
+
+  test('leaves the currency blank when the budget amount cannot be represented', () => {
+    const sheet = eventsSheet(
+      [
+        {
+          name: 'Fuera de rango',
+          status: 'draft',
+          startsAt,
+          projectId: 'project-1',
+          budgetAmount: Number.MAX_SAFE_INTEGER + 2,
+          budgetCurrency: 'COP',
+        },
+      ],
+      lookups,
+      translate,
+    );
+    expect(sheet.rows[0]?.[7]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[8]).toEqual({ kind: 'empty' });
+  });
 });
 
 describe('services sheet', () => {
@@ -211,6 +233,15 @@ describe('projects sheet', () => {
     const sheet = projectsSheet([{ name: 'Cumbre Andina', status: 'active', description: '   ' }], translate);
     expect(sheet.rows[0]?.[4]).toEqual({ kind: 'empty' });
   });
+
+  test('keeps surrounding whitespace on tenant text that has real content', () => {
+    const sheet = projectsSheet(
+      [{ name: '  Cumbre Andina  ', status: 'active', description: '  Cliente X  ' }],
+      translate,
+    );
+    expect(sheet.rows[0]?.[0]).toEqual({ kind: 'text', value: '  Cumbre Andina  ' });
+    expect(sheet.rows[0]?.[4]).toEqual({ kind: 'text', value: '  Cliente X  ' });
+  });
 });
 
 describe('service kinds sheet', () => {
@@ -307,6 +338,16 @@ describe('locations sheet', () => {
     );
     expect(sheet.rows).toHaveLength(2);
     expect(sheet.rows[1]?.[2]).toEqual({ kind: 'text', value: 'fields.statuses.archived' });
+  });
+
+  test('writes a latitude of zero as zero, not as a blank', () => {
+    // The equator is a real coordinate. Treating 0 as absent would drop every location
+    // that sits on it.
+    const sheet = locationsSheet(
+      [{ name: 'Mitad del Mundo', type: 'venue', status: 'active', latitude: 0, longitude: -78.456 }],
+      translate,
+    );
+    expect(sheet.rows[0]?.[4]).toEqual({ kind: 'number', value: 0 });
   });
 });
 
@@ -728,6 +769,54 @@ describe('assignment revisions sheet', () => {
     expect(sheet.rows[1]?.[8]).toEqual({ kind: 'number', value: 1234.56, format: '"USD" #,##0.00' });
     expect(sheet.rows[1]?.[5]).toEqual({ kind: 'text', value: 'vocab.revisionStatuses.declined' });
     expect(sheet.rows[1]?.[11]).toEqual({ kind: 'text', value: 'Tarifa desactualizada' });
+  });
+
+  test('leaves the currency blank when a revision amount cannot be represented', () => {
+    const sheet = assignmentRevisionsSheet(
+      [
+        {
+          serviceName: 'Traslado AV8020',
+          providerName: 'Transportes Andes',
+          vehicleClassName: 'Van 12 pax',
+          modality: 'transfer',
+          revisionNumber: 1,
+          status: 'accepted',
+          quantity: 1,
+          unitAmount: Number.MAX_SAFE_INTEGER + 2,
+          currency: 'COP',
+          lineTotal: Number.MAX_SAFE_INTEGER + 2,
+        },
+      ],
+      translate,
+    );
+    expect(sheet.rows[0]?.[7]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[8]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[9]).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('catalogue sheet names', () => {
+  test('every locale sheet name is a legal, unique Excel sheet name', () => {
+    // write-excel-file throws at write time on an empty name, one longer than 31
+    // characters, or one containing [ ] / \ : * ?. Catching that in the catalogues
+    // fails at edit time instead of after the whole tenant has been read.
+    const illegal = ['[', ']', '/', '\\', ':', '*', '?'];
+    const offenders: string[] = [];
+    for (const [locale, names] of [
+      ['es-CO', esCO.export.sheetNames],
+      ['en-US', enUS.export.sheetNames],
+    ] as const) {
+      const values = Object.values(names);
+      const seen = new Set<string>();
+      for (const name of values) {
+        if (name.length === 0 || name.length > 31 || illegal.some((character) => name.includes(character))) {
+          offenders.push(`${locale}: ${name}`);
+        }
+        if (seen.has(name)) offenders.push(`${locale} duplicate: ${name}`);
+        seen.add(name);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 

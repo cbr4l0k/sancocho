@@ -2,14 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   dateCell,
-  dateFormat,
-  datetimeFormat,
   fieldValueCell,
   instantCell,
   moneyCell,
   moneyFormats,
   timeCell,
-  timeFormat,
   toSheetCell,
 } from './export-cells';
 import { composeInstant, excelFractionToTimeString, excelSerialToDateString } from './workbook-cells';
@@ -34,7 +31,6 @@ describe('date and time cells', () => {
     const cell = dateCell('2026-09-12');
     expect(cell).toEqual({ kind: 'date', value: new Date(Date.UTC(2026, 8, 12)), format: 'yyyy-mm-dd' });
     expect(cell.kind === 'date' ? serialOf(cell.value) : undefined).toBe(46277);
-    expect(dateFormat).toBe('yyyy-mm-dd');
   });
 
   test('round-trips the import: the serial it writes is the serial the import reads back', () => {
@@ -60,7 +56,28 @@ describe('date and time cells', () => {
       value: new Date(Date.UTC(2026, 8, 12, 10, 20)),
       format: 'yyyy-mm-dd hh:mm',
     });
-    expect(datetimeFormat).toBe('yyyy-mm-dd hh:mm');
+  });
+
+  test('takes the offset at the instant, not at the moment of export', () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // 12:00 UTC is 07:00 in January (EST, UTC-5) and 08:00 in July (EDT, UTC-4).
+      // Reading `new Date().getTimezoneOffset()` would apply whichever offset is in
+      // force today to both instants, and one of the two would be wrong.
+      expect(instantCell(Date.UTC(2026, 0, 15, 12, 0))).toEqual({
+        kind: 'date',
+        value: new Date(Date.UTC(2026, 0, 15, 7, 0)),
+        format: 'yyyy-mm-dd hh:mm',
+      });
+      expect(instantCell(Date.UTC(2026, 6, 15, 12, 0))).toEqual({
+        kind: 'date',
+        value: new Date(Date.UTC(2026, 6, 15, 8, 0)),
+        format: 'yyyy-mm-dd hh:mm',
+      });
+    } finally {
+      process.env.TZ = previous ?? 'America/Bogota';
+    }
   });
 
   test('agrees with the instant the import composes from the same pair', () => {
@@ -79,7 +96,6 @@ describe('date and time cells', () => {
     expect(timeCell('10:20')).toEqual({ kind: 'number', value: 0.4305555555555556, format: 'hh:mm' });
     expect(timeCell('00:00')).toEqual({ kind: 'number', value: 0, format: 'hh:mm' });
     expect(timeCell('23:59')).toEqual({ kind: 'number', value: 0.9993055555555556, format: 'hh:mm' });
-    expect(timeFormat).toBe('hh:mm');
   });
 
   test('round-trips the import: the fraction it writes is the fraction the import reads back', () => {
@@ -106,13 +122,13 @@ describe('money cells', () => {
     expect(moneyFormats.USD).toBe('"USD" #,##0.00');
     expect(moneyFormats.EUR).toBe('"EUR" #,##0.00');
     expect(moneyFormats.MXN).toBe('"MXN" #,##0.00');
-    expect(new Set(Object.values(moneyFormats)).size).toBe(4);
   });
 
   test('refuses an amount that is not non-negative integer minor units', () => {
     expect(moneyCell(-1, 'COP')).toEqual({ kind: 'empty' });
     expect(moneyCell(1.5, 'COP')).toEqual({ kind: 'empty' });
     expect(moneyCell(Number.NaN, 'COP')).toEqual({ kind: 'empty' });
+    expect(moneyCell(Number.MAX_SAFE_INTEGER + 2, 'COP')).toEqual({ kind: 'empty' });
   });
 });
 
@@ -131,6 +147,16 @@ describe('field value cells', () => {
     expect(fieldValueCell({ kind: 'longText', value: 'Nota' }, { kind: 'longText' })).toEqual({
       kind: 'text',
       value: 'Nota',
+    });
+    // Tenant-authored text is verbatim. Trimming here would invent a different string
+    // than the one stored, and surrounding spaces are real content.
+    expect(fieldValueCell({ kind: 'text', value: '  Vuelo AV8020  ' }, text)).toEqual({
+      kind: 'text',
+      value: '  Vuelo AV8020  ',
+    });
+    expect(fieldValueCell({ kind: 'longText', value: '  Nota  ' }, { kind: 'longText' })).toEqual({
+      kind: 'text',
+      value: '  Nota  ',
     });
     expect(fieldValueCell({ kind: 'number', value: 18 }, { kind: 'number' })).toEqual({
       kind: 'number',
@@ -178,6 +204,11 @@ describe('field value cells', () => {
     expect(
       fieldValueCell({ kind: 'multiSelect', optionIds: ['exec', 'turista'] }, { kind: 'multiSelect', options }),
     ).toEqual({ kind: 'text', value: 'Ejecutivo; Turista' });
+    // Stored order is the operator's order. Sorting the labels would rewrite a choice
+    // that was already alphabetical in the other direction.
+    expect(
+      fieldValueCell({ kind: 'multiSelect', optionIds: ['turista', 'exec'] }, { kind: 'multiSelect', options }),
+    ).toEqual({ kind: 'text', value: 'Turista; Ejecutivo' });
     expect(
       fieldValueCell({ kind: 'multiSelect', optionIds: ['vip', 'turista'] }, { kind: 'multiSelect', options }),
     ).toEqual({ kind: 'text', value: 'Turista' });
