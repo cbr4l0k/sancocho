@@ -131,16 +131,25 @@ The union costs nothing to compute. `listOrganizationServices` already returns
 immutable `config` snapshot — **including fields the Service holds no value for** —
 so the column set falls out of the rows already fetched, with no extra query.
 
-**Column order is by the field's `key`**, ascending, after the semantic columns.
-`position` cannot order this set: the same Field Definition sits at different positions
-in different versions, so position gives no total order across a union. `key` is unique
-per organization (the `orgId + field key` constraint), so it is total, stable across
-exports, and independent of which Services happened to be in range.
+**The column set is the one the Services table already builds**, from
+`lib/service-columns.ts` `serviceFieldColumns`: identity is the field's `key`, and the
+order is the earliest `position` any version gives the field, then label, then key. The
+export does not invent a second strategy. Reusing it means the file's columns are the
+screen's columns, which is what an operator exporting what they are looking at expects,
+and it keeps one rule to maintain instead of two that can drift.
+
+`key` is the right identity because it is unique per organization (the `orgId + field key`
+constraint) and it is the stable half of the definition join, so the same built-in field
+composed by two Service Kinds is one column rather than two. The ordering is total: the
+position comparison is broken by label and then by key, so a column set never depends on
+which rows happened to arrive first.
 
 **Collisions.** Two Field Definitions may share a `label`; they are different fields and
-get **two columns**, each header disambiguated by its key. Labels are tenant-authored and
-carry no uniqueness guarantee, so a header must never be the thing that identifies a
-column.
+get **two columns**, and the export appends each one's key to its header so the two are
+told apart. Labels are tenant-authored and carry no uniqueness guarantee, so a header must
+never be the thing that identifies a column. The Services table can leave duplicate
+headers alone because a reader sees the data under them; a spreadsheet column that is
+sorted, filtered and referenced by its header cannot.
 
 A Service whose version composes a field it has no value for, and a Service whose version
 does not compose that field at all, both produce an empty cell. The distinction is real
