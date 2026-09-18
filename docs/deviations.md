@@ -493,6 +493,58 @@ a decision to stop rather than guess.
     collapse-duplicates rule here would be the first of its kind and belongs with that
     decision rather than ahead of it. `apps/convex/convex/audit/mutations.ts`.
 
+45. **The committed total is read from stored revisions, not from a budget query (#98).** The
+    issue's required test says to read it "through the shipped budget query". There is none:
+    **#70** (maintained cost/budget counters) and **#76** (the budget & cost surface) were both
+    closed as `NOT_PLANNED` when #93 removed the statistics subsystem. `grep -rn committed
+    apps/convex/convex` returns nothing. The criterion is met by summing the accepted revisions'
+    stored `lineTotal` against a figure written literally in the test — which preserves the point
+    of the rule (the seeded money is the STORED money, never a recomputation, I10) while changing
+    its instrument. `apps/convex/tests/seed-supply.test.ts`.
+
+46. **The workbook's ~110 M COP is the budget, not the committed total (#98).** The issue asks the
+    seed to "show a recognisable ~110 M COP". The seeded demonstration is a representative subset
+    of the workbook — 90 Services — and its own `unitRate × quantity` figures sum to 47 355 000 COP
+    gross, of which **45 520 000** is committed once the one `draft` and six `planned` rows are
+    excluded. So 110 000 000 is seeded as the Event's `budgetAmount` and committed lands near 45 M.
+    Budget versus committed is the comparison the surface exists to make, and a seed where the two
+    matched would demonstrate nothing. `apps/convex/convex/seed/cordillera.ts`.
+
+47. **The workbook's own rates are not a single (vehicle class × modality) grid, so the seed has two
+    providers (#98).** `festivalCrewShuttle` prices H1 at 640 000 for `trayecto`, `ruta` and
+    `disponibilidad12h` alike, while every artist row prices H1 `trayecto` at 185 000. One published
+    Rate Card Version cannot hold both — `addRateLine` refuses a duplicate
+    `(version, vehicleClass, modality)` cell. The crew shuttle is therefore a different supplier,
+    `Rutas del Altiplano SAS`. This is a finding about the source data, not a design preference.
+    Two further consequences: `Coordinador` is modelled as a Vehicle Class because that is how the
+    workbook prices the line (a stretch the code acknowledges, and it introduces no escape hatch),
+    and `coord-airport` — priced 0 in the workbook while the Coordinador cell is 490 000 — gets an
+    Assignment and deliberately **no** Revision, which is also what makes `dispatchDayReadiness`
+    report a non-zero `unassigned`. `apps/convex/convex/seed/cordillera.ts`.
+
+48. **The seed's fixed September 2026 dates expire against the checkpoint window (#98).**
+    `recordAssignmentCheckpoint` refuses an `occurredAt` more than a year from `Date.now()`, because
+    its index is the only ordering those rows have. The festival is a fixed calendar week, so from
+    roughly **September 2027** every checkpoint would be refused and the whole seed would roll back
+    on a date nobody changed. Checkpoints are observations and never status, so the seed skips them
+    outside the window instead: the seed keeps working forever, and a named test asserting 95
+    checkpoints fails on that date to say the demo's dates need re-anchoring. Found by the invariant
+    audit of the Assignment layer. `apps/convex/convex/seed/cordillera.ts`,
+    `apps/convex/tests/seed-supply.test.ts`.
+
+49. **One surviving mutant, and it is equivalent (#98).** The cancelled Assignments' write-off is
+    derived from the accepted revision's stored `lineTotal` rather than from the Service's
+    `notExecutedAmount` workbook column, so that "the whole agreed amount went unexecuted" is true by
+    construction rather than by coincidence. Re-injecting the column-derived version **survived all
+    652 tests**: with quantity 1 on every seeded row and the workbook figure equal to the Rate Card
+    cell, the two expressions produce identical values today. No test can separate them without
+    seeding data that diverges, and asserting which expression the source uses would test the
+    implementation rather than the behaviour. Recorded rather than papered over: the change removes a
+    real fragility (a divergent column would either under-report a cancellation or push
+    `assignmentNet` negative and roll the entire seed back), and the day the data diverges the mutant
+    stops being equivalent. The other six mutants injected each killed a named test.
+    `apps/convex/convex/seed/cordillera.ts`.
+
 Also unbuilt by design, and not gaps: per-field permissions, structured conditional rules on
 service kind fields (the plug-in point is documented in `serviceKinds/fields/model.ts`), organization
 archival, organization slug renaming, and any location revision/snapshot system.
