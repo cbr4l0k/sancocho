@@ -2,6 +2,7 @@ import type {
   currencyValidator,
   exportSheetValidator,
   locationTypeValidator,
+  rateModalityValidator,
 } from '@priamo/convex/validators';
 
 import { instantCell, moneyCell, type ExportCell } from './export-cells';
@@ -9,14 +10,20 @@ import { exportFieldHeaders, serviceFieldCells, type ServiceFieldSource } from '
 import type { ServiceFieldColumn } from './service-columns';
 import {
   archivalStatusTokens,
+  assignmentRevisionStatusTokens,
   eventStatusTokens,
+  executionStatusTokens,
   projectStatusTokens,
+  rateCardVersionStatusTokens,
   serviceKindStatusTokens,
   serviceKindVersionStatusTokens,
   serviceStatusTokens,
   type ArchivalStatus,
+  type AssignmentRevisionStatus,
   type EventStatus,
+  type ExecutionStatus,
   type ProjectStatus,
+  type RateCardVersionStatus,
   type ServiceKindStatus,
   type ServiceKindVersionStatus,
   type ServiceStatus,
@@ -26,6 +33,7 @@ import {
 export type ExportSheetName = typeof exportSheetValidator.type;
 type Currency = typeof currencyValidator.type;
 type LocationType = typeof locationTypeValidator.type;
+type RateModality = typeof rateModalityValidator.type;
 
 const columnKeys = [
   'export.columns.name',
@@ -49,6 +57,29 @@ const columnKeys = [
   'export.columns.address',
   'export.columns.latitude',
   'export.columns.longitude',
+  'export.columns.service',
+  'export.columns.provider',
+  'export.columns.vehicleClass',
+  'export.columns.modality',
+  'export.columns.quantity',
+  'export.columns.unitAmount',
+  'export.columns.lineTotal',
+  'export.columns.executionStatus',
+  'export.columns.revisionNumber',
+  'export.columns.revisionStatus',
+  'export.columns.acceptedAt',
+  'export.columns.declinedReason',
+  'export.columns.driver',
+  'export.columns.vehiclePlate',
+  'export.columns.legalName',
+  'export.columns.taxId',
+  'export.columns.contactName',
+  'export.columns.contactEmail',
+  'export.columns.contactPhone',
+  'export.columns.notes',
+  'export.columns.rateCard',
+  'export.columns.dispatched',
+  'export.columns.completed',
 ] as const;
 
 type ColumnKey = (typeof columnKeys)[number];
@@ -63,7 +94,8 @@ export type ExportMessageKey =
   | ColumnKey
   | `export.sheetNames.${ExportSheetName}`
   | StatusLabelKey
-  | `locations.types.${LocationType}`;
+  | `locations.types.${LocationType}`
+  | `common.modalities.${RateModality}`;
 
 export type Translate = (key: ExportMessageKey) => string;
 
@@ -342,6 +374,256 @@ export function locationsSheet(
       textCell(location.address),
       numberCell(location.latitude),
       numberCell(location.longitude),
+    ]),
+  };
+}
+
+export type ExportableProvider = {
+  readonly name: string;
+  readonly legalName?: string;
+  readonly taxId?: string;
+  readonly contactName?: string;
+  readonly contactEmail?: string;
+  readonly contactPhone?: string;
+  readonly notes?: string;
+  readonly status: ArchivalStatus;
+};
+
+const providerColumns = [
+  'export.columns.name',
+  'export.columns.legalName',
+  'export.columns.taxId',
+  'export.columns.contactName',
+  'export.columns.contactEmail',
+  'export.columns.contactPhone',
+  'export.columns.status',
+  'export.columns.notes',
+] as const satisfies readonly ColumnKey[];
+
+export function providersSheet(
+  providers: readonly ExportableProvider[],
+  translate: Translate,
+): ExportSheetData {
+  return {
+    name: translate('export.sheetNames.providers'),
+    headers: headers(translate, providerColumns),
+    rows: providers.map((provider) => [
+      textCell(provider.name),
+      textCell(provider.legalName),
+      textCell(provider.taxId),
+      textCell(provider.contactName),
+      textCell(provider.contactEmail),
+      textCell(provider.contactPhone),
+      { kind: 'text', value: translate(archivalStatusTokens[provider.status].labelKey) },
+      textCell(provider.notes),
+    ]),
+  };
+}
+
+export type ExportableRateCard = {
+  readonly providerName: string;
+  readonly name: string;
+  readonly status: ArchivalStatus;
+  readonly versions: readonly {
+    readonly versionNumber: number;
+    readonly status: RateCardVersionStatus;
+    readonly publishedAt?: number;
+    readonly currency: Currency;
+    readonly lines: readonly {
+      readonly vehicleClassName: string;
+      readonly modality: RateModality;
+      readonly unitAmount: number;
+    }[];
+  }[];
+};
+
+const rateCardColumns = [
+  'export.columns.provider',
+  'export.columns.rateCard',
+  'export.columns.status',
+  'export.columns.version',
+  'export.columns.versionStatus',
+  'export.columns.publishedAt',
+  'export.columns.vehicleClass',
+  'export.columns.modality',
+  'export.columns.unitAmount',
+  'export.columns.currency',
+] as const satisfies readonly ColumnKey[];
+
+/**
+ * One row per RATE LINE, not per Rate Card. A card's identity is its name and a
+ * line's identity is class × modality; flattening them keeps both readable in a
+ * sheet that can be sorted. A version with no lines still appears as a row, and
+ * a card with no versions still appears as a row of its own.
+ */
+export function rateCardsSheet(
+  rateCards: readonly ExportableRateCard[],
+  translate: Translate,
+): ExportSheetData {
+  const rows: ExportCell[][] = [];
+  for (const rateCard of rateCards) {
+    const cardCells = [
+      textCell(rateCard.providerName),
+      textCell(rateCard.name),
+      { kind: 'text', value: translate(archivalStatusTokens[rateCard.status].labelKey) },
+    ] as const satisfies readonly ExportCell[];
+    if (rateCard.versions.length === 0) {
+      rows.push([...cardCells, empty, empty, empty, empty, empty, empty, empty]);
+      continue;
+    }
+    for (const version of rateCard.versions) {
+      const versionCells = [
+        ...cardCells,
+        { kind: 'number', value: version.versionNumber },
+        { kind: 'text', value: translate(rateCardVersionStatusTokens[version.status].labelKey) },
+        optionalInstantCell(version.publishedAt),
+      ] as const satisfies readonly ExportCell[];
+      if (version.lines.length === 0) {
+        rows.push([...versionCells, empty, empty, empty, textCell(version.currency)]);
+        continue;
+      }
+      for (const line of version.lines) {
+        rows.push([
+          ...versionCells,
+          textCell(line.vehicleClassName),
+          { kind: 'text', value: translate(`common.modalities.${line.modality}`) },
+          moneyCell(line.unitAmount, version.currency),
+          textCell(version.currency),
+        ]);
+      }
+    }
+  }
+  return {
+    name: translate('export.sheetNames.rateCards'),
+    headers: headers(translate, rateCardColumns),
+    rows,
+  };
+}
+
+export type ExportableAssignment = {
+  readonly serviceName: string;
+  readonly eventId: string;
+  readonly projectId: string;
+  readonly provider: { readonly name: string } | null;
+  readonly vehicleClass: { readonly name: string } | null;
+  readonly costCentre: { readonly name: string; readonly key: string } | null;
+  readonly executionStatus: ExecutionStatus;
+  readonly driverName?: string;
+  readonly vehiclePlateOverride?: string;
+  readonly dispatchedAt?: number;
+  readonly completedAt?: number;
+  readonly notes?: string;
+  readonly currentRevision: {
+    readonly quantity: number;
+    readonly unitAmount: number;
+    readonly currency: Currency;
+    readonly lineTotal: number;
+  } | null;
+};
+
+const assignmentColumns = [
+  'export.columns.service',
+  'export.columns.event',
+  'export.columns.project',
+  'export.columns.provider',
+  'export.columns.vehicleClass',
+  'export.columns.costCentre',
+  'export.columns.quantity',
+  'export.columns.unitAmount',
+  'export.columns.lineTotal',
+  'export.columns.currency',
+  'export.columns.executionStatus',
+  'export.columns.driver',
+  'export.columns.vehiclePlate',
+  'export.columns.dispatched',
+  'export.columns.completed',
+  'export.columns.notes',
+] as const satisfies readonly ColumnKey[];
+
+export function assignmentsSheet(
+  assignments: readonly ExportableAssignment[],
+  lookups: ExportLookups,
+  translate: Translate,
+): ExportSheetData {
+  return {
+    name: translate('export.sheetNames.assignments'),
+    headers: headers(translate, assignmentColumns),
+    rows: assignments.map((assignment) => {
+      const revision = assignment.currentRevision;
+      return [
+        textCell(assignment.serviceName),
+        lookupCell(assignment.eventId, lookups.eventNames),
+        lookupCell(assignment.projectId, lookups.projectNames),
+        textCell(assignment.provider?.name),
+        textCell(assignment.vehicleClass?.name),
+        textCell(assignment.costCentre?.name),
+        // An assignment with no accepted revision has no agreed money. Zeros
+        // here would state a price the record does not carry.
+        revision === null ? empty : numberCell(revision.quantity),
+        revision === null ? empty : moneyCell(revision.unitAmount, revision.currency),
+        revision === null ? empty : moneyCell(revision.lineTotal, revision.currency),
+        revision === null ? empty : textCell(revision.currency),
+        { kind: 'text', value: translate(executionStatusTokens[assignment.executionStatus].labelKey) },
+        textCell(assignment.driverName),
+        textCell(assignment.vehiclePlateOverride),
+        optionalInstantCell(assignment.dispatchedAt),
+        optionalInstantCell(assignment.completedAt),
+        textCell(assignment.notes),
+      ];
+    }),
+  };
+}
+
+export type ExportableAssignmentRevision = {
+  readonly serviceName: string;
+  readonly providerName: string;
+  readonly vehicleClassName: string;
+  readonly modality: RateModality;
+  readonly revisionNumber: number;
+  readonly status: AssignmentRevisionStatus;
+  readonly quantity: number;
+  readonly unitAmount: number;
+  readonly currency: Currency;
+  readonly lineTotal: number;
+  readonly acceptedAt?: number;
+  readonly declinedReason?: string;
+};
+
+const assignmentRevisionColumns = [
+  'export.columns.service',
+  'export.columns.provider',
+  'export.columns.vehicleClass',
+  'export.columns.modality',
+  'export.columns.revisionNumber',
+  'export.columns.revisionStatus',
+  'export.columns.quantity',
+  'export.columns.unitAmount',
+  'export.columns.lineTotal',
+  'export.columns.currency',
+  'export.columns.acceptedAt',
+  'export.columns.declinedReason',
+] as const satisfies readonly ColumnKey[];
+
+export function assignmentRevisionsSheet(
+  revisions: readonly ExportableAssignmentRevision[],
+  translate: Translate,
+): ExportSheetData {
+  return {
+    name: translate('export.sheetNames.assignmentRevisions'),
+    headers: headers(translate, assignmentRevisionColumns),
+    rows: revisions.map((revision) => [
+      textCell(revision.serviceName),
+      textCell(revision.providerName),
+      textCell(revision.vehicleClassName),
+      { kind: 'text', value: translate(`common.modalities.${revision.modality}`) },
+      { kind: 'number', value: revision.revisionNumber },
+      { kind: 'text', value: translate(assignmentRevisionStatusTokens[revision.status].labelKey) },
+      numberCell(revision.quantity),
+      moneyCell(revision.unitAmount, revision.currency),
+      moneyCell(revision.lineTotal, revision.currency),
+      textCell(revision.currency),
+      optionalInstantCell(revision.acceptedAt),
+      textCell(revision.declinedReason),
     ]),
   };
 }

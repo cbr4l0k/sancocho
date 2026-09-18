@@ -139,6 +139,14 @@ with their status in a `status` column — an export that silently dropped them 
 misrepresent the record it claims to be — and the filters below are the only thing that
 removes a row.
 
+Two columns are deliberately withheld. A Provider row exports its business contact
+details but **not** `searchText` (a server-derived index column that means nothing to a
+reader) or `linkedOrganizationId` (another tenant's id, and not this tenant's fact to
+publish). An Assignment exports the driver's **name but not their phone number**: the name
+is what an operator needs to recognise a dispatch in a spreadsheet, and a personal phone
+number is the one field in this export that identifies a private individual rather than a
+firm. Neither is a gap to fill later without deciding it again.
+
 Foreign references are written as **display values, never Convex ids**: a Project name,
 a Location name, a Cost Centre name, a user's name or email. Ids are not exported at all.
 They are meaningless outside the deployment, they are the one column an operator might

@@ -2,9 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ExportCell } from './export-cells';
 import {
+  assignmentRevisionsSheet,
+  assignmentsSheet,
   eventsSheet,
   locationsSheet,
   projectsSheet,
+  providersSheet,
+  rateCardsSheet,
   serviceKindsSheet,
   servicesSheet,
   sheetCells,
@@ -303,6 +307,427 @@ describe('locations sheet', () => {
     );
     expect(sheet.rows).toHaveLength(2);
     expect(sheet.rows[1]?.[2]).toEqual({ kind: 'text', value: 'fields.statuses.archived' });
+  });
+});
+
+describe('providers sheet', () => {
+  test('writes the directory columns and the archival status label', () => {
+    const sheet = providersSheet(
+      [
+        {
+          name: 'Transportes Andes',
+          legalName: 'Transportes Andes S.A.S.',
+          taxId: '900123456',
+          contactName: 'Laura Méndez',
+          contactEmail: 'laura@andes.co',
+          contactPhone: '3001234567',
+          notes: 'Preferir vans',
+          status: 'active',
+        },
+      ],
+      translate,
+    );
+
+    expect(sheet.name).toBe('export.sheetNames.providers');
+    expect(sheet.headers).toEqual([
+      'export.columns.name',
+      'export.columns.legalName',
+      'export.columns.taxId',
+      'export.columns.contactName',
+      'export.columns.contactEmail',
+      'export.columns.contactPhone',
+      'export.columns.status',
+      'export.columns.notes',
+    ]);
+    expect(sheet.rows).toEqual([
+      [
+        { kind: 'text', value: 'Transportes Andes' },
+        { kind: 'text', value: 'Transportes Andes S.A.S.' },
+        { kind: 'text', value: '900123456' },
+        { kind: 'text', value: 'Laura Méndez' },
+        { kind: 'text', value: 'laura@andes.co' },
+        { kind: 'text', value: '3001234567' },
+        { kind: 'text', value: 'fields.statuses.active' },
+        { kind: 'text', value: 'Preferir vans' },
+      ],
+    ]);
+  });
+
+  test('does not write searchText or a linked organization id into any cell', () => {
+    // Both columns are real stored fields. The first is a server-derived search
+    // index; the second is another tenant's id. Neither belongs in a file the
+    // operator takes out of the product.
+    const provider = {
+      name: 'Transportes Andes',
+      status: 'archived' as const,
+      searchText: 'secret-search-index',
+      linkedOrganizationId: 'org-foreign-tenant',
+    };
+    const sheet = providersSheet([provider], translate);
+    expect(JSON.stringify(sheet)).not.toContain('secret-search-index');
+    expect(JSON.stringify(sheet)).not.toContain('org-foreign-tenant');
+    expect(sheet.rows[0]?.[6]).toEqual({ kind: 'text', value: 'fields.statuses.archived' });
+  });
+});
+
+describe('rate cards sheet', () => {
+  test('writes one row per rate line, repeating the card that owns it', () => {
+    const sheet = rateCardsSheet(
+      [
+        {
+          providerName: 'Transportes Andes',
+          name: 'Tarifario 2026',
+          status: 'active',
+          versions: [
+            {
+              versionNumber: 2,
+              status: 'published',
+              publishedAt: startsAt,
+              currency: 'COP',
+              lines: [
+                { vehicleClassName: 'Van 12 pax', modality: 'transfer', unitAmount: 81_000_000 },
+                { vehicleClassName: 'Van 12 pax', modality: 'disposition', unitAmount: 120_000_000 },
+              ],
+            },
+          ],
+        },
+      ],
+      translate,
+    );
+
+    expect(sheet.name).toBe('export.sheetNames.rateCards');
+    expect(sheet.headers).toEqual([
+      'export.columns.provider',
+      'export.columns.rateCard',
+      'export.columns.status',
+      'export.columns.version',
+      'export.columns.versionStatus',
+      'export.columns.publishedAt',
+      'export.columns.vehicleClass',
+      'export.columns.modality',
+      'export.columns.unitAmount',
+      'export.columns.currency',
+    ]);
+    expect(sheet.rows).toEqual([
+      [
+        { kind: 'text', value: 'Transportes Andes' },
+        { kind: 'text', value: 'Tarifario 2026' },
+        { kind: 'text', value: 'fields.statuses.active' },
+        { kind: 'number', value: 2 },
+        { kind: 'text', value: 'rateCards.versionStatuses.published' },
+        startsAtCell,
+        { kind: 'text', value: 'Van 12 pax' },
+        { kind: 'text', value: 'common.modalities.transfer' },
+        { kind: 'number', value: 810000, format: '"COP" #,##0.00' },
+        { kind: 'text', value: 'COP' },
+      ],
+      [
+        { kind: 'text', value: 'Transportes Andes' },
+        { kind: 'text', value: 'Tarifario 2026' },
+        { kind: 'text', value: 'fields.statuses.active' },
+        { kind: 'number', value: 2 },
+        { kind: 'text', value: 'rateCards.versionStatuses.published' },
+        startsAtCell,
+        { kind: 'text', value: 'Van 12 pax' },
+        { kind: 'text', value: 'common.modalities.disposition' },
+        { kind: 'number', value: 1200000, format: '"COP" #,##0.00' },
+        { kind: 'text', value: 'COP' },
+      ],
+    ]);
+  });
+
+  test('still writes a version with no lines, and a card with no versions at all', () => {
+    // A card or version with an empty grid is still in the catalogue. Dropping
+    // it would make the sheet quietly disagree with the Rate Cards screen.
+    const sheet = rateCardsSheet(
+      [
+        {
+          providerName: 'Andes',
+          name: 'Sin líneas',
+          status: 'active',
+          versions: [{ versionNumber: 1, status: 'draft', currency: 'COP', lines: [] }],
+        },
+        { providerName: 'Andes', name: 'Sin versiones', status: 'archived', versions: [] },
+      ],
+      translate,
+    );
+    expect(sheet.rows).toEqual([
+      [
+        { kind: 'text', value: 'Andes' },
+        { kind: 'text', value: 'Sin líneas' },
+        { kind: 'text', value: 'fields.statuses.active' },
+        { kind: 'number', value: 1 },
+        { kind: 'text', value: 'rateCards.versionStatuses.draft' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'text', value: 'COP' },
+      ],
+      [
+        { kind: 'text', value: 'Andes' },
+        { kind: 'text', value: 'Sin versiones' },
+        { kind: 'text', value: 'fields.statuses.archived' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+        { kind: 'empty' },
+      ],
+    ]);
+  });
+
+  test('keeps two currencies as two formats and never combines them', () => {
+    const sheet = rateCardsSheet(
+      [
+        {
+          providerName: 'Andes',
+          name: 'COP',
+          status: 'active',
+          versions: [
+            {
+              versionNumber: 1,
+              status: 'published',
+              currency: 'COP',
+              lines: [{ vehicleClassName: 'Van', modality: 'transfer', unitAmount: 81_000_000 }],
+            },
+          ],
+        },
+        {
+          providerName: 'Andes',
+          name: 'USD',
+          status: 'active',
+          versions: [
+            {
+              versionNumber: 1,
+              status: 'published',
+              currency: 'USD',
+              lines: [{ vehicleClassName: 'Van', modality: 'transfer', unitAmount: 123_456 }],
+            },
+          ],
+        },
+      ],
+      translate,
+    );
+    expect(sheet.rows[0]?.[8]).toEqual({ kind: 'number', value: 810000, format: '"COP" #,##0.00' });
+    expect(sheet.rows[0]?.[9]).toEqual({ kind: 'text', value: 'COP' });
+    expect(sheet.rows[1]?.[8]).toEqual({ kind: 'number', value: 1234.56, format: '"USD" #,##0.00' });
+    expect(sheet.rows[1]?.[9]).toEqual({ kind: 'text', value: 'USD' });
+  });
+});
+
+describe('assignments sheet', () => {
+  test('resolves event and project through lookups and types every cell', () => {
+    const sheet = assignmentsSheet(
+      [
+        {
+          serviceName: 'Traslado AV8020',
+          eventId: 'event-1',
+          projectId: 'project-1',
+          provider: { name: 'Transportes Andes' },
+          vehicleClass: { name: 'Van 12 pax' },
+          costCentre: { key: 'bog', name: 'Operación Bogotá' },
+          executionStatus: 'dispatched',
+          driverName: 'Carlos Pérez',
+          vehiclePlateOverride: 'ABC123',
+          dispatchedAt: startsAt,
+          completedAt: startsAt,
+          notes: 'Salida por el Dorado',
+          currentRevision: {
+            quantity: 2,
+            unitAmount: 81_000_000,
+            currency: 'COP',
+            lineTotal: 162_000_000,
+          },
+        },
+      ],
+      lookups,
+      translate,
+    );
+
+    expect(sheet.name).toBe('export.sheetNames.assignments');
+    expect(sheet.headers).toEqual([
+      'export.columns.service',
+      'export.columns.event',
+      'export.columns.project',
+      'export.columns.provider',
+      'export.columns.vehicleClass',
+      'export.columns.costCentre',
+      'export.columns.quantity',
+      'export.columns.unitAmount',
+      'export.columns.lineTotal',
+      'export.columns.currency',
+      'export.columns.executionStatus',
+      'export.columns.driver',
+      'export.columns.vehiclePlate',
+      'export.columns.dispatched',
+      'export.columns.completed',
+      'export.columns.notes',
+    ]);
+    expect(sheet.rows).toEqual([
+      [
+        { kind: 'text', value: 'Traslado AV8020' },
+        { kind: 'text', value: 'Traslados día 1' },
+        { kind: 'text', value: 'Cumbre Andina' },
+        { kind: 'text', value: 'Transportes Andes' },
+        { kind: 'text', value: 'Van 12 pax' },
+        { kind: 'text', value: 'Operación Bogotá' },
+        { kind: 'number', value: 2 },
+        { kind: 'number', value: 810000, format: '"COP" #,##0.00' },
+        { kind: 'number', value: 1620000, format: '"COP" #,##0.00' },
+        { kind: 'text', value: 'COP' },
+        { kind: 'text', value: 'vocab.executionStatuses.dispatched' },
+        { kind: 'text', value: 'Carlos Pérez' },
+        { kind: 'text', value: 'ABC123' },
+        startsAtCell,
+        startsAtCell,
+        { kind: 'text', value: 'Salida por el Dorado' },
+      ],
+    ]);
+  });
+
+  test('writes empty money cells, not zeros, when there is no current revision', () => {
+    // Nothing has been agreed. A 0 in a money column is a price, and this
+    // assignment does not have one.
+    const sheet = assignmentsSheet(
+      [
+        {
+          serviceName: 'Traslado AV8020',
+          eventId: 'event-1',
+          projectId: 'project-1',
+          provider: { name: 'Transportes Andes' },
+          vehicleClass: null,
+          costCentre: null,
+          executionStatus: 'unassigned',
+          currentRevision: null,
+        },
+      ],
+      lookups,
+      translate,
+    );
+    expect(sheet.rows[0]?.[6]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[7]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[8]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[9]).toEqual({ kind: 'empty' });
+  });
+
+  test('leaves a reference it could not resolve blank rather than writing the id', () => {
+    const sheet = assignmentsSheet(
+      [
+        {
+          serviceName: 'Suelto',
+          eventId: 'event-404',
+          projectId: 'project-404',
+          provider: null,
+          vehicleClass: null,
+          costCentre: null,
+          executionStatus: 'unassigned',
+          currentRevision: null,
+        },
+      ],
+      lookups,
+      translate,
+    );
+    expect(sheet.rows[0]?.[1]).toEqual({ kind: 'empty' });
+    expect(sheet.rows[0]?.[2]).toEqual({ kind: 'empty' });
+    expect(JSON.stringify(sheet.rows[0])).not.toContain('event-404');
+    expect(JSON.stringify(sheet.rows[0])).not.toContain('project-404');
+  });
+});
+
+describe('assignment revisions sheet', () => {
+  test('writes each revision in its own currency as major-unit money', () => {
+    const sheet = assignmentRevisionsSheet(
+      [
+        {
+          serviceName: 'Traslado AV8020',
+          providerName: 'Transportes Andes',
+          vehicleClassName: 'Van 12 pax',
+          modality: 'transfer',
+          revisionNumber: 3,
+          status: 'accepted',
+          quantity: 2,
+          unitAmount: 81_000_000,
+          currency: 'COP',
+          lineTotal: 162_000_000,
+          acceptedAt: startsAt,
+        },
+      ],
+      translate,
+    );
+
+    expect(sheet.name).toBe('export.sheetNames.assignmentRevisions');
+    expect(sheet.headers).toEqual([
+      'export.columns.service',
+      'export.columns.provider',
+      'export.columns.vehicleClass',
+      'export.columns.modality',
+      'export.columns.revisionNumber',
+      'export.columns.revisionStatus',
+      'export.columns.quantity',
+      'export.columns.unitAmount',
+      'export.columns.lineTotal',
+      'export.columns.currency',
+      'export.columns.acceptedAt',
+      'export.columns.declinedReason',
+    ]);
+    expect(sheet.rows).toEqual([
+      [
+        { kind: 'text', value: 'Traslado AV8020' },
+        { kind: 'text', value: 'Transportes Andes' },
+        { kind: 'text', value: 'Van 12 pax' },
+        { kind: 'text', value: 'common.modalities.transfer' },
+        { kind: 'number', value: 3 },
+        { kind: 'text', value: 'vocab.revisionStatuses.accepted' },
+        { kind: 'number', value: 2 },
+        { kind: 'number', value: 810000, format: '"COP" #,##0.00' },
+        { kind: 'number', value: 1620000, format: '"COP" #,##0.00' },
+        { kind: 'text', value: 'COP' },
+        startsAtCell,
+        { kind: 'empty' },
+      ],
+    ]);
+  });
+
+  test('keeps two revision currencies as two formats and never combines them', () => {
+    const sheet = assignmentRevisionsSheet(
+      [
+        {
+          serviceName: 'COP',
+          providerName: 'Andes',
+          vehicleClassName: 'Van',
+          modality: 'transfer',
+          revisionNumber: 1,
+          status: 'accepted',
+          quantity: 1,
+          unitAmount: 81_000_000,
+          currency: 'COP',
+          lineTotal: 81_000_000,
+        },
+        {
+          serviceName: 'USD',
+          providerName: 'Andes',
+          vehicleClassName: 'Van',
+          modality: 'fixed',
+          revisionNumber: 1,
+          status: 'declined',
+          quantity: 1,
+          unitAmount: 123_456,
+          currency: 'USD',
+          lineTotal: 123_456,
+          declinedReason: 'Tarifa desactualizada',
+        },
+      ],
+      translate,
+    );
+    expect(sheet.rows[0]?.[7]).toEqual({ kind: 'number', value: 810000, format: '"COP" #,##0.00' });
+    expect(sheet.rows[0]?.[8]).toEqual({ kind: 'number', value: 810000, format: '"COP" #,##0.00' });
+    expect(sheet.rows[1]?.[7]).toEqual({ kind: 'number', value: 1234.56, format: '"USD" #,##0.00' });
+    expect(sheet.rows[1]?.[8]).toEqual({ kind: 'number', value: 1234.56, format: '"USD" #,##0.00' });
+    expect(sheet.rows[1]?.[5]).toEqual({ kind: 'text', value: 'vocab.revisionStatuses.declined' });
+    expect(sheet.rows[1]?.[11]).toEqual({ kind: 'text', value: 'Tarifa desactualizada' });
   });
 });
 

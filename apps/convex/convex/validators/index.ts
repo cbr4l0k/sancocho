@@ -916,9 +916,9 @@ export const serviceFieldValueValidator = v.union(
 );
 
 /**
- * Commercial sheets (assignments, assignmentRevisions, providers, rateCards)
- * join this union when they ship. It stays closed so an export can never name
- * a sheet the log does not know.
+ * Closed so an export can never name a sheet the log does not know. The
+ * commercial four sit alongside the operational five; adding a tenth is a
+ * change to this union, the catalogues, and the sheet builders together.
  */
 export const exportSheetValidator = v.union(
   v.literal('events'),
@@ -926,6 +926,10 @@ export const exportSheetValidator = v.union(
   v.literal('projects'),
   v.literal('serviceKinds'),
   v.literal('locations'),
+  v.literal('assignments'),
+  v.literal('assignmentRevisions'),
+  v.literal('providers'),
+  v.literal('rateCards'),
 );
 
 
