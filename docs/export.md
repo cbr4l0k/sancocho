@@ -115,23 +115,31 @@ names the sheet it stopped on, and offers a retry; nothing partial is written to
 
 ## Sheets
 
-The first cut covers the operational half, which is what the demo seed contains:
+Nine sheets, written in this order — operational first, configuration last:
 
 | Sheet | Source |
 | --- | --- |
 | Events | `listOrganizationEvents` |
 | Services | `listOrganizationServices` |
+| Assignments | `listServiceAssignmentRows`, per exported Service |
+| Assignment Revisions | `listAssignmentRevisions`, per Assignment |
 | Projects | `listProjects` |
 | Service Kinds & Versions | `listServiceKinds`, then `getServiceKind` per kind |
 | Locations | `listLocations` |
+| Providers | `listProviders` |
+| Rate Cards | `listRateCards`, then `listRateCardVersions` and `getRateCardVersion` |
 
-The commercial half — Assignments, Assignment Revisions, Providers, Rate Cards — follows
-once the supply seed (#98) exists to check it against. Its shape is fixed here so it is
-not redesigned later: the Assignments sheet is built from `listServiceAssignmentRows`,
-which already joins each Assignment to its current and latest revision and to the
-Provider, Vehicle Class and Cost Centre **names**, and the Revisions sheet from one
-`listAssignmentRevisions` walk per Assignment, because `assignmentRevisions` has no
-Project- or Organization-scoped index and a revision row carries no `projectId`.
+The two commercial operational sheets are **N+1 by construction**, and the backend is why:
+`assignmentRevisions` has no Project- or Organization-scoped index and a revision row
+carries no `projectId`, so revisions can only be listed one Assignment at a time. The
+Assignments sheet avoids the worse half of that by using `listServiceAssignmentRows`, which
+already joins each Assignment to its current and latest revision and to the Provider,
+Vehicle Class and Cost Centre **names** — one query per Service rather than per Assignment.
+The fan-out runs at most eight queries in flight; adding a paginated project-scoped
+revision query would remove it, and is the fix if it ever bites.
+
+Vehicle Classes are walked but are not a sheet: rate lines and revisions carry a class id,
+and the export writes names. A failure there is reported against the Rate Cards sheet.
 
 Every sheet carries its rows in the order the underlying query returns them; no sheet
 re-sorts, so the file and the screen agree. Archived and retired rows are **included**,

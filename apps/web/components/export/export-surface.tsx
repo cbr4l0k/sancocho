@@ -14,12 +14,20 @@ import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/c
 import { toSheetCell } from '@/lib/export-cells';
 import { drainPages, exportIsRunning, failedSheet, type ExportProgress } from '@/lib/export-run';
 import {
+  assignmentRevisionsSheet,
+  assignmentsSheet,
   eventsSheet,
   locationsSheet,
   projectsSheet,
+  providersSheet,
+  rateCardsSheet,
   serviceKindsSheet,
   servicesSheet,
   sheetCells,
+  type ExportableAssignment,
+  type ExportableAssignmentRevision,
+  type ExportableProvider,
+  type ExportableRateCard,
   type ExportLookups,
   type ExportSheetData,
   type ExportSheetName,
@@ -32,13 +40,24 @@ type OrganizationId = FunctionArgs<typeof api.projects.queries.listProjects>['or
 type ProjectId = FunctionReturnType<typeof api.projects.queries.listProjects>['page'][number]['_id'];
 
 /**
- * Every sheet this cut writes, in the order they appear in the workbook. The commercial
- * sheets (Assignments, Revisions, Providers, Rate Cards) join this list once #98 seeds
- * something to check them against; see docs/export.md "Sheets".
+ * Every sheet the workbook writes, operational first then configuration. The gate
+ * mutation records this list; see docs/export.md "Sheets".
  */
-const sheetNames = ['events', 'services', 'projects', 'serviceKinds', 'locations'] as const satisfies readonly ExportSheetName[];
+const sheetNames = [
+  'events',
+  'services',
+  'assignments',
+  'assignmentRevisions',
+  'projects',
+  'serviceKinds',
+  'locations',
+  'providers',
+  'rateCards',
+] as const satisfies readonly ExportSheetName[];
 
 const pageSize = 200;
+/** Per-Service and per-Assignment reads are N+1; keep this many in flight, not thousands. */
+const walkConcurrency = 8;
 
 export function ExportSurface() {
   const t = useTranslations();
@@ -147,6 +166,98 @@ export function ExportSurface() {
           paginationOpts: { numItems: pageSize, cursor },
         }),
       );
+      const providerRows = await read('providers', (cursor) =>
+        client.query(api.providers.queries.listProviders, {
+          organizationId,
+          paginationOpts: { numItems: pageSize, cursor },
+        }),
+      );
+      // Vehicle classes are not a sheet; they are walked so rate lines and revisions
+      // export a class name rather than an id. A failure here is reported against
+      // the Rate Cards sheet, which is the sheet that cannot be written without them.
+      sheet = 'rateCards';
+      const vehicleClassRows = await drainPages((cursor) =>
+        client.query(api.vehicles.queries.listVehicleClasses, {
+          organizationId,
+          paginationOpts: { numItems: pageSize, cursor },
+        }),
+      );
+      const providerNames = new Map<string, string>(
+        providerRows.map((provider) => [provider._id, provider.name]),
+      );
+      const vehicleClassNames = new Map<string, string>(
+        vehicleClassRows.map((vehicleClass) => [vehicleClass._id, vehicleClass.name]),
+      );
+      const rateCardRows = await read('rateCards', (cursor) =>
+        client.query(api.rateCards.queries.listRateCards, {
+          organizationId,
+          paginationOpts: { numItems: pageSize, cursor },
+        }),
+      );
+      let rateCardProgress = rateCardRows.length;
+      const exportableRateCards = await mapInBatches(rateCardRows, async (card) => {
+        const versions = await drainPages((cursor) =>
+          client.query(api.rateCards.queries.listRateCardVersions, {
+            rateCardId: card._id,
+            paginationOpts: { numItems: pageSize, cursor },
+          }),
+        );
+        const exportableVersions: ExportableRateCard['versions'][number][] = [];
+        for (const version of versions) {
+          const detail = await client.query(api.rateCards.queries.getRateCardVersion, {
+            rateCardVersionId: version._id,
+          });
+          exportableVersions.push(toExportableRateCardVersion(detail, vehicleClassNames));
+          rateCardProgress += 1;
+          setProgress({ kind: 'reading', sheet: 'rateCards', rows: rateCardProgress });
+        }
+        if (versions.length === 0) {
+          rateCardProgress += 1;
+          setProgress({ kind: 'reading', sheet: 'rateCards', rows: rateCardProgress });
+        }
+        return toExportableRateCard(card, exportableVersions, providerNames);
+      });
+      sheet = 'assignments';
+      setProgress({ kind: 'reading', sheet: 'assignments', rows: 0 });
+      let assignmentCount = 0;
+      const assignmentWalks = (
+        await mapInBatches(serviceRows, async (serviceRow) => {
+          const rows = await client.query(api.assignments.queries.listServiceAssignmentRows, {
+            serviceId: serviceRow.service._id,
+          });
+          assignmentCount += rows.length;
+          setProgress({ kind: 'reading', sheet: 'assignments', rows: assignmentCount });
+          return rows.map((row) => ({
+            assignmentId: row.assignment._id,
+            serviceName: serviceRow.service.name,
+            providerName: row.provider === null ? '' : row.provider.name,
+            exportable: toExportableAssignment(serviceRow.service, row),
+          }));
+        })
+      ).flat();
+      sheet = 'assignmentRevisions';
+      setProgress({ kind: 'reading', sheet: 'assignmentRevisions', rows: 0 });
+      let revisionCount = 0;
+      const exportableRevisions = (
+        await mapInBatches(assignmentWalks, async (walk) => {
+          let seen = 0;
+          const revisions = await drainPages(
+            (cursor) =>
+              client.query(api.assignments.queries.listAssignmentRevisions, {
+                assignmentId: walk.assignmentId,
+                paginationOpts: { numItems: pageSize, cursor },
+              }),
+            (total) => {
+              revisionCount += total - seen;
+              seen = total;
+              setProgress({ kind: 'reading', sheet: 'assignmentRevisions', rows: revisionCount });
+            },
+          );
+          return revisions.map((revision) =>
+            toExportableAssignmentRevision(walk, revision, vehicleClassNames),
+          );
+        })
+      ).flat();
 
       const lookups: ExportLookups = {
         projectNames: new Map(projectRows.map((project) => [project._id, project.name])),
@@ -168,12 +279,20 @@ export function ExportSurface() {
       const sheets: readonly ExportSheetData[] = [
         eventsSheet(eventRows, lookups, t),
         servicesSheet(serviceRows, columns, lookups, t),
+        assignmentsSheet(
+          assignmentWalks.map((walk) => walk.exportable),
+          lookups,
+          t,
+        ),
+        assignmentRevisionsSheet(exportableRevisions, t),
         projectsSheet(projectRows, t),
         serviceKindsSheet(
           serviceKindDetails.map(({ serviceKind, versions }) => ({ ...serviceKind, versions })),
           t,
         ),
         locationsSheet(locationRows, t),
+        providersSheet(providerRows.map(toExportableProvider), t),
+        rateCardsSheet(exportableRateCards, t),
       ];
 
       const rows = sheets.reduce((total, data) => total + data.rows.length, 0);
@@ -301,4 +420,124 @@ function fileName(organizationName: string): string {
   const today = new Date();
   const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   return `priamo-${organizationName.trim().replace(/\s+/gu, '-').toLowerCase()}-${date}.xlsx`;
+}
+
+/**
+ * The assignment and revision walks are N+1: there is no organization- or
+ * project-scoped revision index (docs/export.md "Sheets"). Cap in-flight
+ * queries so a large tenant does not open thousands of requests at once.
+ */
+async function mapInBatches<Item, Result>(
+  items: readonly Item[],
+  mapper: (item: Item) => Promise<Result>,
+): Promise<Result[]> {
+  const results: Result[] = [];
+  for (let offset = 0; offset < items.length; offset += walkConcurrency) {
+    const batch = items.slice(offset, offset + walkConcurrency);
+    results.push(...(await Promise.all(batch.map((item) => mapper(item)))));
+  }
+  return results;
+}
+
+type ProviderRow = FunctionReturnType<typeof api.providers.queries.listProviders>['page'][number];
+type RateCardRow = FunctionReturnType<typeof api.rateCards.queries.listRateCards>['page'][number];
+type RateCardVersionDetail = FunctionReturnType<typeof api.rateCards.queries.getRateCardVersion>;
+type ServiceDoc = FunctionReturnType<typeof api.services.queries.listOrganizationServices>['page'][number]['service'];
+type ServiceAssignmentRow = FunctionReturnType<typeof api.assignments.queries.listServiceAssignmentRows>[number];
+type AssignmentRevisionRow = FunctionReturnType<
+  typeof api.assignments.queries.listAssignmentRevisions
+>['page'][number];
+
+function toExportableProvider(provider: ProviderRow): ExportableProvider {
+  return {
+    name: provider.name,
+    status: provider.status,
+    ...(provider.legalName === undefined ? {} : { legalName: provider.legalName }),
+    ...(provider.taxId === undefined ? {} : { taxId: provider.taxId }),
+    ...(provider.contactName === undefined ? {} : { contactName: provider.contactName }),
+    ...(provider.contactEmail === undefined ? {} : { contactEmail: provider.contactEmail }),
+    ...(provider.contactPhone === undefined ? {} : { contactPhone: provider.contactPhone }),
+    ...(provider.notes === undefined ? {} : { notes: provider.notes }),
+  };
+}
+
+function toExportableRateCard(
+  card: RateCardRow,
+  versions: ExportableRateCard['versions'],
+  providerNames: ReadonlyMap<string, string>,
+): ExportableRateCard {
+  return {
+    providerName: providerNames.get(card.providerId) ?? '',
+    name: card.name,
+    status: card.status,
+    versions,
+  };
+}
+
+function toExportableRateCardVersion(
+  detail: RateCardVersionDetail,
+  vehicleClassNames: ReadonlyMap<string, string>,
+): ExportableRateCard['versions'][number] {
+  return {
+    versionNumber: detail.version.versionNumber,
+    status: detail.version.status,
+    currency: detail.version.currency,
+    lines: detail.rateLines.map((line) => ({
+      vehicleClassName: vehicleClassNames.get(line.vehicleClassId) ?? '',
+      modality: line.modality,
+      unitAmount: line.unitAmount,
+    })),
+    ...(detail.version.publishedAt === undefined ? {} : { publishedAt: detail.version.publishedAt }),
+  };
+}
+
+function toExportableAssignment(service: ServiceDoc, row: ServiceAssignmentRow): ExportableAssignment {
+  const assignment = row.assignment;
+  return {
+    serviceName: service.name,
+    eventId: service.eventId,
+    projectId: assignment.projectId,
+    provider: row.provider === null ? null : { name: row.provider.name },
+    vehicleClass: row.vehicleClass === null ? null : { name: row.vehicleClass.name },
+    costCentre:
+      row.costCentre === null ? null : { name: row.costCentre.name, key: row.costCentre.key },
+    executionStatus: assignment.executionStatus,
+    currentRevision:
+      row.currentRevision === null
+        ? null
+        : {
+            quantity: row.currentRevision.quantity,
+            unitAmount: row.currentRevision.unitAmount,
+            currency: row.currentRevision.currency,
+            lineTotal: row.currentRevision.lineTotal,
+          },
+    ...(assignment.driverName === undefined ? {} : { driverName: assignment.driverName }),
+    ...(assignment.vehiclePlateOverride === undefined
+      ? {}
+      : { vehiclePlateOverride: assignment.vehiclePlateOverride }),
+    ...(assignment.dispatchedAt === undefined ? {} : { dispatchedAt: assignment.dispatchedAt }),
+    ...(assignment.completedAt === undefined ? {} : { completedAt: assignment.completedAt }),
+    ...(assignment.notes === undefined ? {} : { notes: assignment.notes }),
+  };
+}
+
+function toExportableAssignmentRevision(
+  walk: { readonly serviceName: string; readonly providerName: string },
+  revision: AssignmentRevisionRow,
+  vehicleClassNames: ReadonlyMap<string, string>,
+): ExportableAssignmentRevision {
+  return {
+    serviceName: walk.serviceName,
+    providerName: walk.providerName,
+    vehicleClassName: vehicleClassNames.get(revision.vehicleClassId) ?? '',
+    modality: revision.modality,
+    revisionNumber: revision.revisionNumber,
+    status: revision.status,
+    quantity: revision.quantity,
+    unitAmount: revision.unitAmount,
+    currency: revision.currency,
+    lineTotal: revision.lineTotal,
+    ...(revision.acceptedAt === undefined ? {} : { acceptedAt: revision.acceptedAt }),
+    ...(revision.declinedReason === undefined ? {} : { declinedReason: revision.declinedReason }),
+  };
 }

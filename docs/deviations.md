@@ -455,6 +455,11 @@ a decision to stop rather than guess.
     `components/export/export-surface.tsx`.
 
 41. **The export's own wiring is untested, as deviation 38 describes for the import (#36).**
+    This now covers the commercial half too, which is the sharper half: the per-Service and
+    per-Assignment fan-out, its eight-at-a-time cap, and the id→name maps the Rate Card and
+    Revision sheets resolve through have never run against data, because #98 has not seeded
+    the supply half. The sheet builders are mutation-tested against fixtures; that the walk
+    hands them the right rows is not established by anything but review.
     Every rule is in `lib/` with mutation-tested coverage: the cell types and zone rules,
     the union columns and their headers, each sheet's shape, and the page walk. What no test
     reaches is the component that calls them — that `recordExportRequest` runs BEFORE the
