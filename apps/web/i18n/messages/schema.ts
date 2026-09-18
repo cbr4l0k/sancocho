@@ -3,6 +3,7 @@ import type {
   assignmentRevisionStatusValidator,
   executionStatusValidator,
   eventStatusValidator,
+  exportSheetValidator,
   providerClaimStateValidator,
   serviceStatusValidator,
   fieldDataTypeValidator,
@@ -36,6 +37,7 @@ type RateModality = typeof rateModalityValidator.type;
 type RateCardVersionStatus = typeof rateCardVersionStatusValidator.type;
 type Role = typeof roleValidator.type;
 type LocationType = typeof locationTypeValidator.type;
+type ExportSheetName = typeof exportSheetValidator.type;
 type RelationshipType = typeof relationshipTypeValidator.type;
 type FieldDataType = typeof fieldDataTypeValidator.type;
 
@@ -932,6 +934,50 @@ export type MessageSchema = {
     };
     adminOnlyTitle: string;
     adminOnlyBody: string;
+  };
+  /** The Excel export; see docs/export.md. Sheet names and headers are localized, tenant text is not. */
+  export: {
+    title: string;
+    description: string;
+    sheetsTitle: string;
+    sheetNames: Record<ExportSheetName, string>;
+    columns: {
+      name: string;
+      project: string;
+      event: string;
+      status: string;
+      startsAt: string;
+      endsAt: string;
+      description: string;
+      serviceKind: string;
+      version: string;
+      venue: string;
+      costCentre: string;
+      budget: string;
+      currency: string;
+      accountable: string;
+      key: string;
+      versionStatus: string;
+      publishedAt: string;
+      type: string;
+      address: string;
+      latitude: string;
+      longitude: string;
+    };
+    filtersTitle: string;
+    allProjects: string;
+    projectFilter: string;
+    generate: string;
+    generating: string;
+    progress: string;
+    writing: string;
+    done: string;
+    failedTitle: string;
+    failedBody: string;
+    retry: string;
+    adminOnlyTitle: string;
+    adminOnlyBody: string;
+    verbatimNotice: string;
   };
   common: {
     /**
