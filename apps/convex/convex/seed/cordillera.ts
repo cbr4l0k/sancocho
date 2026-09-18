@@ -1,28 +1,48 @@
 import { v } from 'convex/values';
 
 import type { Id } from '../_generated/dataModel';
+import { createCostCentre } from '../costCentres/model';
 import { createEvent } from '../events/model';
 import { internalMutation } from '../_generated/server';
 import { changeServiceStatus, createServiceFromServiceKind } from '../services/model';
 import { ensureBuiltinFieldDefinitions, type BuiltinFieldKey } from '../fields/builtins';
 import { createFieldDefinition, sameFieldConfig } from '../fields/model';
 import { invalidInput } from '../lib/errors';
+import { normalizeSearchText } from '../lib/search';
 import { assertSeedingEnabled } from '../lib/seedGuard';
 import { createLocation } from '../locations/model';
 import { createProject } from '../projects/model';
+import { createProvider } from '../providers/model';
+import {
+  addRateLine,
+  createInitialDraftVersion as createInitialRateCardDraftVersion,
+  createRateCard,
+  publishRateCardVersion,
+} from '../rateCards/model';
 import { addServiceKindField } from '../serviceKinds/fields/model';
 import { createInitialDraftVersion, createServiceKind, publishServiceKindVersion } from '../serviceKinds/model';
 import { createRelationship } from '../relationships/model';
-import type { serviceFieldValueValidator, fieldConfigValidator, serviceStatusValidator } from '../validators';
+import type {
+  serviceFieldValueValidator,
+  fieldConfigValidator,
+  serviceStatusValidator,
+  rateModalityValidator,
+} from '../validators';
+import { provisionStarterVehicleClasses } from '../vehicles/builtins';
+import { createVehicleClass } from '../vehicles/classes';
+import { createFleetVehicle, normalizePlate } from '../vehicles/fleet';
 import { resolveSeedOwnerContext } from './identity';
 
 /**
  * Reproduces the operating vocabulary and representative line items from the
  * Cordillera 2026 ground-transport workbook inside an existing organization.
- * Organization fields and serviceKinds are independently idempotent by indexed key.
- * Locations, Services, and relationships are a clean-slate demonstration set:
- * once the named project contains any Service, a re-run treats it as complete
- * and skips those three sets instead of duplicating them.
+ * Organization fields, serviceKinds, Vehicle Classes, Cost Centres, Providers,
+ * Rate Cards, and Fleet Vehicles are independently idempotent by indexed key.
+ * Locations are reused by name. Events, Services, and relationships are a
+ * clean-slate demonstration set: once the named project contains any Service, a
+ * re-run still provisions the keyed catalogue (so a tenant seeded before this
+ * catalogue existed cannot stay without it) and then skips those three sets
+ * instead of duplicating them.
  *
  * The mutation runs as the organization's own owner, so every write passes the
  * ordinary domain authorization, role, ownership, validation, audit, and
@@ -39,6 +59,7 @@ function bogota(year: number, month: number, day: number, hour: number, minute: 
 type FieldConfig = typeof fieldConfigValidator.type;
 type Value = typeof serviceFieldValueValidator.type;
 type ServiceStatus = typeof serviceStatusValidator.type;
+type RateModality = typeof rateModalityValidator.type;
 
 const text = (value: string): Value => ({ kind: 'text', value });
 const longText = (value: string): Value => ({ kind: 'longText', value });
@@ -234,6 +255,99 @@ type Stage = 'stage3' | 'stage4';
 const driverNames = ['Carlos Rincón', 'Diana Muñoz', 'Julián Pardo', 'Mónica Salazar', 'Sergio Bernal', 'Paula Castaño'] as const;
 const driverPhones = ['310 5550101', '311 5550102', '312 5550103', '315 5550104', '316 5550105', '320 5550106'] as const;
 const plates = ['KLM482', 'RZU19D', 'JPN735', 'TQS42F', 'VXM906', 'LHR63E'] as const;
+const crewPlates = ['PBX174', 'QRT58C'] as const;
+
+/**
+ * Workbook `unitRate` figures are whole pesos (`490000` means 490 000 COP).
+ * Rate Lines store integer minor units and COP's exponent is 2, so writing the
+ * peso literal as `unitAmount` is a silent 100× error that still typechecks.
+ * Every rate line goes through this helper; do not multiply by hand.
+ */
+function copPesosToMinorUnits(pesos: number): number {
+  return pesos * 100;
+}
+
+type WorkbookModality = 'trayecto' | 'disponibilidad12h' | 'ruta';
+
+const rateModalityBySelectId = {
+  trayecto: 'transfer',
+  disponibilidad12h: 'disposition',
+  ruta: 'route',
+} as const satisfies Record<WorkbookModality, RateModality>;
+
+const vehicleClassPassengerCapacity = new Map<string, number>([
+  ['h1', 4],
+  ['sprinter', 12],
+  ['sprinter18', 18],
+  ['gamaMedia', 4],
+  ['suvGamaMedia', 6],
+  ['suvConvencional', 6],
+  ['duster', 4],
+]);
+
+const costCentreDescriptions = new Map<string, string>([
+  ['paramo', 'Productor del festival; cuenta principal de Páramo Presenta.'],
+  ['ocesa', 'Socio comercial OCESA, facturación de servicios asignados.'],
+  ['promotoria', 'Cuenta de Promotoría para servicios contratados al festival.'],
+  ['clubColombia', 'Escenario Club Colombia y sus vehículos de marca.'],
+  ['interno', 'Movimientos internos de producción dentro del venue.'],
+  ['equipo', 'Rutas y disponibilidad del equipo de producción de Páramo.'],
+]);
+
+const andesProvider = {
+  name: 'Transportes Andes SAS',
+  contactEmail: 'operaciones@transportesandes.invalid',
+  contactName: 'Claudia Restrepo',
+  contactPhone: '601 5550110',
+} as const;
+
+const altiplanoProvider = {
+  name: 'Rutas del Altiplano SAS',
+  contactEmail: 'despacho@rutasaltiplano.invalid',
+  contactName: 'Hernán Ospina',
+  contactPhone: '601 5550120',
+} as const;
+
+type RateLineSeed = { classKey: string; modality: WorkbookModality; pesos: number };
+
+const andesRateLines: readonly RateLineSeed[] = [
+  { classKey: 'h1', modality: 'trayecto', pesos: 185000 },
+  { classKey: 'h1', modality: 'disponibilidad12h', pesos: 640000 },
+  { classKey: 'sprinter', modality: 'trayecto', pesos: 220000 },
+  { classKey: 'sprinter', modality: 'disponibilidad12h', pesos: 810000 },
+  { classKey: 'sprinter18', modality: 'trayecto', pesos: 220000 },
+  { classKey: 'sprinter18', modality: 'disponibilidad12h', pesos: 810000 },
+  { classKey: 'suvGamaMedia', modality: 'trayecto', pesos: 420000 },
+  { classKey: 'suvGamaMedia', modality: 'disponibilidad12h', pesos: 1200000 },
+  { classKey: 'duster', modality: 'trayecto', pesos: 95000 },
+  { classKey: 'duster', modality: 'disponibilidad12h', pesos: 525000 },
+  { classKey: 'cargoVan', modality: 'trayecto', pesos: 280000 },
+  { classKey: 'cargoVan', modality: 'disponibilidad12h', pesos: 980000 },
+  { classKey: 'cargoTruck', modality: 'trayecto', pesos: 280000 },
+  { classKey: 'cargoTruck', modality: 'disponibilidad12h', pesos: 980000 },
+  { classKey: 'coordinador', modality: 'trayecto', pesos: 300000 },
+  { classKey: 'coordinador', modality: 'disponibilidad12h', pesos: 490000 },
+];
+
+const altiplanoRateLines: readonly RateLineSeed[] = [
+  { classKey: 'h1', modality: 'trayecto', pesos: 640000 },
+  { classKey: 'h1', modality: 'disponibilidad12h', pesos: 640000 },
+  { classKey: 'h1', modality: 'ruta', pesos: 640000 },
+];
+
+const andesFleet: readonly { plate: string; classKey: string; label: string }[] = [
+  { plate: plates[0], classKey: 'h1', label: `H1 Andes · ${plates[0]}` },
+  { plate: plates[1], classKey: 'sprinter', label: `Sprinter Andes · ${plates[1]}` },
+  { plate: plates[2], classKey: 'sprinter18', label: `Sprinter 18 pax Andes · ${plates[2]}` },
+  { plate: plates[3], classKey: 'duster', label: `Duster Andes · ${plates[3]}` },
+  { plate: plates[4], classKey: 'cargoVan', label: `Van de carga Andes · ${plates[4]}` },
+  { plate: plates[5], classKey: 'suvGamaMedia', label: `SUV gama media Andes · ${plates[5]}` },
+];
+
+const altiplanoFleet: readonly { plate: string; classKey: string; label: string }[] = [
+  { plate: crewPlates[0], classKey: 'h1', label: `H1 Altiplano · ${crewPlates[0]}` },
+  { plate: crewPlates[1], classKey: 'h1', label: `H1 Altiplano · ${crewPlates[1]}` },
+];
 
 function operationalValues(status: ServiceStatus, index: number): readonly FieldValue[] {
   if (status === 'draft' || status === 'planned') return [];
@@ -539,11 +653,13 @@ export const seedCordilleraOperations = internalMutation({
   returns: v.object({
     fieldDefinitions: v.number(), serviceKinds: v.number(), locations: v.number(),
     services: v.number(), relationships: v.number(), projectName: v.string(),
+    vehicleClasses: v.number(), costCentres: v.number(), providers: v.number(),
+    rateCards: v.number(), fleetVehicles: v.number(),
   }),
   handler: async (ctx, args) => {
     assertSeedingEnabled();
 
-    const { organization, seeded } = await resolveSeedOwnerContext(ctx, args.organizationSlug);
+    const { organization, ownerUserId, seeded } = await resolveSeedOwnerContext(ctx, args.organizationSlug);
 
     const allFieldIds = new Map<FieldKey, Id<'fieldDefinitions'>>();
     const builtinIds = await ensureBuiltinFieldDefinitions(ctx);
@@ -608,21 +724,220 @@ export const seedCordilleraOperations = internalMutation({
       organizationId: organization._id, name: projectName, description: defaultProject.description,
       startsAt: defaultProject.startsAt, endsAt: defaultProject.endsAt,
     });
+
+    // Supply catalogue: keyed, idempotent, and provisioned even on a re-run
+    // that later skips services. createEvent needs a Cost Centre and a venue,
+    // and a tenant seeded before this catalogue existed must still receive it.
+
+    await provisionStarterVehicleClasses(seeded, organization._id);
+    // Two of the workbook's option ids (`cargoVan`, `cargoTruck`) are already
+    // starterVehicleClasses keys. Skip by the same indexed `by_org_key` lookup
+    // `provisionStarterVehicleClasses` uses, so those two resolve to the
+    // starter rows. This is load-bearing, not tidiness: the workbook labels
+    // them `Cargo van` / `Cargo truck` and the starter rows are `Cargo Van` /
+    // `Cargo Truck`. Those normalize identically, and the workbook importer
+    // resolves a Vehicle Class by normalized name and refuses an ambiguous
+    // match. Two rows would make every cargo row in an imported workbook
+    // unresolvable.
+    // Reuse is by key AND by normalized name, mirroring the field and Service
+    // Kind loops above, because adoption here is effectively irreversible: the
+    // seed writes PUBLISHED rate lines against a Vehicle Class and names a Cost
+    // Centre as the Event's client, and both references permanently block
+    // deletion. Silently adopting a row a tenant authored would weld their own
+    // catalogue to demonstration data they cannot then delete. `interno` and
+    // `equipo` are ordinary Spanish words a Colombian coordinator plausibly
+    // already uses as a key, so this is not a theoretical collision.
+    //
+    // The comparison is NORMALIZED, not exact, and that is what lets the two
+    // starter rows through: the workbook labels them `Cargo van` / `Cargo
+    // truck` and the starter catalogue `Cargo Van` / `Cargo Truck`, which fold
+    // to the same text. An archived row is refused rather than adopted, so the
+    // administrator gets a named conflict instead of a bare
+    // `notFoundOrInaccessible` thrown from deep inside a later domain call.
+    const vehicleClassIds = new Map<string, Id<'vehicleClasses'>>();
+    for (const [key, name] of vehicleLabels) {
+      const existing = await ctx.db
+        .query('vehicleClasses')
+        .withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', key))
+        .unique();
+      if (existing !== null) {
+        if (existing.status !== 'active' || normalizeSearchText(existing.name) !== normalizeSearchText(name)) {
+          return invalidInput('seedVehicleClassConflict', `The organization already owns a different vehicle class keyed ${key}`);
+        }
+        vehicleClassIds.set(key, existing._id);
+        continue;
+      }
+      const passengerCapacity = vehicleClassPassengerCapacity.get(key);
+      vehicleClassIds.set(key, await createVehicleClass(seeded, {
+        organizationId: organization._id,
+        key,
+        name,
+        ...(key === 'coordinador'
+          ? { description: 'Persona de coordinación en sitio, no un vehículo; no tiene capacidad de pasajeros.' }
+          : {}),
+        ...(passengerCapacity === undefined ? {} : { passengerCapacity }),
+      }));
+    }
+    function requireVehicleClass(key: string): Id<'vehicleClasses'> {
+      const id = vehicleClassIds.get(key);
+      if (id === undefined) return invalidInput('seedVehicleClassMissing', `Seed vehicle class is missing: ${key}`);
+      return id;
+    }
+
+    const costCentreIds = new Map<string, Id<'costCentres'>>();
+    for (const [key, name] of billingLabels) {
+      const existing = await ctx.db
+        .query('costCentres')
+        .withIndex('by_org_key', (q) => q.eq('organizationId', organization._id).eq('key', key))
+        .unique();
+      if (existing !== null) {
+        if (existing.status !== 'active' || normalizeSearchText(existing.name) !== normalizeSearchText(name)) {
+          return invalidInput('seedCostCentreConflict', `The organization already owns a different cost centre keyed ${key}`);
+        }
+        costCentreIds.set(key, existing._id);
+        continue;
+      }
+      const description = costCentreDescriptions.get(key);
+      costCentreIds.set(key, await createCostCentre(seeded, {
+        organizationId: organization._id,
+        key,
+        name,
+        ...(description === undefined ? {} : { description }),
+      }));
+    }
+    function requireCostCentre(key: string): Id<'costCentres'> {
+      const id = costCentreIds.get(key);
+      if (id === undefined) return invalidInput('seedCostCentreMissing', `Seed cost centre is missing: ${key}`);
+      return id;
+    }
+
+    // Two providers, not one: the workbook's own figures do not form a single
+    // (vehicle class × modality) grid. `festivalCrewShuttle` prices H1 at
+    // 640 000 for `trayecto`, `ruta` and `disponibilidad12h` alike, while every
+    // artist row prices H1 `trayecto` at 185 000. One published Rate Card
+    // Version cannot hold both — `addRateLine` refuses a duplicate
+    // `(version, vehicleClass, modality)` cell. So the crew shuttle is a
+    // different supplier, which is also what the figures are actually telling
+    // us. Contact names and 555 numbers are invented, same rule as the drivers.
+    async function ensureProvider(provider: {
+      name: string;
+      contactEmail: string;
+      contactName: string;
+      contactPhone: string;
+    }): Promise<Id<'providers'>> {
+      const existing = await ctx.db
+        .query('providers')
+        .withIndex('by_org_searchText', (q) =>
+          q.eq('organizationId', organization._id).eq('searchText', normalizeSearchText(provider.name)),
+        )
+        .first();
+      if (existing !== null) {
+        // Matched on the normalized name, so the name necessarily agrees; only
+        // lifecycle can disagree. An archived Provider would otherwise fail
+        // generically inside `assertUsableProvider` when the rate card is built.
+        if (existing.status !== 'active') {
+          return invalidInput('seedProviderConflict', `The organization already owns an archived provider named ${provider.name}`);
+        }
+        return existing._id;
+      }
+      return createProvider(seeded, {
+        organizationId: organization._id,
+        name: provider.name,
+        contactEmail: provider.contactEmail,
+        contactName: provider.contactName,
+        contactPhone: provider.contactPhone,
+      });
+    }
+    const andesProviderId = await ensureProvider(andesProvider);
+    const altiplanoProviderId = await ensureProvider(altiplanoProvider);
+
+    async function ensurePublishedRateCard(
+      providerId: Id<'providers'>,
+      name: string,
+      lines: readonly RateLineSeed[],
+    ): Promise<void> {
+      const cards = await ctx.db
+        .query('rateCards')
+        .withIndex('by_org_provider', (q) => q.eq('organizationId', organization._id).eq('providerId', providerId))
+        .collect();
+      if (cards.some((card) => card.name === name)) return;
+      const rateCardId = await createRateCard(seeded, {
+        organizationId: organization._id,
+        providerId,
+        name,
+      });
+      const versionId = await createInitialRateCardDraftVersion(seeded, rateCardId, 'COP');
+      for (const line of lines) {
+        await addRateLine(seeded, {
+          rateCardVersionId: versionId,
+          vehicleClassId: requireVehicleClass(line.classKey),
+          modality: rateModalityBySelectId[line.modality],
+          unitAmount: copPesosToMinorUnits(line.pesos),
+        });
+      }
+      await publishRateCardVersion(seeded, versionId);
+    }
+    await ensurePublishedRateCard(andesProviderId, 'Tarifario Cordillera 2026', andesRateLines);
+    await ensurePublishedRateCard(altiplanoProviderId, 'Tarifario rutas de equipo 2026', altiplanoRateLines);
+
+    async function ensureFleetVehicle(
+      providerId: Id<'providers'>,
+      vehicle: { plate: string; classKey: string; label: string },
+    ): Promise<void> {
+      const existing = await ctx.db
+        .query('fleetVehicles')
+        .withIndex('by_org_plateKey', (q) =>
+          q.eq('organizationId', organization._id).eq('plateKey', normalizePlate(vehicle.plate)),
+        )
+        .first();
+      if (existing !== null) return;
+      await createFleetVehicle(seeded, {
+        organizationId: organization._id,
+        providerId,
+        vehicleClassId: requireVehicleClass(vehicle.classKey),
+        plate: vehicle.plate,
+        label: vehicle.label,
+      });
+    }
+    for (const vehicle of andesFleet) await ensureFleetVehicle(andesProviderId, vehicle);
+    for (const vehicle of altiplanoFleet) await ensureFleetVehicle(altiplanoProviderId, vehicle);
+
+    const result = {
+      fieldDefinitions: fieldDefinitions.length,
+      serviceKinds: serviceKinds.length,
+      locations: locations.length,
+      services: services.length,
+      relationships: relationships.length,
+      projectName,
+      vehicleClasses: vehicleLabels.size,
+      costCentres: billingLabels.size,
+      providers: 2,
+      rateCards: 2,
+      fleetVehicles: andesFleet.length + altiplanoFleet.length,
+    };
+
+    // Clean-slate guard stays AFTER the keyed catalogue and BEFORE everything
+    // that has no key. Events, Services and relationships have no per-project
+    // uniqueness key, so a re-run that already holds any Service on this project
+    // must not create a second Event or duplicate the 90 rows; locations are
+    // reused only when ACTIVE, so they belong below it too. The catalogue above
+    // is keyed throughout and must still run on that re-run, so a tenant seeded
+    // before the supply half existed cannot stay without it.
     const existingService = await ctx.db.query('services').withIndex('by_project', (q) => q.eq('projectId', projectId)).first();
     if (existingService !== null) {
-      return { fieldDefinitions: fieldDefinitions.length, serviceKinds: serviceKinds.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
+      return result;
     }
-    const eventId = await createEvent(seeded, {
-      projectId,
-      name: projectName,
-      startsAt: Math.min(...services.map((service) => service.startsAt)),
-      endsAt: Math.max(...services.map((service) => service.endsAt ?? service.startsAt)),
-    });
 
     // Locations carry no per-organization name uniqueness constraint, and are
     // archivable but never deletable — so a second run under a different
     // `projectName` (which skips the clean-slate guard above) would otherwise
     // leave a permanently duplicated catalogue behind. Reuse by name instead.
+    //
+    // This stays BELOW the clean-slate guard even though `createEvent` needs
+    // `simonBolivar`. The reuse above matches an ACTIVE row by name, so an
+    // archived seed location would be recreated on every re-run — which is
+    // exactly what the guard used to prevent by returning first. The supply
+    // catalogue is keyed and safe to re-provision; this is not.
     const existingLocations = await ctx.db
       .query('locations')
       .withIndex('by_org', (q) => q.eq('organizationId', organization._id))
@@ -645,6 +960,24 @@ export const seedCordilleraOperations = internalMutation({
       if (id === undefined) return invalidInput('seedLocationMissing', `Seed location is missing: ${key}`);
       return id;
     }
+
+    // Budget is not committed, and the gap is the point. This seed is a
+    // representative subset of the workbook: its own `unitRate × quantity`
+    // figures sum to 47 355 000 COP, not 110 000 000. The workbook's ~110 M is
+    // the budget; committed lands near 47 M; the variance between them is what
+    // the budget surface exists to show. A seed where the two matched would
+    const eventId = await createEvent(seeded, {
+      projectId,
+      name: projectName,
+      startsAt: Math.min(...services.map((service) => service.startsAt)),
+      endsAt: Math.max(...services.map((service) => service.endsAt ?? service.startsAt)),
+      venueLocationId: requireLocation('simonBolivar'),
+      clientCostCentreId: requireCostCentre('paramo'),
+      budgetAmount: copPesosToMinorUnits(110000000),
+      budgetCurrency: 'COP',
+      accountableUserId: ownerUserId,
+    });
+
     function requireServiceKind(key: ServiceKindKey): Id<'serviceKinds'> {
       const id = serviceKindIds.get(key);
       if (id === undefined) return invalidInput('seedServiceKindMissing', `Seed serviceKind is missing: ${key}`);
@@ -689,6 +1022,6 @@ export const seedCordilleraOperations = internalMutation({
       for (const status of transitionsTo(service.status)) await changeServiceStatus(seeded, { serviceId, status });
     }
 
-    return { fieldDefinitions: fieldDefinitions.length, serviceKinds: serviceKinds.length, locations: locations.length, services: services.length, relationships: relationships.length, projectName };
+    return result;
   },
 });

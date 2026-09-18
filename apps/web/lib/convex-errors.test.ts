@@ -39,9 +39,16 @@ test('the number of codes left with no specific copy is pinned, so one more is a
   // Deriving this set from the mapping instead would be circular: the first
   // version of this test filtered the codes by what the mapping already said
   // and then asserted the result was empty, which it always was.
+  //
+  // Moved 31 -> 36 by #98, deliberately. All five additions
+  // (`seedVehicleClassMissing`, `seedCostCentreMissing`, `seedVehicleClassConflict`,
+  // `seedCostCentreConflict`, `seedProviderConflict`) are thrown only by
+  // `internalMutation`s behind `PRIAMO_ENABLE_SEED`. No console surface can
+  // reach a seed, so specific copy would be words no user can ever see — which
+  // is why every pre-existing `seed*` code sits in this pile too.
   const generic = errorCodes.filter((code) => present(code) === 'errors.generic');
-  expect(generic).toHaveLength(31);
-  expect(errorCodes).toHaveLength(169);
+  expect(generic).toHaveLength(36);
+  expect(errorCodes).toHaveLength(174);
 });
 
 test('the mapping is a real table, not a constant', () => {

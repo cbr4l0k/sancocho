@@ -37,7 +37,10 @@ test('the Cordillera seed writes the real operating vocabulary and all seven ope
   const { organizationId } = await tenant(t);
 
   const result = await t.mutation(seedCordilleraOperations, { organizationSlug: slug });
-  expect(result).toEqual({ fieldDefinitions: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37, projectName });
+  expect(result).toEqual({
+    fieldDefinitions: 18, serviceKinds: 6, locations: 10, services: 90, relationships: 37, projectName,
+    vehicleClasses: 10, costCentres: 6, providers: 2, rateCards: 2, fleetVehicles: 8,
+  });
 
   await t.run(async (ctx) => {
     const memberships = await ctx.db.query('organizationMemberships').withIndex('by_org_user', (q) => q.eq('organizationId', organizationId)).collect();
