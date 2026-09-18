@@ -1,0 +1,4 @@
+# Pins the web suite's timezone for a `bun test` run from the repo root, where
+# apps/web/bunfig.toml is not discovered. See apps/web/test-setup.ts.
+[test]
+preload = ["./apps/web/test-setup.ts"]

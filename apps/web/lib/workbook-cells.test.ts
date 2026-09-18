@@ -127,6 +127,13 @@ describe('target-directed cell conversion', () => {
 
   test('pre-converted Dates agree with their date, time and datetime serial forms', () => {
     const date = new Date(Date.UTC(2026, 8, 12, 10, 20));
+    // One literal anchor, so a bug the Date branch and the serial branch SHARE cannot
+    // pass by agreeing with each other. The equivalences below catch divergence; this
+    // catches both drifting together.
+    expect(cellToFieldValue(new Date(Date.UTC(2026, 8, 12)), { kind: 'date' })).toEqual({
+      ok: true,
+      value: { kind: 'date', value: '2026-09-12' },
+    });
     expect(cellToFieldValue(new Date(Date.UTC(2026, 8, 12)), { kind: 'date' })).toEqual(
       cellToFieldValue(46277, { kind: 'date' }),
     );
@@ -203,4 +210,19 @@ test('keeps a serial outside that window unreadable rather than ambiguous', () =
   expect(cellToFieldValue(30.5, { kind: 'date' })).toEqual({ ok: false, problem: 'notADate' });
   expect(cellToFieldValue(-1, { kind: 'datetime' })).toEqual({ ok: false, problem: 'notADate' });
   expect(cellToFieldValue(30.5, { kind: 'datetime' })).toEqual({ ok: false, problem: 'notADate' });
+});
+
+test('converts a true boolean cell rather than only rejecting a non-boolean one', () => {
+  expect(cellToFieldValue(true, { kind: 'boolean' })).toEqual({ ok: true, value: { kind: 'boolean', value: true } });
+  expect(cellToFieldValue(false, { kind: 'boolean' })).toEqual({ ok: true, value: { kind: 'boolean', value: false } });
+  expect(cellToFieldValue('si', { kind: 'boolean' })).toEqual({ ok: false, problem: 'notBoolean' });
+});
+
+test('converts a matching multiSelect label rather than only rejecting an unknown one', () => {
+  const config: FieldConfig = { kind: 'multiSelect', options: [{ id: 'opt-1', label: 'Ejecutivo' }] };
+  expect(cellToFieldValue('Ejecutivo', config)).toEqual({
+    ok: true,
+    value: { kind: 'multiSelect', optionIds: ['opt-1'] },
+  });
+  expect(cellToFieldValue('Turista', config)).toEqual({ ok: false, problem: 'unknownOption' });
 });

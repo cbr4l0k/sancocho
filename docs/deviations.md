@@ -395,7 +395,10 @@ a decision to stop rather than guess.
     UTC runner swapping them for the local getters passes every test — the guard was inert in
     the environment where it ran. Only a non-zero offset distinguishes them, and `es-CO` is
     the default locale, so Bogotá is both the honest zone and the one whose operators would
-    have seen every imported date shifted a day back. `apps/web/package.json`.
+    have seen every imported date shifted a day back. The pin lived only in the `test`
+    script until #99, where a coverage audit found that a bare `bun test` dropped it and
+    the mutant went back to surviving; it is now also set by a preload, so the two cannot
+    disagree. `apps/web/test-setup.ts`, `bunfig.toml`, `apps/web/package.json`.
 
 35. **The import preview materializes the target Event's whole Service set (#99).** Duplicate
     detection asks whether a row's (name, startsAt) already exists, which is a whole-set

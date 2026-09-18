@@ -48,6 +48,18 @@ describe('workbook mapping validation', () => {
     });
   });
 
+  test('counts a snapshot default location as a default, the same as a default value', () => {
+    // A required `location` field whose version snapshot pins a default location is
+    // already answered; demanding a column for it would block the whole mapping.
+    const defaultedLocation: readonly VersionField[] = [
+      { fieldDefinitionId: 'required', required: true, config: { kind: 'location' }, defaultLocationId: 'location-1' },
+    ];
+    expect(mappingProblems([], defaultedLocation)).not.toContainEqual({
+      kind: 'requiredFieldUnmapped',
+      fieldDefinitionId: 'required',
+    });
+  });
+
   test('requires the core service targets', () => {
     const problems = mappingProblems([{ kind: 'field', fieldDefinitionId: 'required' }], fields);
     expect(problems).toEqual([
@@ -92,22 +104,25 @@ describe('workbook mapping validation', () => {
 });
 
 describe('column target select values', () => {
-  // Enumerated literally rather than iterated off `fixedTargets`: deriving the list
-  // from the code under test would make the round-trip assert nothing.
-  const fixed: readonly ColumnTarget[] = [
-    { kind: 'ignored' },
-    { kind: 'serviceName' },
-    { kind: 'startsAtDate' },
-    { kind: 'startsAtTime' },
-    { kind: 'endsAtDate' },
-    { kind: 'endsAtTime' },
-    { kind: 'provider' },
-    { kind: 'vehicleClass' },
-    { kind: 'modality' },
-    { kind: 'quantity' },
-    { kind: 'costCentre' },
-    { kind: 'workbookAmount' },
-  ];
+  // Keyed by kind and anchored with `satisfies`, so adding a `ColumnTarget` arm is a
+  // `tsc` failure HERE too, not just in the module. Enumerated literally rather than
+  // iterated off the module's own `fixedTargets`: deriving the list from the code
+  // under test would make the round-trip assert nothing.
+  const fixedByKind = {
+    ignored: { kind: 'ignored' },
+    serviceName: { kind: 'serviceName' },
+    startsAtDate: { kind: 'startsAtDate' },
+    startsAtTime: { kind: 'startsAtTime' },
+    endsAtDate: { kind: 'endsAtDate' },
+    endsAtTime: { kind: 'endsAtTime' },
+    provider: { kind: 'provider' },
+    vehicleClass: { kind: 'vehicleClass' },
+    modality: { kind: 'modality' },
+    quantity: { kind: 'quantity' },
+    costCentre: { kind: 'costCentre' },
+    workbookAmount: { kind: 'workbookAmount' },
+  } as const satisfies Record<Exclude<ColumnTarget['kind'], 'field'>, ColumnTarget>;
+  const fixed: readonly ColumnTarget[] = Object.values(fixedByKind);
 
   test('round-trips every fixed target through its select value', () => {
     for (const target of fixed) {

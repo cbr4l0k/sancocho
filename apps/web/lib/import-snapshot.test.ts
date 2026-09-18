@@ -68,13 +68,43 @@ describe('import snapshot', () => {
     expect(snapshot.items[0]?.row.rowNumber).toBe(2);
   });
 
-  test('holds the plan the operator confirmed while the live plan finds the rows already exist', () => {
+  test('pairs every row with its own rate and its own action, in order', () => {
+    const rows = [row(2, 'Servicio 1'), row(3, 'Servicio 2'), row(4, 'Servicio 3')];
+    const plan = buildWorkbookPlan({ rows, mapping, versionFields: [], catalogues });
+    // Three rows made deliberately distinguishable. A snapshot that reads row 2's rate
+    // for every row would write one provider's agreed amount onto another row's
+    // revision (I10), and one that reads row 2's action would discard the operator's
+    // per-row skips — both silently, with every row still present and in order.
+    const rates: Record<number, RateLookupResult | Error | undefined> = {
+      2: resolved,
+      3: noRateLine,
+      4: undefined,
+    };
+    const chosen: Record<number, ImportRowAction> = { 2: 'create', 3: 'skip', 4: 'create' };
+
+    const snapshot = importSnapshot(
+      plan,
+      (planned) => rates[planned.rowNumber],
+      (planned) => chosen[planned.rowNumber] ?? 'skip',
+    );
+
+    expect(snapshot.items.map((item) => [item.row.rowNumber, item.action, item.rateResult])).toEqual([
+      [2, 'create', resolved],
+      [3, 'skip', noRateLine],
+      [4, 'create', undefined],
+    ]);
+  });
+
+  test('holds the plan it was handed, never one re-derived from a live catalogue', () => {
     const rows = [row(2, 'Servicio 1'), row(3, 'Servicio 2'), row(4, 'Servicio 3')];
     const before = buildWorkbookPlan({ rows, mapping, versionFields: [], catalogues });
     const snapshot = importSnapshot(before, () => undefined, (planned) => planned.defaultAction);
 
     // The same workbook re-planned against an Event that now holds the Services the
-    // run just created: this is the drift the freeze exists to stop.
+    // run just created — the drift the freeze exists to stop. `importSnapshot` cannot
+    // itself drift, since it returns the plan by identity; whether the confirm path
+    // actually pins it is wiring in `workbook-import-surface.tsx` and is not tested
+    // here. This pins the contract the wiring depends on.
     const after = buildWorkbookPlan({
       rows,
       mapping,
@@ -90,12 +120,10 @@ describe('import snapshot', () => {
     });
     expect(after.summary.willCreate).toBe(0);
     expect(after.summary.alreadyExists).toBe(3);
-    expect(after.rows.map((planned) => planned.existingServiceId)).toEqual(['service-1', 'service-2', 'service-3']);
 
+    expect(snapshot.plan).toBe(before);
     expect(snapshot.plan.summary.willCreate).toBe(3);
-    expect(snapshot.plan.summary.alreadyExists).toBe(0);
     expect(snapshot.plan.rows.map((planned) => planned.existingServiceId)).toEqual([undefined, undefined, undefined]);
-    expect(snapshot.items.map((item) => item.action)).toEqual(['create', 'create', 'create']);
   });
 
   test('rateResultForWrite drops an errored lookup and only an errored lookup', () => {
@@ -118,6 +146,22 @@ describe('import snapshot', () => {
 
     // Not knowing a row's rate is not the same as knowing it has none: the Error
     // must survive, because `importRowIsBlocked` reads it as blocking.
+    // A plain payload, not the branded `resolved` fixture: `tableId` boxes its string
+    // through `Object.assign`, so `typeof id === 'string'` is false and
+    // `isRateLookupResult` rejects it. `results` is `Record<string, unknown>` anyway.
+    const resolvedPayload = {
+      kind: 'resolved',
+      rateCardId: 'card-1',
+      rateCardName: 'Tarifa 2026',
+      rateCardVersionId: 'version-1',
+      rateLineId: 'line-1',
+      unitAmount: 810_000,
+      currency: 'COP',
+    };
+    // The accept path. Without it every priced row loses its rate and is written
+    // unpriced, and the rejection assertions below would still all pass.
+    expect(rowRateResult({ rateLookup }, { [key]: resolvedPayload })).not.toBeUndefined();
+    expect(rowRateResult({ rateLookup }, { [key]: resolvedPayload })).toEqual<unknown>(resolvedPayload);
     expect(rowRateResult({ rateLookup }, { [key]: failure })).toBe(failure);
     expect(rowRateResult({ rateLookup }, { [key]: { kind: 'resolved' } })).toBeUndefined();
     expect(rowRateResult({ rateLookup }, {})).toBeUndefined();
