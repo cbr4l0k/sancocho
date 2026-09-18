@@ -46,6 +46,7 @@ const deleteProvider = api.providers.mutations.deleteProvider;
 const grantProjectAccessToProvider = api.providers.mutations.grantProjectAccessToProvider;
 const revokeProviderAccessGrant = api.providers.mutations.revokeProviderAccessGrant;
 const listProjectProviderAccessGrants = api.providers.queries.listProjectProviderAccessGrants;
+const recordExportRequest = api.audit.mutations.recordExportRequest;
 
 const getProject = api.projects.queries.getProject;
 const listProjects = api.projects.queries.listProjects;
@@ -142,6 +143,10 @@ function resolvePrincipal(client: Client, projectId: Id<'projects'>, intent: Pro
       accessibleProviderIds: [...principal.accessibleProviderIds],
     };
   });
+}
+
+function countAuditRows(t: SchemaTest): Promise<number> {
+  return t.run(async (ctx) => (await ctx.db.query('auditEvents').collect()).length);
 }
 
 /** The thrown error, captured whole, so two refusals can be compared field for field (I9). */
@@ -447,6 +452,32 @@ test('a granted Provider cannot read the Project, its Events, Services, Service 
   // Rate Cards are #66 and statistics were deleted in #93; there is deliberately
   // no placeholder here for either. The grant nevertheless resolves, so the
   // refusals above are the gate working, not a missing grant.
+  await expect(resolvePrincipal(provider, f.projectId, 'readAssignment')).resolves.toMatchObject({ kind: 'provider' });
+});
+
+test('a granted Provider cannot request an export, of the whole tenant or of its own project', async () => {
+  const f = await fixture();
+  const provider = f.providerFirm.client;
+  const before = await countAuditRows(f.t);
+
+  // The export's gate is member-only and floored at admin (docs/export.md "Authority").
+  // A Provider Principal is not a membership at all, so it fails the first check rather
+  // than a narrower one — and it is refused identically whether it names the Project its
+  // own grant covers or none at all, so the refusal discloses nothing either way (I9).
+  await expect(
+    provider.mutation(recordExportRequest, { organizationId: f.organizationId, sheets: ['events'] }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+  await expect(
+    provider.mutation(recordExportRequest, {
+      organizationId: f.organizationId,
+      projectId: f.projectId,
+      sheets: ['events'],
+    }),
+  ).rejects.toMatchObject({ data: { code: inaccessible } });
+
+  // A refused export leaves no trace: the audit row marks an AUTHORIZED extraction.
+  expect(await countAuditRows(f.t)).toBe(before);
+  // The grant still resolves, so the refusals above are the gate working, not a dead grant.
   await expect(resolvePrincipal(provider, f.projectId, 'readAssignment')).resolves.toMatchObject({ kind: 'provider' });
 });
 
