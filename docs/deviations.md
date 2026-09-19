@@ -455,11 +455,6 @@ a decision to stop rather than guess.
     `components/export/export-surface.tsx`.
 
 41. **The export's own wiring is untested, as deviation 38 describes for the import (#36).**
-    This now covers the commercial half too, which is the sharper half: the per-Service and
-    per-Assignment fan-out, its eight-at-a-time cap, and the id→name maps the Rate Card and
-    Revision sheets resolve through have never run against data, because #98 has not seeded
-    the supply half. The sheet builders are mutation-tested against fixtures; that the walk
-    hands them the right rows is not established by anything but review.
     Every rule is in `lib/` with mutation-tested coverage: the cell types and zone rules,
     the union columns and their headers, each sheet's shape, and the page walk. What no test
     reaches is the component that calls them — that `recordExportRequest` runs BEFORE the
@@ -467,6 +462,29 @@ a decision to stop rather than guess.
     lookup maps are built from the walks that precede them, that a refusal sets `refused`
     rather than `failed`, and that `writeXlsxFile` is handed the sheets in the declared
     order. `apps/web` still has no component-test harness. `components/export/export-surface.tsx`.
+
+    **Hand-verified once, on 2026-09-19, after #98 seeded the supply half.** A real export of
+    the seeded Cordillera project was opened and parsed. All nine sheets present; the four
+    commercial sheets carried **90 Assignments, 89 Revisions, 2 Providers and 19 Rate Lines**
+    — the first time they have held a row outside a fixture. Money rendered as minor units
+    converted to pesos under `"COP "#,##0.00` (H1 traslado 185 000, disposición 640 000, Event
+    budget 110 000 000), matching the workbook exactly, so the 100× class of error is ruled out
+    on this path. Temporal cells carried 85 distinct instants across the festival week rather
+    than a constant. Sparse cells are emitted with explicit column references, so an unset
+    optional field leaves a genuine blank and does not shift its neighbours. Every id→name join
+    resolved: zero unresolved providers, cost centres, events, fleet vehicles, vehicle classes,
+    rate card versions or rate lines across all 90 Assignments, checked directly against the
+    deployment.
+
+    This does not make the wiring *tested* — there is still no component harness, and a single
+    manual pass is not a regression guard. It does retire the specific worry this entry was
+    written about: that the walk might hand the builders the wrong rows. It does not. Two
+    observations from the same pass, neither a defect: every `acceptedAt` / `publishedAt` /
+    `dispatchedAt` is the same instant, because Convex's `Date.now()` is fixed within a
+    transaction and the seed is one transaction; and instants render in the EXPORTER's local
+    zone, so a Bogotá 08:00 Service exported from UTC+3 reads 16:00. The second is
+    `instantCell` working as documented and is the reason that rule is tested under a
+    non-Bogotá zone. The empty-window asymmetry found in the same pass is #100.
 
 42. **The export's date window narrows the file, not the read (#36).** No
     organization-scoped query accepts `from`/`to`, so a window can only drop Events and
