@@ -435,6 +435,26 @@ a decision to stop rather than guess.
     adding one is a decision in its own right rather than something to fold into #99.
     Recorded so the extraction is not mistaken for full coverage of the screen.
 
+    **Partially de-risked on 2026-09-19**, after #98 seeded the supply half. The import's
+    real-data precondition was checked directly against the deployment: under
+    `normalizeWorkbookLabel`, the seeded tenant's Providers (2), Vehicle Classes (15), Cost
+    Centres (6) and Locations (12) each normalize to as many distinct keys as there are rows —
+    **zero collisions anywhere**. That matters because `exactCatalogueMatch` resolves a name
+    only when it matches exactly one row and otherwise reports it unresolved, so a single
+    colliding pair would make every workbook row naming it unimportable. In particular the
+    catalogue holds exactly one `Cargo Van` and one `Cargo Truck`: the Cordillera seed's
+    starter-row reuse is what stops the workbook's `Cargo van` / `Cargo truck` becoming a
+    second pair that normalizes identically, and that reasoning is now confirmed on real rows
+    rather than argued in a comment. The wiring above remains untested; only the data it would
+    resolve against has been verified.
+
+    Also established in that pass: **the export is not a round-trip source for the import.**
+    The export writes `Inicio` as one datetime cell, while the import requires `startsAtDate`
+    and `startsAtTime` as separate mapped columns and reports `requiredTargetUnmapped`
+    otherwise. Both sides are behaving as specified — the import was built for the operator's
+    own sheet, which carries a date column and a time column — but anyone expecting
+    export → edit → re-import will hit it.
+
 39. **The export walks one `getServiceKind` per Service Kind, in parallel (#36).** The
     Service Kinds sheet needs each Kind's versions, and the only read that returns them is
     `getServiceKind(serviceKindId)`. The export therefore fans out one point read per Kind
